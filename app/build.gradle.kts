@@ -28,6 +28,9 @@ android {
             storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "pocketagent123"
             keyAlias = System.getenv("KEY_ALIAS") ?: "pocketagent"
             keyPassword = System.getenv("KEY_PASSWORD") ?: "pocketagent123"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 
