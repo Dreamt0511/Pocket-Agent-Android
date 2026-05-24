@@ -81,34 +81,43 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "你的手机，AI 替你操控",
+                            text = "口袋里的 AI 管家",
                             fontSize = 13.sp,
                             letterSpacing = (0.3f).sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Dreamt0511"))
-                            context.startActivity(intent)
-                        }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF24292F),
-                            modifier = Modifier.size(28.dp)
+                        IconButton(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Dreamt0511"))
+                                context.startActivity(intent)
+                            }
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "GH",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF24292F),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "GH",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
                         }
+                        Text(
+                            text = "作者主页",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        )
                     }
                 }
             }

@@ -44,7 +44,7 @@ fun OverlayScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
     var isOverlayVisible by remember { mutableStateOf(false) }
     var overlayMode by remember { mutableStateOf("MINI") }
-    var streamText by remember { mutableStateOf("") }
+    val streamText by OverlayService.streamText.collectAsState()
     var taskStatus by remember { mutableStateOf("空闲") }
 
     // 监听悬浮窗状态

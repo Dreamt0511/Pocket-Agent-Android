@@ -18,6 +18,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemonV2
 import com.pocketagent.app.core.AppBootstrapper
+import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.launch
@@ -42,9 +43,19 @@ fun ChatScreen(navController: NavController) {
     val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
         || daemonStatus is AgentDaemonV2.DaemonStatus.Degraded
 
-    // 监听流式输出
-    LaunchedEffect(Unit) {
-        // TODO: 监听 StreamBridge 输出
+    // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
+    val streamText by OverlayService.streamText.collectAsState()
+
+    LaunchedEffect(streamText) {
+        if (isProcessing && messages.isNotEmpty()) {
+            val lastIdx = messages.size - 1
+            val lastMsg = messages[lastIdx]
+            if (!lastMsg.isUser && streamText.isNotEmpty() && lastMsg.text != streamText) {
+                messages = messages.toMutableList().apply {
+                    set(lastIdx, get(lastIdx).copy(text = streamText))
+                }
+            }
+        }
     }
 
     Scaffold(
@@ -74,28 +85,46 @@ fun ChatScreen(navController: NavController) {
                     if (inputText.isNotBlank() && !isProcessing && isDaemonReady) {
                         scope.launch {
                             isProcessing = true
+
+                            // 清空流式输出，准备接收新任务的实时输出
+                            OverlayService.streamText.value = ""
+
                             messages = messages + ChatMessage(
                                 text = inputText,
                                 isUser = true,
                                 timestamp = System.currentTimeMillis()
                             )
-                            
-                            // 执行指令
-                            val result = AppBootstrapper.executeCommand(inputText)
-                            val resultText = when (result) {
+                            // 添加占位 AI 消息，由 LaunchedEffect(streamText) 实时更新
+                            messages = messages + ChatMessage(
+                                text = "",
+                                isUser = false,
+                                timestamp = System.currentTimeMillis()
+                            )
+
+                            val cmd = inputText
+                            inputText = ""
+
+                            // 执行指令（suspend 函数，执行期间 streamText 会实时变化）
+                            val result = AppBootstrapper.executeCommand(cmd)
+
+                            // 执行完成后用最终结果更新最后一条消息
+                            val finalText = when (result) {
                                 is TaskResult.Success -> result.message
                                 is TaskResult.Failure -> "错误: ${result.error}"
                                 is TaskResult.Cancelled -> "任务已取消"
                             }
-                            messages = messages + ChatMessage(
-                                text = resultText,
-                                isUser = false,
-                                timestamp = System.currentTimeMillis()
-                            )
-                            
-                            inputText = ""
+                            val lastIdx = messages.size - 1
+                            if (lastIdx >= 0) {
+                                messages = messages.toMutableList().apply {
+                                    set(lastIdx, get(lastIdx).copy(
+                                        text = if (streamText.isNotEmpty()) streamText else finalText,
+                                        timestamp = System.currentTimeMillis()
+                                    ))
+                                }
+                            }
+
                             isProcessing = false
-                            
+
                             // 滚动到底部
                             listState.animateScrollToItem(messages.size - 1)
                         }

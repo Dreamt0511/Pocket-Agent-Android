@@ -9,6 +9,7 @@ import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -32,6 +33,7 @@ import androidx.core.widget.NestedScrollView
 class ExpandedOverlayView(
     private val context: Context,
     private val onMinimize: () -> Unit,
+    private val onClose: () -> Unit,
     private val onResize: (width: Int, height: Int) -> Unit,
     private val screenWidth: Int,
     private val screenHeight: Int
@@ -44,7 +46,18 @@ class ExpandedOverlayView(
 
     private val terminalBuffer = StringBuilder()
 
-    // 缩放状态
+    // 双指缩放手势检测
+    private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            val scaleFactor = detector.scaleFactor
+            val newW = (width * scaleFactor).toInt().coerceIn(dp(200), screenWidth)
+            val newH = (height * scaleFactor).toInt().coerceIn(dp(150), screenHeight)
+            onResize(newW, newH)
+            return true
+        }
+    })
+
+    // 缩放状态（右下角手柄拖拽）
     private var resizeInitialW = 0
     private var resizeInitialH = 0
     private var resizeInitialRawX = 0f
@@ -107,8 +120,8 @@ class ExpandedOverlayView(
                 setTextColor(Color.parseColor("#80FFFFFF"))
                 textSize = 16f
                 gravity = Gravity.CENTER
-                setPadding(dp(6), dp(2), dp(8), dp(2))
-                setOnClickListener { onMinimize() }
+                setPadding(dp(12), dp(2), dp(8), dp(2))
+                setOnClickListener { onClose() }
             }
             addView(closeBtn)
         }
@@ -190,6 +203,12 @@ class ExpandedOverlayView(
         addView(statusRow)
 
         elevation = dp(16).toFloat()
+
+        // 双指缩放监听：在缩放中时消费事件，否则传递给子视图（标题栏拖拽、缩放手柄等）
+        setOnTouchListener { _, event ->
+            scaleDetector.onTouchEvent(event)
+            scaleDetector.isInProgress
+        }
     }
 
     // ─── 公开方法 ─────────────────────────────────

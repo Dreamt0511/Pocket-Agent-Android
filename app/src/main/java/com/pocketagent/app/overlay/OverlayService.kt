@@ -308,6 +308,7 @@ class OverlayService : Service() {
             expandedView = ExpandedOverlayView(
                 context = this,
                 onMinimize = { showMini() },
+                onClose = { hideAll() },
                 onResize = { newW, newH ->
                     expandedParams?.let { params ->
                         params.width = newW.coerceAtLeast(dpToPx(200))

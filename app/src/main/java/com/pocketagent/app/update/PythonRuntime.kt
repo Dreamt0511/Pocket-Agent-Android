@@ -85,8 +85,8 @@ class PythonRuntime(
      * 初始化 Python 运行时
      *
      * 流程：
-     *  1. 发现可用的 python3（先找 Termux，再找系统路径）
-     *  2. 从 APK assets 解压种子代码到运行时目录
+     *  1. 从 APK assets 解压种子代码到运行时目录（无论 Python 是否可用）
+     *  2. 发现可用的 python3（先找 Termux，再找系统路径）
      *  3. 验证 Python 可用
      *  4. 验证 Agent 代码就绪 (--mode=ready)，降级模式下跳过此步骤
      */
@@ -95,7 +95,12 @@ class PythonRuntime(
         onStatus?.invoke("初始化 Python 环境...")
 
         try {
-            // 1. 发现 python3 路径
+            // 1. 解压种子代码（无论 Python 是否可用，都要确保技能文件存在）
+            extractSeedCode()
+            val runtimeDir = getRuntimeDir()
+            Log.i(TAG, "Seed code ready at ${runtimeDir.absolutePath}")
+
+            // 2. 发现 python3 路径
             val discovered = discoverPython()
             if (discovered == null) {
                 val msg = "Python 3 未找到\n" +
@@ -107,11 +112,6 @@ class PythonRuntime(
             }
             pythonBin = discovered
             Log.i(TAG, "Using python3: $pythonBin (fallback=$isFallbackMode)")
-
-            // 2. 解压种子代码
-            extractSeedCode()
-            val runtimeDir = getRuntimeDir()
-            Log.i(TAG, "Seed code ready at ${runtimeDir.absolutePath}")
 
             // 3. 验证 Python 可用
             val pythonCheck = termuxBridge.execute("$pythonBin --version")
