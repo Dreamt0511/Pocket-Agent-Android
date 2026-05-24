@@ -6,7 +6,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.ui.draw.clip
 import com.pocketagent.app.ui.theme.GlassSurface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,7 +41,7 @@ fun HomeScreen(navController: NavController) {
             text = "Pocket Agent",
             fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.5).sp,
+            letterSpacing = 0.sp,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
@@ -92,7 +91,7 @@ private fun NavItem(title: String, subtitle: String, onClick: () -> Unit) {
                 text = title,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Medium,
-                letterSpacing = 0.3.sp,
+                letterSpacing = (0.3f).sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(4.dp))
@@ -100,7 +99,7 @@ private fun NavItem(title: String, subtitle: String, onClick: () -> Unit) {
                 text = subtitle,
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                letterSpacing = 0.1.sp
+                letterSpacing = (0.1f).sp
             )
         }
     }
