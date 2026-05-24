@@ -144,7 +144,7 @@ class SettingsViewModel(
     private suspend fun updateAgentConfig() {
         // 构建配置 JSON
         val config = mapOf(
-            "LLM_BASE_URL" to uiState.llmBaseUrl,
+            "DEFAULT_LLM_BASE_URL" to uiState.llmBaseUrl,
             "LLM_API_KEY" to uiState.llmApiKey,
             "LLM_MODEL" to uiState.llmModel,
             "LLM_TEMPERATURE" to uiState.llmTemperature.toString(),

@@ -119,7 +119,7 @@ class OverlayService : Service() {
         }
 
         overlayState.value = currentMode
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

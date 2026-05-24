@@ -79,7 +79,7 @@ fun ConfigScreen(navController: NavController) {
                     try {
                         settingsRepo.saveSettings(
                             com.pocketagent.app.data.Settings(
-                                llmBaseUrl = map["LLM_BASE_URL"] ?: "",
+                                llmBaseUrl = map["DEFAULT_LLM_BASE_URL"] ?: "",
                                 llmApiKey = map["LLM_API_KEY"] ?: "",
                                 llmModel = map["LLM_MODEL"] ?: "",
                                 llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
@@ -136,9 +136,9 @@ fun ConfigScreen(navController: NavController) {
                     )
                     ConfigField(
                         label = "服务地址",
-                        value = configMap["LLM_BASE_URL"] ?: "",
+                        value = configMap["DEFAULT_LLM_BASE_URL"] ?: "",
                         placeholder = "https://api.openai.com/v1",
-                        onValueChange = { configMap = configMap + ("LLM_BASE_URL" to it) }
+                        onValueChange = { configMap = configMap + ("DEFAULT_LLM_BASE_URL" to it) }
                     )
                     ConfigField(
                         label = "API 密钥",
@@ -182,7 +182,7 @@ fun ConfigScreen(navController: NavController) {
                                 verifying = false
                             }
                         },
-                        enabled = !verifying && configMap["LLM_BASE_URL"]?.isNotBlank() == true,
+                        enabled = !verifying && configMap["DEFAULT_LLM_BASE_URL"]?.isNotBlank() == true,
                         modifier = Modifier.fillMaxWidth().height(40.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -392,7 +392,7 @@ fun ConfigScreen(navController: NavController) {
 // ─── 网络测试函数 ────────────────────────────────
 
 private suspend fun testLlmConnection(config: Map<String, String>): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val baseUrl = config["LLM_BASE_URL"]?.trimEnd('/') ?: return@withContext false to "未配置服务地址"
+    val baseUrl = config["DEFAULT_LLM_BASE_URL"]?.trimEnd('/') ?: return@withContext false to "未配置服务地址"
     val apiKey = config["LLM_API_KEY"] ?: ""
     val model = config["LLM_MODEL"] ?: ""
 

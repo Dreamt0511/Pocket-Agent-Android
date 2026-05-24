@@ -41,7 +41,6 @@ fun ChatScreen(navController: NavController) {
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
-        || daemonStatus is AgentDaemonV2.DaemonStatus.Degraded
 
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
@@ -175,11 +174,6 @@ private fun DaemonStatusBar(
             bgColor = Color(0xFF1B5E20).copy(alpha = 0.08f)
             message = "Agent 就绪"
             showRetry = false
-        }
-        is AgentDaemonV2.DaemonStatus.Degraded -> {
-            bgColor = Color(0xFF1565C0).copy(alpha = 0.08f)
-            message = "Agent 原生模式 — 直接调用 LLM"
-            showRetry = true
         }
         is AgentDaemonV2.DaemonStatus.Error -> {
             bgColor = Color(0xFFB71C1C).copy(alpha = 0.08f)

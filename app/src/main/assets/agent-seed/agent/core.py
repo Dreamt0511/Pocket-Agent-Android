@@ -37,7 +37,7 @@ class AgentCore:
     def _build_llm_config(self) -> dict:
         """构建 LLM 配置，优先 env 变量，其次 config.json，最后默认值"""
         return {
-            "base_url": os.getenv("LLM_BASE_URL", self.config.get("llm", {}).get("base_url", "http://127.0.0.1:8080/v1")),
+            "base_url": os.getenv("DEFAULT_LLM_BASE_URL", self.config.get("llm", {}).get("base_url", "http://127.0.0.1:8080/v1")),
             "api_key": os.getenv("LLM_API_KEY", self.config.get("llm", {}).get("api_key", "dummy")),
             "model": os.getenv("LLM_MODEL", self.config.get("llm", {}).get("model", "gelab-zero-4b-preview")),
             "temperature": float(os.getenv("LLM_TEMPERATURE", self.config.get("llm", {}).get("temperature", 0.7))),

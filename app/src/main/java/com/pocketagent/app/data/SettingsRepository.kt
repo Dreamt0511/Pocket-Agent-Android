@@ -25,7 +25,7 @@ class SettingsRepository(
     private val dataStore: DataStore<Preferences>
 ) {
     companion object {
-        private val LLM_BASE_URL = stringPreferencesKey("llm_base_url")
+        private val DEFAULT_LLM_BASE_URL = stringPreferencesKey("llm_base_url")
         private val LLM_API_KEY = stringPreferencesKey("llm_api_key")
         private val LLM_MODEL = stringPreferencesKey("llm_model")
         private val LLM_TEMPERATURE = floatPreferencesKey("llm_temperature")
@@ -38,7 +38,7 @@ class SettingsRepository(
     val settingsFlow: Flow<Settings> = dataStore.data
         .map { preferences ->
             Settings(
-                llmBaseUrl = preferences[LLM_BASE_URL] ?: "http://127.0.0.1:8080/v1",
+                llmBaseUrl = preferences[DEFAULT_LLM_BASE_URL] ?: "http://127.0.0.1:8080/v1",
                 llmApiKey = preferences[LLM_API_KEY] ?: "dummy",
                 llmModel = preferences[LLM_MODEL] ?: "gelab-zero-4b-preview",
                 llmTemperature = preferences[LLM_TEMPERATURE] ?: 0.7f,
@@ -55,7 +55,7 @@ class SettingsRepository(
 
     suspend fun saveSettings(settings: Settings) {
         dataStore.edit { preferences ->
-            preferences[LLM_BASE_URL] = settings.llmBaseUrl
+            preferences[DEFAULT_LLM_BASE_URL] = settings.llmBaseUrl
             preferences[LLM_API_KEY] = settings.llmApiKey
             preferences[LLM_MODEL] = settings.llmModel
             preferences[LLM_TEMPERATURE] = settings.llmTemperature

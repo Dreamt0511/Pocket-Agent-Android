@@ -34,7 +34,6 @@ class AgentDaemonV2(private val context: Context) {
 
     private val termuxBridge = TermuxBridge()
     private val pythonRuntime = PythonRuntime(context, termuxBridge)
-    private val kotlinExecutor = KotlinAgentExecutor()
     private val codeManager: CodeSyncManager
         get() = CodeSyncManager.getInstance()
 
@@ -47,8 +46,6 @@ class AgentDaemonV2(private val context: Context) {
         object Initializing : DaemonStatus()
         object Ready : DaemonStatus()
         object Executing : DaemonStatus()
-        /** 降级模式：App 已加载但 Python/Agent 不可用 */
-        data class Degraded(val message: String) : DaemonStatus()
         data class Error(val message: String) : DaemonStatus()
     }
 
@@ -93,11 +90,9 @@ class AgentDaemonV2(private val context: Context) {
 
         val initialized = pythonRuntime.initialize()
         if (!initialized) {
-            // Python 不可用 — 进入降级模式，App 仍可正常加载
-            _status.value = DaemonStatus.Degraded("Python 未安装，Agent 功能不可用")
-            StreamBridge.out("[warn] Python 运行时不可用，以降级模式启动\n")
-            Log.i(TAG, "=== Bootstrap complete (degraded) ===")
-            return true
+            _status.value = DaemonStatus.Error("Python 运行时初始化失败，请安装 Termux 并在其中安装 Python")
+            StreamBridge.out("[error] Python 运行时不可用\n")
+            return false
         }
 
         // 第三步：就绪
@@ -118,27 +113,6 @@ class AgentDaemonV2(private val context: Context) {
      */
     suspend fun execute(command: String): TaskResult {
         val s = _status.value
-
-        // 降级模式 — 使用 Kotlin 原生 HTTP 执行器直接调 LLM API
-        if (s is DaemonStatus.Degraded) {
-            _status.value = DaemonStatus.Executing
-            StreamBridge.status("执行中 (降级)")
-            StreamBridge.out("$ $command\n")
-
-            val config = ConfigManager.loadAll()
-            val response = kotlinExecutor.execute(command, config) { chunk ->
-                StreamBridge.out(chunk)
-            }
-
-            _status.value = DaemonStatus.Degraded(s.message)
-            StreamBridge.status("降级模式")
-
-            return if (response.startsWith("[error]") || response.contains("请先在设置中配置")) {
-                TaskResult.Failure(response)
-            } else {
-                TaskResult.Success(response)
-            }
-        }
 
         // Python 运行时模式
         if (s !is DaemonStatus.Ready) {
@@ -205,7 +179,7 @@ class AgentDaemonV2(private val context: Context) {
                     scope.launch {
                         val ok = pythonRuntime.initialize()
                         _status.value = if (ok) DaemonStatus.Ready
-                        else DaemonStatus.Degraded("Python 未安装")
+                        else DaemonStatus.Error("Python 未安装")
                     }
                 }
                 else -> {

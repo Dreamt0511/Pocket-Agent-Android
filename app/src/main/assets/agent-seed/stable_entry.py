@@ -63,7 +63,7 @@ def ensure_env_file():
 # 复制此文件为配置或在App设置页面修改
 
 # LLM 配置
-LLM_BASE_URL=http://127.0.0.1:8080/v1
+DEFAULT_LLM_BASE_URL=http://127.0.0.1:8080/v1
 LLM_API_KEY=dummy
 LLM_MODEL=gelab-zero-4b-preview
 LLM_TEMPERATURE=0.7

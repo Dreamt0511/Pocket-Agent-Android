@@ -51,6 +51,7 @@
             android:name=".service.AgentService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="true"
             android:foregroundServiceType="specialUse" />
 
         <!-- 悬浮窗服务 -->
@@ -58,6 +59,7 @@
             android:name=".overlay.OverlayService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="true"
             android:foregroundServiceType="specialUse" />
 
         </application>
