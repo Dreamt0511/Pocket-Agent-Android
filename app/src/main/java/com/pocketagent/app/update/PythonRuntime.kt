@@ -11,20 +11,24 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Python 运行时管理器 — 通过 Termux 的 Python 执行动态加载的主仓库代码
+ * Python 运行时管理器 — 通过 Python 执行动态加载的主仓库代码
  *
  * 架构：
- *   Android (Kotlin)  ←→  Termux (Python + stable_entry.py)
+ *   Android (Kotlin)  ←→  Python (stable_entry.py)
  *          │                         │
  *          │  execute("帮我去...")     │ 通过 stdin 下发用户指令
  *          │  stable_entry.py         │ 通过 stdout 输出 JSONL
  *          │  onOutput ←───────────  │ 流式输出回调
  *          │  onStatus ←───────────  │ 状态更新回调
  *
+ * Python 发现顺序：
+ *   1. Termux 环境: /data/data/com.termux/files/usr/bin/python3
+ *   2. 系统 PATH:   python3 (通过 /system/bin/sh)
+ *   3. 常见系统路径: /system/bin/python3, /system/xbin/python3 等
+ *
  * 依赖：
- *   - Termux app 已安装（或将来内嵌）
- *   - Python 3 已安装 (pkg install python)
- *   - pip 依赖已安装
+ *   - Termux app + Python 3 (推荐) 或系统 Python 3
+ *   - 必要 pip 依赖 (Termux 模式下)
  */
 class PythonRuntime(
     private val context: Context,
@@ -34,7 +38,20 @@ class PythonRuntime(
     companion object {
         private const val TAG = "PythonRuntime"
         private const val SEED_ASSET_DIR = "agent-seed"
+        /** 系统 python3 搜索路径（按优先级） */
+        private val SYSTEM_PYTHON_PATHS = listOf(
+            "python3",                  // 通过 shell PATH 查找
+            "/system/bin/python3",
+            "/system/xbin/python3",
+            "/data/local/tmp/python3",
+            "/data/data/com.termux/files/usr/bin/python3",
+        )
     }
+
+    /** 解析到的 python3 二进制路径 */
+    private var pythonBin: String = ""
+    /** 是否降级模式 — 使用系统 python3 而非 Termux */
+    private var isFallbackMode: Boolean = false
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -68,33 +85,36 @@ class PythonRuntime(
      * 初始化 Python 运行时
      *
      * 流程：
-     *  1. 检查 Termux 环境
+     *  1. 发现可用的 python3（先找 Termux，再找系统路径）
      *  2. 从 APK assets 解压种子代码到运行时目录
      *  3. 验证 Python 可用
-     *  4. 验证 Agent 代码就绪 (--mode=ready)
+     *  4. 验证 Agent 代码就绪 (--mode=ready)，降级模式下跳过此步骤
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         _state.value = RuntimeState.Initializing
         onStatus?.invoke("初始化 Python 环境...")
 
         try {
-            // 1. 检查 Termux
-            if (!TermuxBootstrap.isReady) {
-                val msg = "Termux 未安装或不可用，请先安装 Termux"
+            // 1. 发现 python3 路径
+            val discovered = discoverPython()
+            if (discovered == null) {
+                val msg = "Python 3 未找到\n" +
+                        "请安装 Termux 并在其中执行: pkg install python\n" +
+                        "或者将 python3 放入系统 PATH"
                 _state.value = RuntimeState.Error(msg)
-                onStatus?.invoke(msg)
+                onStatus?.invoke("Python 未安装")
                 return@withContext false
             }
+            pythonBin = discovered
+            Log.i(TAG, "Using python3: $pythonBin (fallback=$isFallbackMode)")
 
             // 2. 解压种子代码
             extractSeedCode()
             val runtimeDir = getRuntimeDir()
             Log.i(TAG, "Seed code ready at ${runtimeDir.absolutePath}")
 
-            // 3. 验证 Python
-            val pythonCheck = termuxBridge.execute(
-                "${TermuxBootstrap.termuxUsr}/bin/python3 --version"
-            )
+            // 3. 验证 Python 可用
+            val pythonCheck = termuxBridge.execute("$pythonBin --version")
             if (!pythonCheck.success) {
                 val msg = "Python 3 不可用 (exit=${pythonCheck.exitCode}): ${pythonCheck.output}"
                 _state.value = RuntimeState.Error(msg)
@@ -104,14 +124,18 @@ class PythonRuntime(
             onStatus?.invoke("Python 就绪")
 
             // 4. 验证 Agent 代码
-            val readyCmd = "cd ${runtimeDir.absolutePath} && " +
-                    "${TermuxBootstrap.termuxUsr}/bin/python3 stable_entry.py --mode=ready"
+            val readyCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=ready"
             val readyResult = termuxBridge.execute(readyCmd)
             if (!readyResult.success) {
-                val msg = "Agent 验证失败: ${readyResult.output}"
-                _state.value = RuntimeState.Error(msg)
-                onStatus?.invoke("Agent 代码异常")
-                return@withContext false
+                if (isFallbackMode) {
+                    // 降级模式: 系统 python 可能缺少 pip 包，跳过校验
+                    Log.w(TAG, "Agent ready check skipped (fallback mode): ${readyResult.output}")
+                } else {
+                    val msg = "Agent 验证失败: ${readyResult.output}"
+                    _state.value = RuntimeState.Error(msg)
+                    onStatus?.invoke("Agent 代码异常")
+                    return@withContext false
+                }
             }
 
             _state.value = RuntimeState.Ready
@@ -125,6 +149,45 @@ class PythonRuntime(
             onStatus?.invoke("初始化失败")
             false
         }
+    }
+
+    /**
+     * 发现可用的 python3 二进制路径
+     *
+     * 搜索顺序：
+     *  1. Termux: /data/data/com.termux/files/usr/bin/python3（最完备的包环境）
+     *  2. 通过 shell PATH 查找 python3
+     *  3. 常见系统路径
+     */
+    private suspend fun discoverPython(): String? {
+        // 1. 优先使用 Termux 的 Python（包环境最全）
+        if (TermuxBootstrap.isReady) {
+            val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/python3"
+            try {
+                val r = termuxBridge.execute("$termuxPy --version")
+                if (r.success) {
+                    isFallbackMode = false
+                    Log.i(TAG, "Found Termux Python at $termuxPy")
+                    return termuxPy
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Termux 不可用，搜索系统路径
+        isFallbackMode = true
+        Log.i(TAG, "Termux not available, searching system python3...")
+
+        for (path in SYSTEM_PYTHON_PATHS) {
+            try {
+                val result = termuxBridge.execute("$path --version")
+                if (result.success) {
+                    Log.i(TAG, "Found python3 via: $path")
+                    return path
+                }
+            } catch (_: Exception) {}
+        }
+
+        return null
     }
 
     /**
@@ -146,7 +209,6 @@ class PythonRuntime(
 
         try {
             val runtimeDir = getRuntimeDir()
-            val pythonBin = "${TermuxBootstrap.termuxUsr}/bin/python3"
             val shellCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=task"
 
             val result = termuxBridge.executeWithInput(

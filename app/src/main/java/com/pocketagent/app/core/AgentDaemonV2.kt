@@ -46,6 +46,8 @@ class AgentDaemonV2(private val context: Context) {
         object Initializing : DaemonStatus()
         object Ready : DaemonStatus()
         object Executing : DaemonStatus()
+        /** 降级模式：App 已加载但 Python/Agent 不可用 */
+        data class Degraded(val message: String) : DaemonStatus()
         data class Error(val message: String) : DaemonStatus()
     }
 
@@ -90,8 +92,11 @@ class AgentDaemonV2(private val context: Context) {
 
         val initialized = pythonRuntime.initialize()
         if (!initialized) {
-            _status.value = DaemonStatus.Error("Python 运行时初始化失败")
-            return false
+            // Python 不可用 — 进入降级模式，App 仍可正常加载
+            _status.value = DaemonStatus.Degraded("Python 未安装，Agent 功能不可用")
+            StreamBridge.out("[warn] Python 运行时不可用，以降级模式启动\n")
+            Log.i(TAG, "=== Bootstrap complete (degraded) ===")
+            return true
         }
 
         // 第三步：就绪
@@ -111,8 +116,13 @@ class AgentDaemonV2(private val context: Context) {
      *  每步输出 → StreamBridge.out() → 悬浮窗 + 终端
      */
     suspend fun execute(command: String): TaskResult {
-        if (_status.value !is DaemonStatus.Ready) {
-            return TaskResult.Failure("Agent 未就绪，请等待初始化完成")
+        when (val s = _status.value) {
+            is DaemonStatus.Degraded -> {
+                return TaskResult.Failure("Agent 不可用: ${s.message}")
+            }
+            !is DaemonStatus.Ready -> {
+                return TaskResult.Failure("Agent 未就绪，请等待初始化完成")
+            }
         }
 
         _status.value = DaemonStatus.Executing
@@ -173,8 +183,9 @@ class AgentDaemonV2(private val context: Context) {
                     StreamBridge.done("代码已更新到 v${result.version}")
                     // 重新初始化
                     scope.launch {
-                        pythonRuntime.initialize()
-                        _status.value = DaemonStatus.Ready
+                        val ok = pythonRuntime.initialize()
+                        _status.value = if (ok) DaemonStatus.Ready
+                        else DaemonStatus.Degraded("Python 未安装")
                     }
                 }
                 else -> {

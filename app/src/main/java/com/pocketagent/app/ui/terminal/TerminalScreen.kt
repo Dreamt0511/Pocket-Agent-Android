@@ -258,7 +258,7 @@ fun TerminalScreen(navController: NavController) {
                                 text = currentDir,
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF89DDFF).copy(alpha = 0.7f),
+                                color = Color(0xFF1A1D23),
                             )
                         }
                     }

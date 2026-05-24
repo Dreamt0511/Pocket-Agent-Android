@@ -282,7 +282,7 @@ private fun OverlayControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = { /* TODO: 清空 StreamBridge */ },
+                    onClick = { OverlayService.streamText.value = "" },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("清空输出")

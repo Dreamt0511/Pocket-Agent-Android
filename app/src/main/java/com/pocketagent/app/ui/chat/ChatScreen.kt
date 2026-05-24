@@ -146,6 +146,11 @@ private fun DaemonStatusBar(
             message = "Agent 就绪"
             showRetry = false
         }
+        is AgentDaemonV2.DaemonStatus.Degraded -> {
+            bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
+            message = "Agent 降级: ${status.message}"
+            showRetry = false
+        }
         is AgentDaemonV2.DaemonStatus.Error -> {
             bgColor = Color(0xFFB71C1C).copy(alpha = 0.08f)
             message = "Agent 错误: ${status.message}"

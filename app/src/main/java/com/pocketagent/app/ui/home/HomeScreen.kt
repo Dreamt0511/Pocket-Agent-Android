@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -80,7 +81,7 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "AI 手机助手",
+                            text = "你的手机，AI 替你操控",
                             fontSize = 13.sp,
                             letterSpacing = (0.3f).sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
@@ -93,12 +94,21 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                             context.startActivity(intent)
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Code,
-                            contentDescription = "GitHub",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF24292F),
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "GH",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                     }
                 }
             }
