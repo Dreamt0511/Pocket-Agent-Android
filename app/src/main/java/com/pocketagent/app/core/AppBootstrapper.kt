@@ -5,6 +5,7 @@ import android.util.Log
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.update.CodeSyncManager
+import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.UpdateChecker
 import kotlinx.coroutines.*
 
@@ -76,8 +77,8 @@ object AppBootstrapper {
     /**
      * 执行用户指令
      */
-    suspend fun executeCommand(command: String) {
-        daemon.execute(command)
+    suspend fun executeCommand(command: String): TaskResult {
+        return daemon.execute(command)
     }
 
     /**
