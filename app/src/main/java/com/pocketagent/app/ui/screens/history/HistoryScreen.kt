@@ -14,8 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.service.TaskQueueManager.TaskStatus
 import com.pocketagent.app.ui.theme.PocketAgentTheme
@@ -386,5 +388,16 @@ private fun formatDuration(start: Long, end: Long): String {
         diff < 60 -> "${diff}s"
         diff < 3600 -> "${diff / 60}m${diff % 60}s"
         else -> "${diff / 3600}h${(diff % 3600) / 60}m"
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "历史记录亮色")
+@Composable
+private fun HistoryScreenLightPreview() {
+    PocketAgentTheme(darkTheme = false) {
+        HistoryScreen(
+            navController = rememberNavController(),
+            taskQueueManager = androidx.compose.runtime.remember { TaskQueueManager() }
+        )
     }
 }

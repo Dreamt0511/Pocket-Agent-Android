@@ -10,10 +10,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.launch
@@ -21,13 +23,9 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * 对话页面 - 主 Agent 功能入口
- * 
- * 功能:
- * 1. 自然语言对话 (执行手机操控、问答、任务规划)
- * 2. 流式输出显示
- * 3. 执行状态指示
- * 4. 历史记录
+ * 执行任务页面 - 主 Agent 功能入口
+ *
+ * 在这里给 AI 下达任务指令，由 Agent 规划并操控手机完成。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,7 +44,7 @@ fun ChatScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("对话") },
+                title = { Text("执行任务") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Text("←")
@@ -216,4 +214,20 @@ private fun ChatInputBar(
 private fun formatTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "执行任务亮色")
+@Composable
+private fun ChatScreenLightPreview() {
+    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
+        ChatScreen(navController = rememberNavController())
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true, name = "执行任务暗色")
+@Composable
+private fun ChatScreenDarkPreview() {
+    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
+        ChatScreen(navController = rememberNavController())
+    }
 }

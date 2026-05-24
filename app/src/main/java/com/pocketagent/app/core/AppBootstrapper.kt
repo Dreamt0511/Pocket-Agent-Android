@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
+import com.pocketagent.app.termux.TermuxBootstrap
 import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.UpdateChecker

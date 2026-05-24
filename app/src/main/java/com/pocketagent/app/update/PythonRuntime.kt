@@ -2,35 +2,38 @@ package com.pocketagent.app.update
 
 import android.content.Context
 import android.util.Log
+import com.pocketagent.app.termux.TermuxBridge
+import com.pocketagent.app.termux.TermuxBootstrap
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
+import java.io.File
 
 /**
- * Python 运行时管理器 — 在 APK 内执行动态加载的主仓库 Python 代码
- *
- * 依赖 Chaquopy: https://chaquo.com/chaquopy/
+ * Python 运行时管理器 — 通过 Termux 的 Python 执行动态加载的主仓库代码
  *
  * 架构：
- *   Android (Kotlin)  ←→  Python (主仓库代码)
- *          │                      │
- *          │  invoke("agent_main") │ 调用主仓库入口
- *          │  sendCommand(cmd)      │ 发送用户指令
- *          │  onOutput ←──────────  │ 流式输出回调
- *          │  onStatus ←──────────  │ 状态更新回调
- *          │  onAction  ←──────────│ 请求 Android 能力 (无障碍点击等)
+ *   Android (Kotlin)  ←→  Termux (Python + stable_entry.py)
+ *          │                         │
+ *          │  execute("帮我去...")     │ 通过 stdin 下发用户指令
+ *          │  stable_entry.py         │ 通过 stdout 输出 JSONL
+ *          │  onOutput ←───────────  │ 流式输出回调
+ *          │  onStatus ←───────────  │ 状态更新回调
  *
- * 使用方式：
- *   val runtime = PythonRuntime(context)
- *   runtime.setOnOutput { text -> ... }
- *   runtime.initialize()
- *   runtime.execute("帮我在微信里给张三发消息")
+ * 依赖：
+ *   - Termux app 已安装（或将来内嵌）
+ *   - Python 3 已安装 (pkg install python)
+ *   - pip 依赖已安装
  */
-class PythonRuntime(private val context: Context) {
+class PythonRuntime(
+    private val context: Context,
+    private val termuxBridge: TermuxBridge
+) {
 
     companion object {
         private const val TAG = "PythonRuntime"
+        private const val SEED_ASSET_DIR = "agent-seed"
     }
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -46,13 +49,11 @@ class PythonRuntime(private val context: Context) {
         data class Error(val message: String) : RuntimeState()
     }
 
-    // 回调
     private var onOutput: ((String) -> Unit)? = null
     private var onStatus: ((String) -> Unit)? = null
     private var onAction: ((ActionRequest) -> ActionResult)? = null
     private var onComplete: ((TaskResult) -> Unit)? = null
 
-    /** 用户中断标志 */
     @Volatile
     private var cancelled = false
 
@@ -66,32 +67,62 @@ class PythonRuntime(private val context: Context) {
     /**
      * 初始化 Python 运行时
      *
-     * Chaquopy 在首次调用 Python 时自动初始化。
-     * 这里做一个预热调用以确保就绪。
+     * 流程：
+     *  1. 检查 Termux 环境
+     *  2. 从 APK assets 解压种子代码到运行时目录
+     *  3. 验证 Python 可用
+     *  4. 验证 Agent 代码就绪 (--mode=ready)
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         _state.value = RuntimeState.Initializing
+        onStatus?.invoke("初始化 Python 环境...")
+
         try {
-            // 验证主仓库代码存在
-            val codeManager = CodeSyncManager.getInstance()
-            if (!codeManager.isCodeReady()) {
-                _state.value = RuntimeState.Error("Agent 代码未就绪，请先同步")
+            // 1. 检查 Termux
+            if (!TermuxBootstrap.isReady) {
+                val msg = "Termux 未安装或不可用，请先安装 Termux"
+                _state.value = RuntimeState.Error(msg)
+                onStatus?.invoke(msg)
                 return@withContext false
             }
 
-            // 预热 Python 环境
-            val result = executePythonSnippet("import sys; print('Python ' + sys.version)")
-            if (result.contains("Python ")) {
-                _state.value = RuntimeState.Ready
-                Log.i(TAG, "Python runtime ready")
-                true
-            } else {
-                _state.value = RuntimeState.Error("Python 环境异常")
-                false
+            // 2. 解压种子代码
+            extractSeedCode()
+            val runtimeDir = getRuntimeDir()
+            Log.i(TAG, "Seed code ready at ${runtimeDir.absolutePath}")
+
+            // 3. 验证 Python
+            val pythonCheck = termuxBridge.execute(
+                "${TermuxBootstrap.termuxUsr}/bin/python3 --version"
+            )
+            if (!pythonCheck.success) {
+                val msg = "Python 3 不可用 (exit=${pythonCheck.exitCode}): ${pythonCheck.output}"
+                _state.value = RuntimeState.Error(msg)
+                onStatus?.invoke("Python 未安装")
+                return@withContext false
             }
+            onStatus?.invoke("Python 就绪")
+
+            // 4. 验证 Agent 代码
+            val readyCmd = "cd ${runtimeDir.absolutePath} && " +
+                    "${TermuxBootstrap.termuxUsr}/bin/python3 stable_entry.py --mode=ready"
+            val readyResult = termuxBridge.execute(readyCmd)
+            if (!readyResult.success) {
+                val msg = "Agent 验证失败: ${readyResult.output}"
+                _state.value = RuntimeState.Error(msg)
+                onStatus?.invoke("Agent 代码异常")
+                return@withContext false
+            }
+
+            _state.value = RuntimeState.Ready
+            onStatus?.invoke("就绪")
+            Log.i(TAG, "Python runtime initialized successfully")
+            true
+
         } catch (e: Exception) {
             Log.e(TAG, "Initialize failed", e)
             _state.value = RuntimeState.Error(e.message ?: "初始化失败")
+            onStatus?.invoke("初始化失败")
             false
         }
     }
@@ -99,61 +130,46 @@ class PythonRuntime(private val context: Context) {
     /**
      * 执行用户指令
      *
-     * 流程：
-     *  1. 将指令写入 stdin 通道
-     *  2. 启动主仓库 main.py
-     *  3. main.py 通过约定协议回调：
-     *     - stdout  = 日志输出 → onOutput
-     *     - ACTION: = Android 能力请求 → onAction
-     *     - DONE:   = 任务完成 → onComplete
+     * 通过 stable_entry.py 的 stdin/stdout JSONL 协议通信：
+     *  输入  → stdin:  用户指令文本
+     *  输出  → stdout: {"type":"step","status":"...","message":"..."}
+     *
+     * 协议类型：
+     *  - step (status=planning|executing|done|error|info|warning)
+     *  - result (content=最终结果)
+     *  - ready (agent 状态)
      */
     suspend fun execute(command: String): TaskResult = withContext(Dispatchers.IO) {
         _state.value = RuntimeState.Executing
         cancelled = false
-        onStatus?.invoke("解析指令...")
+        onStatus?.invoke("执行中...")
 
         try {
-            val codeManager = CodeSyncManager.getInstance()
-            val entryPath = codeManager.getEntryPoint().absolutePath
+            val runtimeDir = getRuntimeDir()
+            val pythonBin = "${TermuxBootstrap.termuxUsr}/bin/python3"
+            val shellCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=task"
 
-            // 构建 Python 执行代码
-            // 通过 Chaquopy 的 Python 对象调用主仓库入口
-            val pythonCode = buildString {
-                appendLine("import sys")
-                appendLine("import json")
-                appendLine("sys.path.insert(0, '${codeManager.getRuntimeDir().absolutePath}')")
-                appendLine("")
-                appendLine("# 加载主仓库 agent 模块")
-                appendLine("try:")
-                appendLine("    from agent_core.main import Agent")
-                appendLine("    agent = Agent()")
-                appendLine("")
-                appendLine("    # 注册 Android 能力回调")
-                appendLine("    def android_action(action_json):")
-                appendLine("        print(f'ACTION:{action_json}', flush=True)")
-                appendLine("        return ''  # 实际通过 ActionRequest/ActionResult 通信")
-                appendLine("")
-                appendLine("    # 执行用户指令")
-                appendLine("    command = ${toPythonString(command)}")
-                appendLine("    agent.on_output = lambda msg: print(msg, flush=True)")
-                appendLine("    agent.on_action = android_action")
-                appendLine("    agent.on_done = lambda result: print(f'DONE:{result}', flush=True)")
-                appendLine("")
-                appendLine("    result = agent.execute(command)")
-                appendLine("    print(f'DONE:{json.dumps(result)}', flush=True)")
-                appendLine("except Exception as e:")
-                appendLine("    print(f'ERROR:{str(e)}', flush=True)")
+            val result = termuxBridge.executeWithInput(
+                command = shellCmd,
+                input = command,
+                onLine = { line -> handleOutputLine(line) },
+                onError = { line -> onOutput?.invoke("[err] $line") }
+            )
+
+            if (cancelled) {
+                _state.value = RuntimeState.Ready
+                onStatus?.invoke("已中断")
+                return@withContext TaskResult.Cancelled
             }
-
-            // 执行并逐行捕获输出
-            val output = executePythonSnippet(pythonCode)
-
-            // 解析输出
-            parseAgentOutput(output)
 
             _state.value = RuntimeState.Ready
             onStatus?.invoke("空闲")
-            TaskResult.Success("任务完成")
+
+            if (result.success) {
+                TaskResult.Success("任务完成")
+            } else {
+                TaskResult.Failure(result.output)
+            }
 
         } catch (e: CancellationException) {
             _state.value = RuntimeState.Ready
@@ -172,110 +188,138 @@ class PythonRuntime(private val context: Context) {
      */
     fun cancel() {
         cancelled = true
-    }
-
-    // ─── 内部 ─────────────────────────────────────
-
-    /**
-     * 通过 Chaquopy 执行一段 Python 代码
-     *
-     * Chaquopy 使用方式:
-     *   val py = Python.getInstance()
-     *   val module = py.getModule("myscript")
-     *   val result = module.callAttr("my_function", args...)
-     *
-     * 由于 Chaquopy 在 build.gradle 中配置后自动绑定，
-     * 这里用 Python.getInstance() 获取运行时。
-     */
-    private fun executePythonSnippet(code: String): String {
-        Log.d(TAG, "Python snippet execution (mock): ${code.take(80)}...")
-        return "[info] Python runtime mock active\n[info] Agent code ready at: ${CodeSyncManager.getInstance().getEntryPoint().absolutePath}\n"
-    }
-
-    /**
-     * 解析 Agent 输出流中的特殊标记
-     *
-     * 协议：
-     *   普通行 → onOutput
-     *   ACTION:{json} → onAction
-     *   DONE:{json}   → onComplete
-     *   STATUS:{text} → onStatus
-     */
-    private fun parseAgentOutput(output: String) {
-        for (line in output.lines()) {
-            when {
-                line.startsWith("ACTION:") -> {
-                    val json = line.removePrefix("ACTION:")
-                    try {
-                        val request = parseAction(json)
-                        val result = onAction?.invoke(request) ?: ActionResult.Error("No handler")
-                        // 结果需要传回 Python，但简化设计：先返回模拟结果
-                    } catch (_: Exception) {}
-                }
-                line.startsWith("STATUS:") -> {
-                    val status = line.removePrefix("STATUS:")
-                    onStatus?.invoke(status)
-                }
-                line.startsWith("DONE:") -> {
-                    val json = line.removePrefix("DONE:")
-                    val result = parseTaskResult(json)
-                    onComplete?.invoke(result)
-                }
-                line.startsWith("ERROR:") -> {
-                    val msg = line.removePrefix("ERROR:")
-                    onOutput?.invoke("[error] $msg")
-                }
-                else -> {
-                    onOutput?.invoke(line)
-                }
-            }
-        }
-    }
-
-    private fun toPythonString(s: String): String {
-        return "'" + s.replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\n", "\\n") + "'"
-    }
-
-    private fun parseAction(json: String): ActionRequest {
-        val obj = org.json.JSONObject(json)
-        return ActionRequest(
-            type = obj.optString("type", "unknown"),
-            target = obj.optString("target", ""),
-            params = obj.optJSONObject("params")?.let { jsonToMap(it) } ?: emptyMap()
-        )
-    }
-
-    private fun parseTaskResult(json: String): TaskResult {
-        val obj = org.json.JSONObject(json)
-        return if (obj.optBoolean("success", true)) {
-            TaskResult.Success(obj.optString("message", "完成"))
-        } else {
-            TaskResult.Failure(obj.optString("message", "失败"))
-        }
-    }
-
-    private fun jsonToMap(json: JSONObject): Map<String, String> {
-        val map = mutableMapOf<String, String>()
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            map[key] = json.optString(key, "")
-        }
-        return map
+        termuxBridge.kill()
     }
 
     fun destroy() {
         scope.cancel()
+        termuxBridge.kill()
+    }
+
+    // ─── 内部 ─────────────────────────────────────
+
+    private fun getRuntimeDir(): File {
+        return CodeSyncManager.getInstance().getRuntimeDir()
+    }
+
+    /**
+     * 从 APK assets 解压种子代码到运行时目录
+     * 如果 stable_entry.py 已存在则跳过（防止覆盖 GitHub 同步的代码）
+     */
+    private fun extractSeedCode() {
+        val targetDir = getRuntimeDir()
+        if (File(targetDir, "stable_entry.py").exists()) {
+            Log.d(TAG, "Seed code already extracted, skipping")
+            return
+        }
+        targetDir.mkdirs()
+        copyAssetRecursive(SEED_ASSET_DIR, targetDir)
+        Log.i(TAG, "Seed code extracted from assets to ${targetDir.absolutePath}")
+    }
+
+    private fun copyAssetRecursive(assetPath: String, targetDir: File) {
+        val assets = context.assets
+        val list: Array<String>
+        try {
+            list = assets.list(assetPath) ?: return
+        } catch (_: Exception) {
+            return
+        }
+
+        if (list.isNotEmpty()) {
+            for (item in list) {
+                copyAssetRecursive("$assetPath/$item", targetDir)
+            }
+        } else {
+            val relPath = assetPath.removePrefix("$SEED_ASSET_DIR/")
+            val outFile = File(targetDir, relPath)
+            outFile.parentFile?.mkdirs()
+            try {
+                assets.open(assetPath).use { input ->
+                    outFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to extract $assetPath: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 处理 stable_entry.py 输出的一行
+     *
+     * 支持两种协议格式：
+     *  1. JSONL: {"type":"step","status":"...","message":"..."}
+     *  2. 旧版前缀: ACTION:/DONE:/STATUS:/ERROR:
+     */
+    private fun handleOutputLine(line: String) {
+        when {
+            line.startsWith("{") -> {
+                try {
+                    val json = JSONObject(line)
+                    when (json.optString("type")) {
+                        "step" -> {
+                            val status = json.optString("status", "")
+                            val message = json.optString("message", "")
+                            when (status) {
+                                "planning" -> onStatus?.invoke("规划中: $message")
+                                "executing" -> onStatus?.invoke(message)
+                                "info" -> onOutput?.invoke("[info] $message")
+                                "warning" -> onOutput?.invoke("[warn] $message")
+                                "done" -> {
+                                    onStatus?.invoke("完成")
+                                    onComplete?.invoke(TaskResult.Success(message))
+                                    onOutput?.invoke("[done] $message")
+                                }
+                                "error" -> {
+                                    onStatus?.invoke("错误")
+                                    onComplete?.invoke(TaskResult.Failure(message))
+                                    onOutput?.invoke("[error] $message")
+                                }
+                                else -> onOutput?.invoke(message)
+                            }
+                        }
+                        "result" -> onOutput?.invoke(json.optString("content", ""))
+                        "ready" -> onOutput?.invoke("[info] Agent 状态: 就绪")
+                        "config_result" -> onOutput?.invoke("[config] ${json.optString("message", "")}")
+                        else -> onOutput?.invoke(line)
+                    }
+                } catch (_: Exception) {
+                    onOutput?.invoke(line)
+                }
+            }
+            line.startsWith("ACTION:") -> {
+                val json = line.removePrefix("ACTION:")
+                try {
+                    val request = ActionRequest(
+                        type = JSONObject(json).optString("type", "unknown"),
+                        target = JSONObject(json).optString("target", ""),
+                        params = emptyMap()
+                    )
+                    onAction?.invoke(request)
+                } catch (_: Exception) {}
+            }
+            line.startsWith("STATUS:") -> {
+                onStatus?.invoke(line.removePrefix("STATUS:"))
+            }
+            line.startsWith("DONE:") -> {
+                val msg = line.removePrefix("DONE:")
+                onComplete?.invoke(TaskResult.Success(msg))
+            }
+            line.startsWith("ERROR:") -> {
+                onOutput?.invoke("[error] ${line.removePrefix("ERROR:")}")
+            }
+            else -> onOutput?.invoke(line)
+        }
     }
 }
 
 // ─── 类型定义 ────────────────────────────────────
 
 data class ActionRequest(
-    val type: String,       // "click" | "swipe" | "input" | "screenshot" | "launch_app" | "back" | "home"
-    val target: String,     // 目标描述或坐标 "x=100,y=200" 或文本 "微信"
+    val type: String,
+    val target: String,
     val params: Map<String, String> = emptyMap()
 )
 

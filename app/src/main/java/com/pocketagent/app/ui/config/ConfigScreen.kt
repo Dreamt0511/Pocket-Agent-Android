@@ -1,494 +1,295 @@
 package com.pocketagent.app.ui.config
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.ConfigManager
-import com.pocketagent.app.core.AppBootstrapper
 import kotlinx.coroutines.launch
 
 /**
- * 配置管理页面 - 基于主项目的 .env.example 和 config.py
- * 
- * 支持:
- * 1. 主 Agent 模型配置 (LLM_BASE_URL, API_KEY, MODEL, TEMPERATURE, MAX_TOKENS)
- * 2. 子 Agent 模型配置 (EXECUTOR_LLM_BASE_URL, EXECUTOR_API_KEY, EXECUTOR_MODEL...)
- * 3. MCP 服务器配置
- * 4. 本地/云端环境切换
- * 5. Termux API 配置
+ * 配置管理页面 — 简洁版
+ *
+ * 只展示用户真正需要关心的配置：
+ *  1. 主模型（LLM 端点 / API Key / 模型名 / 温度 / 最大Token）
+ *  2. 子模型（可选，不填则继承主模型）
+ *  3. MCP 连接（NeuralBridge 地址）
+ *  4. 高级（折叠）：迭代次数、递归限制、上下文窗口
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
-    var configs by remember { mutableStateOf<List<ConfigItem>>(emptyList()) }
+
+    var configMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
-    var saveSuccess by remember { mutableStateOf(false) }
+    var saved by remember { mutableStateOf(false) }
+    var showAdvanced by remember { mutableStateOf(false) }
 
     // 加载配置
     LaunchedEffect(Unit) {
-        ConfigManager.init(android.content.ContextWrapper(navController.context))
-        configs = loadConfigs()
+        configMap = ConfigManager.loadAll()
         isLoading = false
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("配置管理") },
+                title = { Text("设置") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Text("←")
+                    TextButton(onClick = { navController.popBackStack() }) {
+                        Text("← 返回", fontSize = 16.sp)
                     }
                 },
                 actions = {
-                    if (saveSuccess) {
-                        Text(
-                            "已保存",
-                            color = Color.Green,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
+                    if (saved) {
+                        Text("已保存", color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp, modifier = Modifier.padding(end = 12.dp))
                     }
                 }
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 配置组标题
-                configs.groupBy { it.group }.forEach { (group, items) ->
-                    item {
-                        ConfigGroupHeader(group)
-                    }
-                    items(items) { item ->
-                        ConfigItemCard(item) { updated ->
-                            scope.launch {
-                                saveConfig(updated)
-                                saveSuccess = true
-                                // 5秒后隐藏保存提示
-                                kotlinx.coroutines.delay(5000)
-                                saveSuccess = false
-                            }
-                        }
+                // ===== 主模型 =====
+                SectionCard(title = "主模型") {
+                    ConfigField(
+                        label = "服务地址",
+                        value = configMap["DEFAULT_LLM_BASE_URL"] ?: "",
+                        placeholder = "https://api.openai.com/v1",
+                        onValueChange = { configMap = configMap + ("DEFAULT_LLM_BASE_URL" to it) }
+                    )
+                    ConfigField(
+                        label = "API 密钥",
+                        value = configMap["LLM_API_KEY"] ?: "",
+                        placeholder = "sk-...",
+                        isSecret = true,
+                        onValueChange = { configMap = configMap + ("LLM_API_KEY" to it) }
+                    )
+                    ConfigField(
+                        label = "模型名称",
+                        value = configMap["LLM_MODEL"] ?: "",
+                        placeholder = "gpt-4o",
+                        onValueChange = { configMap = configMap + ("LLM_MODEL" to it) }
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ConfigField(
+                            label = "温度",
+                            value = configMap["LLM_TEMPERATURE"] ?: "0.7",
+                            placeholder = "0.7",
+                            modifier = Modifier.weight(1f),
+                            onValueChange = { configMap = configMap + ("LLM_TEMPERATURE" to it) }
+                        )
+                        ConfigField(
+                            label = "最大 Token",
+                            value = configMap["LLM_MAX_TOKENS"] ?: "8000",
+                            placeholder = "8000",
+                            modifier = Modifier.weight(1f),
+                            onValueChange = { configMap = configMap + ("LLM_MAX_TOKENS" to it) }
+                        )
                     }
                 }
 
-                // 操作按钮
-                item {
-                    ConfigActions(
-                        onSave = {
-                            scope.launch {
-                                saveAllConfigs(configs)
-                                saveSuccess = true
-                                kotlinx.coroutines.delay(5000)
-                                saveSuccess = false
-                            }
-                        },
-                        onReset = {
-                            configs = loadDefaultConfigs()
-                        },
-                        onSync = {
-                            scope.launch {
-                                AppBootstrapper.forceSync()
-                            }
-                        }
+                // ===== 子模型 =====
+                SectionCard(title = "子模型（可选）") {
+                    Text(
+                        "留空则继承主模型的配置",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
+                    ConfigField(
+                        label = "服务地址",
+                        value = configMap["EXECUTOR_LLM_BASE_URL"] ?: "",
+                        placeholder = "留空同主模型",
+                        onValueChange = { configMap = configMap + ("EXECUTOR_LLM_BASE_URL" to it) }
+                    )
+                    ConfigField(
+                        label = "API 密钥",
+                        value = configMap["EXECUTOR_API_KEY"] ?: "",
+                        placeholder = "留空同主模型",
+                        isSecret = true,
+                        onValueChange = { configMap = configMap + ("EXECUTOR_API_KEY" to it) }
+                    )
+                    ConfigField(
+                        label = "模型名称",
+                        value = configMap["EXECUTOR_MODEL"] ?: "",
+                        placeholder = "留空同主模型",
+                        onValueChange = { configMap = configMap + ("EXECUTOR_MODEL" to it) }
+                    )
+                }
+
+                // ===== MCP =====
+                SectionCard(title = "MCP 连接") {
+                    ConfigField(
+                        label = "服务地址",
+                        value = configMap["MCP_SERVER_URL"] ?: "http://127.0.0.1:7474/mcp",
+                        placeholder = "http://127.0.0.1:7474/mcp",
+                        onValueChange = { configMap = configMap + ("MCP_SERVER_URL" to it) }
+                    )
+                }
+
+                // ===== 高级设置（折叠）=====
+                SectionCard(
+                    title = "高级设置",
+                    trailing = {
+                        TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                            Text(if (showAdvanced) "收起 ▲" else "展开 ▼", fontSize = 13.sp)
+                        }
+                    }
+                ) {
+                    if (showAdvanced) {
+                        ConfigField(
+                            label = "最大迭代次数",
+                            value = configMap["MAX_ITERATIONS"] ?: "300",
+                            placeholder = "300",
+                            onValueChange = { configMap = configMap + ("MAX_ITERATIONS" to it) }
+                        )
+                        ConfigField(
+                            label = "递归限制",
+                            value = configMap["RECURSION_LIMIT"] ?: "600",
+                            placeholder = "600",
+                            onValueChange = { configMap = configMap + ("RECURSION_LIMIT" to it) }
+                        )
+                        ConfigField(
+                            label = "上下文窗口",
+                            value = configMap["MAX_CONTEXT_TOKENS"] ?: "128000",
+                            placeholder = "128000",
+                            onValueChange = { configMap = configMap + ("MAX_CONTEXT_TOKENS" to it) }
+                        )
+                    } else {
+                        Text(
+                            "迭代次数 / 递归限制 / 上下文窗口",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+
+                // ===== 保存按钮 =====
+                Button(
+                    onClick = {
+                        scope.launch {
+                            ConfigManager.saveAll(configMap)
+                            saved = true
+                            kotlinx.coroutines.delay(3000)
+                            saved = false
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 32.dp)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("保存设置", fontSize = 16.sp)
                 }
             }
         }
     }
 }
 
-// ─── 配置项定义 ─────────────────────────────────
-
-data class ConfigItem(
-    val key: String,
-    var value: String,
-    val description: String,
-    val group: String,
-    val type: ConfigType,
-    val required: Boolean = false,
-    val isSecret: Boolean = false,
-    val options: List<String>? = null
-)
-
-enum class ConfigType {
-    TEXT, SECRET, NUMBER, BOOLEAN, DROPDOWN, URL
-}
-
-// ─── 配置加载逻辑 ───────────────────────────────
-
-private fun loadConfigs(): List<ConfigItem> {
-    return listOf(
-        // ==================== MCP 服务器配置 ====================
-        ConfigItem(
-            key = "MCP_SERVER_URL",
-            value = "http://127.0.0.1:7474/mcp",
-            description = "MCP 服务器地址",
-            group = "MCP 服务器",
-            type = ConfigType.URL,
-            required = true
-        ),
-
-        // ==================== 主 Agent 模型配置 (云端) ====================
-        ConfigItem(
-            key = "DEFAULT_LLM_BASE_URL",
-            value = "https://api.longcat.chat/openai/v1",
-            description = "主 Agent LLM 服务地址 (OpenAI 兼容)",
-            group = "主 Agent 模型配置 (云端)",
-            type = ConfigType.URL
-        ),
-        ConfigItem(
-            key = "LLM_API_KEY",
-            value = "",
-            description = "主 Agent API 密钥",
-            group = "主 Agent 模型配置 (云端)",
-            type = ConfigType.SECRET,
-            isSecret = true
-        ),
-        ConfigItem(
-            key = "LLM_MODEL",
-            value = "longcat-flash-lite",
-            description = "主 Agent 模型名称",
-            group = "主 Agent 模型配置 (云端)",
-            type = ConfigType.TEXT
-        ),
-        ConfigItem(
-            key = "LLM_TEMPERATURE",
-            value = "0.7",
-            description = "主 Agent 温度参数 (0.0-2.0)",
-            group = "主 Agent 模型配置 (云端)",
-            type = ConfigType.NUMBER
-        ),
-        ConfigItem(
-            key = "LLM_MAX_TOKENS",
-            value = "8000",
-            description = "主 Agent 最大输出 token 数",
-            group = "主 Agent 模型配置 (云端)",
-            type = ConfigType.NUMBER
-        ),
-
-        // ==================== 主 Agent 模型配置 (本地) ====================
-        ConfigItem(
-            key = "DEFAULT_LLM_BASE_URL_LOCAL",
-            value = "http://127.0.0.1:8080/v1",
-            description = "手机端本地 llama-server 地址",
-            group = "主 Agent 模型配置 (本地)",
-            type = ConfigType.URL
-        ),
-        ConfigItem(
-            key = "LLM_API_KEY_LOCAL",
-            value = "dummy",
-            description = "本地 API 密钥 (通常为 dummy)",
-            group = "�� Agent 模型配置 (本地)",
-            type = ConfigType.TEXT
-        ),
-        ConfigItem(
-            key = "LLM_MODEL_LOCAL",
-            value = "gelab-zero-4b-preview",
-            description = "本地模型名称",
-            group = "主 Agent 模型配置 (本地)",
-            type = ConfigType.TEXT
-        ),
-
-        // ==================== 子 Agent (Executor) 模型配置 ====================
-        ConfigItem(
-            key = "EXECUTOR_LLM_BASE_URL",
-            value = "",
-            description = "子 Agent LLM 服务地址 (留空则使用主 Agent 配置)",
-            group = "子 Agent 模型配置",
-            type = ConfigType.URL
-        ),
-        ConfigItem(
-            key = "EXECUTOR_API_KEY",
-            value = "",
-            description = "子 Agent API 密钥 (留空则使用主 Agent 配置)",
-            group = "子 Agent 模型配置",
-            type = ConfigType.SECRET,
-            isSecret = true
-        ),
-        ConfigItem(
-            key = "EXECUTOR_MODEL",
-            value = "qwen2.5:7b",
-            description = "子 Agent 模型名称",
-            group = "子 Agent 模型配置",
-            type = ConfigType.TEXT
-        ),
-        ConfigItem(
-            key = "EXECUTOR_TEMPERATURE",
-            value = "0.3",
-            description = "子 Agent 温度参数 (0.0-2.0)",
-            group = "子 Agent 模型配置",
-            type = ConfigType.NUMBER
-        ),
-        ConfigItem(
-            key = "EXECUTOR_MAX_TOKENS",
-            value = "8192",
-            description = "子 Agent 最大输出 token 数",
-            group = "子 Agent 模型配置",
-            type = ConfigType.NUMBER
-        ),
-
-        // ==================== Ollama 配置 ====================
-        ConfigItem(
-            key = "OLLAMA_BASE_URL",
-            value = "http://localhost:11434",
-            description = "Ollama 本地服务地址 (可选)",
-            group = "Ollama 配置",
-            type = ConfigType.URL
-        ),
-
-        // ==================== Termux API 配置 ====================
-        ConfigItem(
-            key = "TERMUX_API_ENABLED",
-            value = "true",
-            description = "启用 Termux API 功能",
-            group = "Termux API 配置",
-            type = ConfigType.BOOLEAN
-        ),
-        ConfigItem(
-            key = "TERMUX_API_CHECK_CMD",
-            value = "which termux-battery-status",
-            description = "Termux API 检测命令",
-            group = "Termux API 配置",
-            type = ConfigType.TEXT
-        ),
-
-        // ==================== 环境感知配置 ====================
-        ConfigItem(
-            key = "ENV_LIGHT_SENSOR_CMD",
-            value = "termux-sensor -s \"tcs3760 Ambient Light Sensor Non-wakeup\" -n 1",
-            description = "环境光传感器命令",
-            group = "环境感知配置",
-            type = ConfigType.TEXT
-        ),
-        ConfigItem(
-            key = "ENV_ACCEL_SENSOR_CMD",
-            value = "termux-sensor -s \"lsm6dsv Accelerometer Non-wakeup\" -n 3",
-            description = "加速度传感器命令",
-            group = "环境感知配置",
-            type = ConfigType.TEXT
-        )
-    )
-}
-
-private fun loadDefaultConfigs(): List<ConfigItem> {
-    // 返回默认配置
-    return loadConfigs()
-}
-
-// ─── 保存配置 ───────────────────────────────────
-
-private suspend fun saveConfig(item: ConfigItem) {
-    // TODO: 保存到本地文件系统
-    // 格式: KEY=VALUE
-}
-
-private suspend fun saveAllConfigs(configs: List<ConfigItem>) {
-    // TODO: 批量保存
-}
-
-// ─── UI 组件 ───────────────────────────────────
+// ─── 小组件 ──────────────────────────────────────
 
 @Composable
-private fun ConfigGroupHeader(title: String) {
-    Text(
-        text = title,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-    )
-}
-
-@Composable
-private fun ConfigItemCard(
-    item: ConfigItem,
-    onUpdate: (ConfigItem) -> Unit
+private fun SectionCard(
+    title: String,
+    trailing: @Composable () -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    var localValue by remember { mutableStateOf(item.value) }
-    var isExpanded by remember { mutableStateOf(false) }
-
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         )
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            // 标题行
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.key,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    if (item.required) {
-                        Text(
-                            text = "必填",
-                            fontSize = 10.sp,
-                            color = Color.Red,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
-                    }
-                }
-
-                // 展开/收起按钮
-                IconButton(
-                    onClick = { isExpanded = !isExpanded },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Text(if (isExpanded) "▲" else "▼")
-                }
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                trailing()
             }
-
-            // 描述
-            if (isExpanded) {
-                Text(
-                    text = item.description,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-
-            // 输入控件
-            ConfigInputField(
-                item = item,
-                value = localValue,
-                onValueChange = { newValue ->
-                    localValue = newValue
-                    item.value = newValue
-                    onUpdate(item)
-                }
-            )
+            Spacer(Modifier.height(12.dp))
+            content()
         }
     }
 }
 
 @Composable
-private fun ConfigInputField(
-    item: ConfigItem,
+private fun ConfigField(
+    label: String,
     value: String,
+    placeholder: String,
+    isSecret: Boolean = false,
+    modifier: Modifier = Modifier,
     onValueChange: (String) -> Unit
 ) {
-    when (item.type) {
-        ConfigType.TEXT, ConfigType.URL -> {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(item.key) },
-                singleLine = true,
-                visualTransformation = if (item.isSecret) PasswordVisualTransformation() else VisualTransformation.None
-            )
-        }
-        ConfigType.SECRET -> {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(item.key) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
-            )
-        }
-        ConfigType.NUMBER -> {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { newValue ->
-                    if (newValue.matches(Regex("^\\d*\\.?\\d*$"))) {
-                        onValueChange(newValue)
+    var showPassword by remember { mutableStateOf(!isSecret) }
+
+    Column(modifier.padding(bottom = 8.dp)) {
+        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = { Text(placeholder, fontSize = 14.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+            visualTransformation = if (showPassword) VisualTransformation.None
+                else PasswordVisualTransformation(),
+            trailingIcon = if (isSecret) {
+                {
+                    TextButton(onClick = { showPassword = !showPassword }) {
+                        Text(if (showPassword) "隐藏" else "显示", fontSize = 12.sp)
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(item.key) },
-                singleLine = true
-            )
-        }
-        ConfigType.BOOLEAN -> {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = item.key)
-                Switch(
-                    checked = value.toBoolean(),
-                    onCheckedChange = { checked -> onValueChange(checked.toString()) }
-                )
-            }
-        }
-        ConfigType.DROPDOWN -> {
-            // TODO: 下拉选择
-        }
+                }
+            } else null,
+            shape = RoundedCornerShape(8.dp)
+        )
     }
 }
 
+@Preview(showBackground = true, showSystemUi = true, name = "设置亮色")
 @Composable
-private fun ConfigActions(
-    onSave: () -> Unit,
-    onReset: () -> Unit,
-    onSync: () -> Unit
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        OutlinedButton(
-            onClick = onReset,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text("重置")
-        }
+private fun ConfigScreenLightPreview() {
+    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
+        ConfigScreen(navController = rememberNavController())
+    }
+}
 
-        OutlinedButton(
-            onClick = onSync,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text("同步代码")
-        }
-
-        Button(
-            onClick = onSave,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text("保存")
-        }
+@Preview(showBackground = true, showSystemUi = true, name = "设置暗色")
+@Composable
+private fun ConfigScreenDarkPreview() {
+    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
+        ConfigScreen(navController = rememberNavController())
     }
 }

@@ -178,6 +178,88 @@ class TermuxBridge {
     }
 
     /**
+     * 执行命令，写入 stdin 输入，逐行流式回调 stdout
+     *
+     * 适用于与 stable_entry.py 这类通过 stdin/stdout 通信的进程。
+     * 写入 input 后自动关闭 stdin，进程读到 EOF 后开始工作。
+     */
+    suspend fun executeWithInput(
+        command: String,
+        input: String,
+        onLine: (String) -> Unit,
+        onError: (String) -> Unit = {}
+    ): CommandResult = withContext(Dispatchers.IO) {
+        Log.d(TAG, "executeWithInput: ${command.take(80)}")
+
+        val shell = if (TermuxBootstrap.isReady) {
+            TermuxBootstrap.termuxUsr + "/bin/bash"
+        } else {
+            FALLBACK_SHELL
+        }
+
+        try {
+            val homeDir = TermuxBootstrap.termuxRoot + "/home"
+            val processBuilder = ProcessBuilder(shell, "-c", command)
+                .directory(File(homeDir))
+
+            val env = processBuilder.environment()
+            env["HOME"] = homeDir
+            env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
+                    TermuxBootstrap.termuxUsr + "/bin/applets:" +
+                    "/system/bin:/system/xbin"
+            env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
+            env["TERM"] = "xterm-256color"
+
+            val process = processBuilder.start()
+            currentProcess = process
+
+            // 写入 stdin 后关闭
+            process.outputStream.write(input.toByteArray(Charsets.UTF_8))
+            process.outputStream.flush()
+            process.outputStream.close()
+
+            // 逐行读取 stdout
+            val stdout = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8))
+
+            val outputBuilder = StringBuilder()
+            var line: String?
+
+            while (stdout.readLine().also { line = it } != null) {
+                val l = line ?: ""
+                outputBuilder.appendLine(l)
+                onLine(l)
+            }
+
+            // stderr
+            val errorBuilder = StringBuilder()
+            while (stderr.readLine().also { line = it } != null) {
+                val l = line ?: ""
+                errorBuilder.appendLine("[ERR] $l")
+                onError(l)
+            }
+
+            val exitCode = process.waitFor()
+            currentProcess = null
+
+            CommandResult(
+                exitCode = exitCode,
+                output = outputBuilder.toString().trim(),
+                success = exitCode == 0
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "executeWithInput failed: ${e.message}")
+            currentProcess = null
+            CommandResult(
+                exitCode = -1,
+                output = "Error: ${e.message}",
+                success = false
+            )
+        }
+    }
+
+    /**
      * 检查 Python 是否可用
      */
     suspend fun checkPython(): Boolean = withContext(Dispatchers.IO) {

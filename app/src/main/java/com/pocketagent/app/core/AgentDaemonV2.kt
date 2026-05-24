@@ -3,6 +3,7 @@ package com.pocketagent.app.core
 import android.content.Context
 import android.util.Log
 import com.pocketagent.app.overlay.StreamBridge
+import com.pocketagent.app.termux.TermuxBridge
 import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.PythonRuntime
 import com.pocketagent.app.update.SyncResult
@@ -31,7 +32,8 @@ class AgentDaemonV2(private val context: Context) {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private val pythonRuntime = PythonRuntime(context)
+    private val termuxBridge = TermuxBridge()
+    private val pythonRuntime = PythonRuntime(context, termuxBridge)
     private val codeManager: CodeSyncManager
         get() = CodeSyncManager.getInstance()
 

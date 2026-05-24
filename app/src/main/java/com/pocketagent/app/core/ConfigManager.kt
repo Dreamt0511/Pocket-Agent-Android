@@ -2,6 +2,7 @@ package com.pocketagent.app.core
 
 import android.content.Context
 import android.util.Log
+import com.pocketagent.app.update.CodeSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -91,7 +92,14 @@ object ConfigManager {
 
     private fun getConfigFile(): File? {
         val ctx = context ?: return null
-        return File(ctx.filesDir, CONFIG_FILE)
+        // 优先写入 Python 运行时目录（与 stable_entry.py 读取的 .env 路径一致）
+        return try {
+            val runtimeDir = CodeSyncManager.getInstance().getRuntimeDir()
+            File(runtimeDir, CONFIG_FILE)
+        } catch (_: IllegalStateException) {
+            // CodeSyncManager 尚未初始化，回退到 filesDir
+            File(ctx.filesDir, CONFIG_FILE)
+        }
     }
 
     private fun parseLine(line: String): Pair<String, String>? {
@@ -116,38 +124,27 @@ object ConfigManager {
 
     private fun loadDefaults(): Map<String, String> {
         return mapOf(
-            // MCP 服务器
-            "MCP_SERVER_URL" to "http://127.0.0.1:7474/mcp",
-
-            // 主 Agent 模型配置 (云端)
-            "DEFAULT_LLM_BASE_URL" to "https://api.longcat.chat/openai/v1",
+            // 主 Agent 模型配置
+            "DEFAULT_LLM_BASE_URL" to "",
             "LLM_API_KEY" to "",
-            "LLM_MODEL" to "longcat-flash-lite",
+            "LLM_MODEL" to "",
             "LLM_TEMPERATURE" to "0.7",
             "LLM_MAX_TOKENS" to "8000",
 
-            // 主 Agent 模型配置 (本地)
-            "DEFAULT_LLM_BASE_URL_LOCAL" to "http://127.0.0.1:8080/v1",
-            "LLM_API_KEY_LOCAL" to "dummy",
-            "LLM_MODEL_LOCAL" to "gelab-zero-4b-preview",
-
-            // 子 Agent 模型配置
+            // 子 Agent (Executor) 模型配置 — 留空则继承主模型
             "EXECUTOR_LLM_BASE_URL" to "",
             "EXECUTOR_API_KEY" to "",
-            "EXECUTOR_MODEL" to "qwen2.5:7b",
-            "EXECUTOR_TEMPERATURE" to "0.3",
-            "EXECUTOR_MAX_TOKENS" to "8192",
+            "EXECUTOR_MODEL" to "",
+            "EXECUTOR_TEMPERATURE" to "",
+            "EXECUTOR_MAX_TOKENS" to "",
 
-            // Ollama
-            "OLLAMA_BASE_URL" to "http://localhost:11434",
+            // MCP
+            "MCP_SERVER_URL" to "http://127.0.0.1:7474/mcp",
 
-            // Termux API
-            "TERMUX_API_ENABLED" to "true",
-            "TERMUX_API_CHECK_CMD" to "which termux-battery-status",
-
-            // 环境感知
-            "ENV_LIGHT_SENSOR_CMD" to "termux-sensor -s \"tcs3760 Ambient Light Sensor Non-wakeup\" -n 1",
-            "ENV_ACCEL_SENSOR_CMD" to "termux-sensor -s \"lsm6dsv Accelerometer Non-wakeup\" -n 3"
+            // 高级 — Agent 运行参数 (config.py)
+            "MAX_ITERATIONS" to "300",
+            "RECURSION_LIMIT" to "600",
+            "MAX_CONTEXT_TOKENS" to "128000"
         )
     }
 }

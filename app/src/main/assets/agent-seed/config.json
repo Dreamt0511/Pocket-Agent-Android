@@ -1,0 +1,20 @@
+{
+  "agent": {
+    "max_iterations": 300,
+    "recursion_limit": 600,
+    "max_context_tokens": 128000
+  },
+  "skills": {
+    "enabled": true,
+    "auto_discover": true
+  },
+  "mcp": {
+    "default_url": "http://127.0.0.1:7474/mcp",
+    "timeout": 30
+  },
+  "memory": {
+    "enabled": true,
+    "dir": "memory",
+    "auto_save": true
+  }
+}
