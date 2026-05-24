@@ -2,6 +2,8 @@ package com.pocketagent.app.ui.home
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -36,11 +39,11 @@ private data class NavEntry(
 
 private val navEntries = listOf(
     NavEntry("执行任务", "用 AI 操控手机，一步到位", Icons.Default.PlayArrow, "execute"),
-    NavEntry("历史记录", "查看过往任务与执行结果", Icons.Default.History, "history"),
-    NavEntry("技能库", "Agent 已掌握的技能与工具", Icons.Default.Psychology, "skills"),
-    NavEntry("终端", "命令行与调试控制台", Icons.Default.Terminal, "terminal"),
     NavEntry("设置", "模型 / MCP / 高级参数", Icons.Default.Settings, "config"),
+    NavEntry("技能库", "Agent 已掌握的技能与工具", Icons.Default.Psychology, "skills"),
     NavEntry("悬浮窗", "后台执行与状态监控", Icons.Default.PictureInPicture, "overlay"),
+    NavEntry("历史记录", "查看过往任务与执行结果", Icons.Default.History, "history"),
+    NavEntry("终端", "命令行与调试控制台", Icons.Default.Terminal, "terminal"),
 )
 
 @Composable
@@ -52,6 +55,9 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
             orbColors = orbColors(),
             modifier = Modifier.fillMaxSize()
         )
+
+        // ─── 边缘流光（极淡） ───
+        GlowingBorder(modifier = Modifier.fillMaxSize())
 
         // ─── 前景内容 ───
         Column(
@@ -236,5 +242,52 @@ private fun AgentStatusBadge() {
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+// ─── 边缘流光动画（极淡蓝光沿边框流动） ─────────
+
+@Composable
+private fun GlowingBorder(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "border_glow")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(6000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "glow_progress"
+    )
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        if (w <= 0 || h <= 0) return@Canvas
+        val perimeter = 2 * (w + h)
+        val particleCount = 3
+
+        for (i in 0 until particleCount) {
+            val pos = (progress * perimeter + i * perimeter / particleCount) % perimeter
+            val p = perimeterPosToPoint(pos, w, h)
+
+            // 极淡光晕
+            drawCircle(Color(0xFF4FC3F7), radius = 2.dp.toPx(), center = p, alpha = 0.15f)
+            drawCircle(Color(0xFF4FC3F7), radius = 5.dp.toPx(), center = p, alpha = 0.06f)
+            drawCircle(Color(0xFF4FC3F7), radius = 10.dp.toPx(), center = p, alpha = 0.03f)
+        }
+    }
+}
+
+/** 将周长上的位置 (0..perimeter) 映射到 Canvas 上的 (x, y) */
+private fun perimeterPosToPoint(pos: Float, w: Float, h: Float): Offset {
+    val top = w
+    val right = w + h
+    val bottom = 2 * w + h
+    return when {
+        pos < top -> Offset(pos, 0f)                          // 上边 →
+        pos < right -> Offset(w, pos - top)                   // 右边 ↓
+        pos < bottom -> Offset(w - (pos - right), h)          // 下边 ←
+        else -> Offset(0f, h - (pos - bottom))                // 左边 ↑
     }
 }

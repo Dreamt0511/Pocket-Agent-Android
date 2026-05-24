@@ -17,7 +17,6 @@ class TermuxBridge {
 
     companion object {
         private const val TAG = "TermuxBridge"
-        private const val SHELL = "/data/data/com.termux/files/usr/bin/bash"
         private const val FALLBACK_SHELL = "/system/bin/sh"
     }
 
@@ -28,15 +27,15 @@ class TermuxBridge {
 
     /**
      * 执行命令并返回完整结果（同步模式）
+     *
+     * 始终使用 /system/bin/sh 而非 Termux 的 bash，因为 Android 10+ 禁止
+     * 跨 UID 执行其它 APP 的二进制文件（SELinux 策略）。通过 PATH 环境变量
+     * 指向 Termux 的 bin 目录，使系统 shell 能找到 Termux 的 Python。
      */
     suspend fun execute(command: String): CommandResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "Executing: ${command.take(100)}")
 
-        val shell = if (TermuxBootstrap.isReady) {
-            TermuxBootstrap.termuxUsr + "/bin/bash"
-        } else {
-            FALLBACK_SHELL
-        }
+        val shell = FALLBACK_SHELL
 
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"
@@ -115,11 +114,7 @@ class TermuxBridge {
     ): CommandResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "Executing (streaming): ${command.take(100)}")
 
-        val shell = if (TermuxBootstrap.isReady) {
-            TermuxBootstrap.termuxUsr + "/bin/bash"
-        } else {
-            FALLBACK_SHELL
-        }
+        val shell = FALLBACK_SHELL
 
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"
@@ -191,11 +186,7 @@ class TermuxBridge {
     ): CommandResult = withContext(Dispatchers.IO) {
         Log.d(TAG, "executeWithInput: ${command.take(80)}")
 
-        val shell = if (TermuxBootstrap.isReady) {
-            TermuxBootstrap.termuxUsr + "/bin/bash"
-        } else {
-            FALLBACK_SHELL
-        }
+        val shell = FALLBACK_SHELL
 
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"

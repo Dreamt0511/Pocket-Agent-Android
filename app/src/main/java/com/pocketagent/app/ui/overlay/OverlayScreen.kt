@@ -42,15 +42,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun OverlayScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
-    var isOverlayVisible by remember { mutableStateOf(false) }
-    var overlayMode by remember { mutableStateOf("MINI") }
-    val streamText by OverlayService.streamText.collectAsState()
-    var taskStatus by remember { mutableStateOf("空闲") }
-
-    // 监听悬浮窗状态
-    LaunchedEffect(Unit) {
-        // TODO: 监听 OverlayService 状态
+    val overlayState by OverlayService.overlayState.collectAsState()
+    val isOverlayVisible = overlayState != OverlayService.OverlayMode.HIDDEN
+    val overlayMode = when (overlayState) {
+        OverlayService.OverlayMode.MINI -> "MINI"
+        OverlayService.OverlayMode.EXPANDED -> "EXPANDED"
+        else -> "MINI"
     }
+    val streamText by OverlayService.streamText.collectAsState()
+    val taskStatus by OverlayService.taskStatus.collectAsState()
 
     Scaffold(
         topBar = {
@@ -90,17 +90,14 @@ fun OverlayScreen(navController: NavController) {
                         } else {
                             OverlayManager.showMini()
                         }
-                        isOverlayVisible = !isOverlayVisible
                     }
                 },
                 onSwitchMode = {
                     scope.launch {
                         if (overlayMode == "MINI") {
                             OverlayManager.showExpanded()
-                            overlayMode = "EXPANDED"
                         } else {
                             OverlayManager.minimize()
-                            overlayMode = "MINI"
                         }
                     }
                 }

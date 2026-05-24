@@ -1,6 +1,7 @@
 package com.pocketagent.app.ui.screens.skills
 
 import android.os.Environment
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,6 +38,9 @@ fun SkillsScreen(navController: NavController) {
 
     // 详情视图状态
     var selectedSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
+
+    // 技能说明弹窗
+    var showDescriptionDialog by remember { mutableStateOf<SkillManager.Skill?>(null) }
 
     // 新建/编辑对话框状态
     var showSkillDialog by remember { mutableStateOf(false) }
@@ -250,15 +254,10 @@ fun SkillsScreen(navController: NavController) {
                                     }
                                 },
                                 onClick = {
-                                    if (isSelectionMode) {
-                                        selectedPaths = if (selectedPaths.contains(skill.path)) {
-                                            selectedPaths - skill.path
-                                        } else {
-                                            selectedPaths + skill.path
-                                        }
-                                    } else {
-                                        selectedSkill = skill
-                                    }
+                                    showDescriptionDialog = skill
+                                },
+                                onViewDetail = {
+                                    selectedSkill = skill
                                 },
                                 onDelete = {
                                     showDeleteConfirm = skill
@@ -292,6 +291,18 @@ fun SkillsScreen(navController: NavController) {
                     editSkill = null
                     skills = SkillManager.getSkills(currentCategory)
                 }
+            }
+        )
+    }
+
+    // ─── 技能说明弹窗 ───
+    if (showDescriptionDialog != null) {
+        SkillDescriptionDialog(
+            skill = showDescriptionDialog!!,
+            onDismiss = { showDescriptionDialog = null },
+            onViewDetail = {
+                selectedSkill = showDescriptionDialog!!
+                showDescriptionDialog = null
             }
         )
     }
@@ -337,11 +348,17 @@ private fun SkillCard(
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
+    onViewDetail: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit
 ) {
     GlassCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (!isSelectionMode) Modifier.clickable { onClick() }
+                else Modifier
+            ),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
@@ -395,7 +412,7 @@ private fun SkillCard(
             // 操作按钮
             Row {
                 if (!isSelectionMode) {
-                    IconButton(onClick = onClick) {
+                    IconButton(onClick = onViewDetail) {
                         Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = onExport) {
@@ -650,6 +667,94 @@ private fun SkillEditDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("取消")
+            }
+        }
+    )
+}
+
+// ─── 技能说明弹窗 ───────────────────────────────
+
+@Composable
+private fun SkillDescriptionDialog(
+    skill: SkillManager.Skill,
+    onDismiss: () -> Unit,
+    onViewDetail: () -> Unit
+) {
+    val isAuto = skill.category == SkillManager.Category.AUTO_SKILLS
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = when (skill.category) {
+                            SkillManager.Category.MAIN_SKILLS -> Icons.Default.Code
+                            SkillManager.Category.EXECUTOR_SKILLS -> Icons.Default.Build
+                            SkillManager.Category.AUTO_SKILLS -> Icons.Default.AutoAwesome
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(skill.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Spacer(Modifier.height(4.dp))
+                AssistChip(
+                    onClick = {},
+                    label = { Text(skill.category.displayName, fontSize = 11.sp) }
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (skill.description.isNotBlank()) {
+                    Text(
+                        text = skill.description,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+
+                if (isAuto) {
+                    Spacer(Modifier.height(4.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                text = "此技能由 Agent 在完成一次任务后自动沉淀生成，总结执行经验以便后续复用。你可以直接使用或按需编辑。",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onViewDetail) {
+                Text("查看详情")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
             }
         }
     )

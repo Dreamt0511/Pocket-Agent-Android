@@ -46,13 +46,23 @@ class ExpandedOverlayView(
 
     private val terminalBuffer = StringBuilder()
 
-    // 双指缩放手势检测
+    // 双指缩放手势检测 — 缩小到临界值自动关闭
+    private val closeThreshold: Int get() = dp(80)
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val scaleFactor = detector.scaleFactor
-            val newW = (width * scaleFactor).toInt().coerceIn(dp(200), screenWidth)
-            val newH = (height * scaleFactor).toInt().coerceIn(dp(150), screenHeight)
-            onResize(newW, newH)
+            val newW = (width * scaleFactor).toInt()
+            val newH = (height * scaleFactor).toInt()
+
+            if (newW < closeThreshold) {
+                onClose()
+                return true
+            }
+
+            onResize(
+                newW.coerceIn(dp(200), screenWidth),
+                newH.coerceIn(dp(150), screenHeight)
+            )
             return true
         }
     })

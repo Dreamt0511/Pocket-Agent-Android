@@ -90,8 +90,12 @@ class AgentDaemonV2(private val context: Context) {
 
         val initialized = pythonRuntime.initialize()
         if (!initialized) {
-            _status.value = DaemonStatus.Error("Python 运行时初始化失败，请安装 Termux 并在其中安装 Python")
-            StreamBridge.out("[error] Python 运行时不可用\n")
+            val errorMsg = when (val s = pythonRuntime.state.value) {
+                is PythonRuntime.RuntimeState.Error -> s.message
+                else -> "Python 运行时初始化失败"
+            }
+            _status.value = DaemonStatus.Error(errorMsg)
+            StreamBridge.out("[error] $errorMsg\n")
             return false
         }
 

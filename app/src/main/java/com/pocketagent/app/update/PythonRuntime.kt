@@ -272,14 +272,6 @@ class PythonRuntime(
         val targetDir = getRuntimeDir()
         targetDir.mkdirs()
 
-        // 始终提取技能种子数据（防止代码同步后无技能）
-        val skillsTarget = File(targetDir, "agent/skills")
-        if (!skillsTarget.exists() || skillsTarget.listFiles()?.isEmpty() == true) {
-            skillsTarget.mkdirs()
-            copyAssetRecursive("$SEED_ASSET_DIR/agent/skills", targetDir)
-            Log.i(TAG, "Seed skills extracted to ${skillsTarget.absolutePath}")
-        }
-
         // 始终提取 .env.example 模板（配置页面需要）
         val envExample = File(targetDir, ".env.example")
         if (!envExample.exists()) {
