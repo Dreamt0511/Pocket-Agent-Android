@@ -24,6 +24,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.pocketagent.app.overlay.OverlayManager
+import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.ui.theme.GlassCard
 import kotlinx.coroutines.launch

@@ -162,7 +162,7 @@ fun ConfigScreen(navController: NavController) {
                             onValueChange = { configMap = configMap + ("LLM_TEMPERATURE" to it) }
                         )
                         ConfigField(
-                            label = "最大 Token",
+                            label = "模型最大输出",
                             value = configMap["LLM_MAX_TOKENS"] ?: "8000",
                             placeholder = "8000",
                             modifier = Modifier.weight(1f),

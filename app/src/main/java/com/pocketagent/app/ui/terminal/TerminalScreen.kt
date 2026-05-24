@@ -1,6 +1,8 @@
 package com.pocketagent.app.ui.terminal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,7 +17,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -192,6 +196,12 @@ fun TerminalScreen(navController: NavController) {
     var sessionReady by remember { mutableStateOf(false) }
     var currentDir by remember { mutableStateOf("~") }
     val session = remember { ShellSession() }
+
+    // 双指缩放状态
+    var terminalFontSize by remember { mutableFloatStateOf(13f) }
+    val transformableState = rememberTransformableState { zoomChange, _, _ ->
+        terminalFontSize = (terminalFontSize * zoomChange).coerceIn(8f, 32f)
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     // 启动 Shell 会话
     LaunchedEffect(Unit) {
@@ -318,13 +328,14 @@ fun TerminalScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(terminalBg)
-                .padding(paddingValues),
+                .padding(paddingValues)
+                .transformable(state = transformableState),
             state = listState,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             items(terminalLines) { line ->
-                TerminalLineView(line)
+                TerminalLineView(line, fontSize = terminalFontSize)
             }
         }
     }
@@ -344,7 +355,7 @@ enum class TerminalLineType {
 // ─── 行渲染 ──────────────────────────────────────
 
 @Composable
-private fun TerminalLineView(line: TerminalLine) {
+private fun TerminalLineView(line: TerminalLine, fontSize: Float = 13f) {
     val color = when (line.type) {
         TerminalLineType.COMMAND -> promptColor
         TerminalLineType.OUTPUT -> outputColor
@@ -357,7 +368,7 @@ private fun TerminalLineView(line: TerminalLine) {
     Text(
         text = line.text,
         color = color,
-        fontSize = 13.sp,
+        fontSize = fontSize.sp,
         fontFamily = FontFamily.Monospace,
         modifier = Modifier
             .fillMaxWidth()

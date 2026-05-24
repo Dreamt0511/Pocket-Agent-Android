@@ -185,4 +185,13 @@ class AgentService : Service() {
         wakeLock = null
         super.onDestroy()
     }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        serviceScope.cancel()
+        agentDaemon?.shutdown()
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
 }

@@ -407,4 +407,10 @@ class OverlayService : Service() {
         hideAll()
         super.onDestroy()
     }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        hideAll()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
 }

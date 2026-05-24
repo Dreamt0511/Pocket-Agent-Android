@@ -270,11 +270,21 @@ class PythonRuntime(
      */
     private fun extractSeedCode() {
         val targetDir = getRuntimeDir()
+        targetDir.mkdirs()
+
+        // 始终提取技能种子数据（防止代码同步后无技能）
+        val skillsTarget = File(targetDir, "agent/skills")
+        if (!skillsTarget.exists() || skillsTarget.listFiles()?.isEmpty() == true) {
+            skillsTarget.mkdirs()
+            copyAssetRecursive("$SEED_ASSET_DIR/agent/skills", targetDir)
+            Log.i(TAG, "Seed skills extracted to ${skillsTarget.absolutePath}")
+        }
+
+        // 主代码：已存在则跳过（防止覆盖 GitHub 同步的代码）
         if (File(targetDir, "stable_entry.py").exists()) {
             Log.d(TAG, "Seed code already extracted, skipping")
             return
         }
-        targetDir.mkdirs()
         copyAssetRecursive(SEED_ASSET_DIR, targetDir)
         Log.i(TAG, "Seed code extracted from assets to ${targetDir.absolutePath}")
     }

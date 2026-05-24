@@ -34,6 +34,7 @@ class AgentDaemonV2(private val context: Context) {
 
     private val termuxBridge = TermuxBridge()
     private val pythonRuntime = PythonRuntime(context, termuxBridge)
+    private val kotlinExecutor = KotlinAgentExecutor()
     private val codeManager: CodeSyncManager
         get() = CodeSyncManager.getInstance()
 
@@ -116,13 +117,32 @@ class AgentDaemonV2(private val context: Context) {
      *  每步输出 → StreamBridge.out() → 悬浮窗 + 终端
      */
     suspend fun execute(command: String): TaskResult {
-        when (val s = _status.value) {
-            is DaemonStatus.Degraded -> {
-                return TaskResult.Failure("Agent 不可用: ${s.message}")
+        val s = _status.value
+
+        // 降级模式 — 使用 Kotlin 原生 HTTP 执行器直接调 LLM API
+        if (s is DaemonStatus.Degraded) {
+            _status.value = DaemonStatus.Executing
+            StreamBridge.status("执行中 (降级)")
+            StreamBridge.out("$ $command\n")
+
+            val config = ConfigManager.loadAll()
+            val response = kotlinExecutor.execute(command, config) { chunk ->
+                StreamBridge.out(chunk)
             }
-            !is DaemonStatus.Ready -> {
-                return TaskResult.Failure("Agent 未就绪，请等待初始化完成")
+
+            _status.value = DaemonStatus.Degraded(s.message)
+            StreamBridge.status("降级模式")
+
+            return if (response.startsWith("[error]") || response.contains("请先在设置中配置")) {
+                TaskResult.Failure(response)
+            } else {
+                TaskResult.Success(response)
             }
+        }
+
+        // Python 运行时模式
+        if (s !is DaemonStatus.Ready) {
+            return TaskResult.Failure("Agent 未就绪，请等待初始化完成")
         }
 
         _status.value = DaemonStatus.Executing

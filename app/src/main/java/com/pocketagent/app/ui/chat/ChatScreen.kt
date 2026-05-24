@@ -40,6 +40,7 @@ fun ChatScreen(navController: NavController) {
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
+        || daemonStatus is AgentDaemonV2.DaemonStatus.Degraded
 
     // 监听流式输出
     LaunchedEffect(Unit) {
@@ -147,9 +148,9 @@ private fun DaemonStatusBar(
             showRetry = false
         }
         is AgentDaemonV2.DaemonStatus.Degraded -> {
-            bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
-            message = "Agent 降级: ${status.message}"
-            showRetry = false
+            bgColor = Color(0xFF1565C0).copy(alpha = 0.08f)
+            message = "Agent 原生模式 — 直接调用 LLM"
+            showRetry = true
         }
         is AgentDaemonV2.DaemonStatus.Error -> {
             bgColor = Color(0xFFB71C1C).copy(alpha = 0.08f)
