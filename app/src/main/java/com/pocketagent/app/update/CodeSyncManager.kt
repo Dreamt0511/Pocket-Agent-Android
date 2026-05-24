@@ -10,38 +10,29 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 
 /**
  * 代码同步引擎 — 从主仓库动态拉取最新 Agent Python 代码
  *
- * 保证 App 不写死：主仓库代码更新后 App 自动同步，无需重新编译 APK。
- *
- * 工作流程：
- *  1. 启动时检查本地版本 vs 远程版本 (version.json)
- *  2. 版本不一致 → 下载 agent_latest.zip
- *  3. 解压到 App 私有目录 (app_python_runtime/)
- *  4. 加载到 PythonRuntime 执行
- *
- * 使用方式：
- *   CodeSyncManager.init(context, "https://github.com/xxx/pocket-agent/releases")
- *   CodeSyncManager.syncIfNeeded()
+ * 从 GitHub Archive API 下载整个仓库的 ZIP，提取 agent/ 目录到运行时目录。
  */
 class CodeSyncManager(private val context: Context) {
 
     companion object {
         private const val TAG = "CodeSyncManager"
+        private const val GITHUB_REPO = "Dreamt0511/Pocket-Agent"
+        private const val GITHUB_BRANCH = "main"
         private const val RUNTIME_DIR = "app_python_runtime"
         private const val VERSION_FILE = "version.json"
-        private const val AGENT_ZIP = "agent_latest.zip"
 
         @Volatile
         private var instance: CodeSyncManager? = null
 
-        fun init(context: Context, repoUrl: String): CodeSyncManager {
+        fun init(context: Context, repoUrl: String = ""): CodeSyncManager {
             return instance ?: synchronized(this) {
                 instance ?: CodeSyncManager(context.applicationContext).also {
-                    it.repoBaseUrl = repoUrl
                     instance = it
                 }
             }
@@ -51,10 +42,10 @@ class CodeSyncManager(private val context: Context) {
             instance ?: throw IllegalStateException("CodeSyncManager not initialized. Call init() first.")
     }
 
-    var repoBaseUrl: String = ""
     private val client = OkHttpClient.Builder()
-        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .followRedirects(true)
         .build()
 
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -77,7 +68,7 @@ class CodeSyncManager(private val context: Context) {
     /** 版本文件本地路径 */
     private fun getLocalVersionFile(): File = File(getRuntimeDir(), VERSION_FILE)
 
-    /** 获取本地版本号 */
+    /** 获取本地版本号（commit SHA 前 7 位） */
     fun getLocalVersion(): String {
         val file = getLocalVersionFile()
         if (!file.exists()) return "0.0.0"
@@ -100,35 +91,35 @@ class CodeSyncManager(private val context: Context) {
             _syncState.value = SyncState.Checking
 
             // 1. 获取远程版本信息
-            val remoteVersion = fetchRemoteVersion()
+            val remoteSha = fetchRemoteCommitSha()
             val localVersion = if (force) "0.0.0" else getLocalVersion()
 
-            Log.d(TAG, "Remote: $remoteVersion, Local: $localVersion")
+            Log.d(TAG, "Remote: $remoteSha, Local: $localVersion")
 
-            if (!force && remoteVersion == localVersion) {
+            if (!force && remoteSha == localVersion) {
                 _syncState.value = SyncState.Ready(localVersion)
                 return@withContext SyncResult.UpToDate(localVersion)
             }
 
-            // 2. 下载最新代码包
+            // 2. 下载仓库 ZIP
             _syncState.value = SyncState.Downloading
-            val zipUrl = "$repoBaseUrl/download/latest/$AGENT_ZIP"
-            val zipFile = File(context.cacheDir, AGENT_ZIP)
+            val zipUrl = "https://api.github.com/repos/$GITHUB_REPO/zipball/$GITHUB_BRANCH"
+            val zipFile = File(context.cacheDir, "repo_$GITHUB_BRANCH.zip")
             downloadFile(zipUrl, zipFile)
 
-            // 3. 解压到运行时目录
+            // 3. 解压 agent/ 目录到运行时目录
             _syncState.value = SyncState.Extracting
-            extractZip(zipFile, getRuntimeDir())
+            extractAgentDir(zipFile, getRuntimeDir())
 
-            // 4. 保存新版本号
-            getLocalVersionFile().writeText("""{"version":"$remoteVersion"}""")
+            // 4. 保存版本号
+            getLocalVersionFile().writeText("""{"version":"$remoteSha"}""")
 
             // 5. 清理缓存
             zipFile.delete()
 
-            _syncState.value = SyncState.Ready(remoteVersion)
-            Log.i(TAG, "Synced to version $remoteVersion")
-            SyncResult.Synced(remoteVersion)
+            _syncState.value = SyncState.Ready(remoteSha)
+            Log.i(TAG, "Synced to commit $remoteSha")
+            SyncResult.Synced(remoteSha)
 
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed", e)
@@ -139,52 +130,35 @@ class CodeSyncManager(private val context: Context) {
 
     // ─── 远程版本查询 ─────────────────────────────
 
-    private suspend fun fetchRemoteVersion(): String {
+    private suspend fun fetchRemoteCommitSha(): String {
         return withContext(Dispatchers.IO) {
             try {
-                val url = "$repoBaseUrl/download/latest/$VERSION_FILE"
-                val request = Request.Builder().url(url).build()
+                val url = "https://api.github.com/repos/$GITHUB_REPO/commits/$GITHUB_BRANCH"
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("Accept", "application/vnd.github.v3+json")
+                    .build()
                 val response = client.newCall(request).execute()
                 if (response.isSuccessful) {
-                    val body = response.body?.string() ?: throw Exception("Empty response")
-                    JSONObject(body).optString("version", "0.0.0")
+                    val json = JSONObject(response.body?.string() ?: "")
+                    json.optString("sha", "0.0.0").take(7)
                 } else {
-                    // 回退：尝试 GitHub API
-                    fetchGitHubLatestVersion()
+                    Log.w(TAG, "Failed to fetch commit SHA: HTTP ${response.code}")
+                    getLocalVersion()
                 }
             } catch (e: Exception) {
-                fetchGitHubLatestVersion()
+                Log.w(TAG, "Failed to fetch remote version", e)
+                getLocalVersion()
             }
-        }
-    }
-
-    private fun fetchGitHubLatestVersion(): String {
-        // 从 GitHub API 获取 latest release tag
-        val apiUrl = repoBaseUrl
-            .replace("https://github.com/", "https://api.github.com/repos/")
-            .replace("/releases", "") + "/releases/latest"
-
-        return try {
-            val request = Request.Builder()
-                .url(apiUrl)
-                .addHeader("Accept", "application/vnd.github.v3+json")
-                .build()
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val json = JSONObject(response.body?.string() ?: "")
-                json.optString("tag_name", "0.0.0").trimStart('v')
-            } else {
-                "0.0.0"
-            }
-        } catch (_: Exception) {
-            "0.0.0"
         }
     }
 
     // ─── 文件下载 ─────────────────────────────────
 
     private fun downloadFile(url: String, destFile: File) {
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder().url(url)
+            .addHeader("Accept", "application/vnd.github.v3+json")
+            .build()
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
             throw Exception("下载失败: HTTP ${response.code}")
@@ -197,27 +171,50 @@ class CodeSyncManager(private val context: Context) {
         } ?: throw Exception("下载失败: 空响应体")
     }
 
-    // ─── Zip 解压 ────────────────────────────────
+    // ─── Zip 解压（提取 agent/ 目录）───────────────
 
-    private fun extractZip(zipFile: File, destDir: File) {
-        // 清空旧文件（保留 version.json）
-        destDir.listFiles()?.forEach { file ->
-            if (file.name != VERSION_FILE) {
-                file.deleteRecursively()
-            }
+    /**
+     * 从 GitHub 仓库 ZIP 中提取 agent/ 目录到 destDir
+     *
+     * ZIP 结构: Dreamt0511-Pocket-Agent-<sha>/agent/...
+     * 我们只需要 agent/ 及其子目录
+     */
+    private fun extractAgentDir(zipFile: File, destDir: File) {
+        // 清空旧 agent 目录
+        val oldAgentDir = File(destDir, "agent")
+        if (oldAgentDir.exists()) {
+            oldAgentDir.deleteRecursively()
         }
+
+        var foundAgent = false
 
         ZipInputStream(zipFile.inputStream()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
-                val entryFile = File(destDir, entry.name)
+                val name = entry.name
 
-                if (entry.isDirectory) {
-                    entryFile.mkdirs()
-                } else {
-                    entryFile.parentFile?.mkdirs()
-                    FileOutputStream(entryFile).use { fos ->
-                        zis.copyTo(fos)
+                // GitHub ZIP 格式: <repo>-<sha>/agent/...
+                // 找到 "agent/" 在路径中的位置
+                val agentIndex = name.indexOf("/agent/")
+                val isAgentEntry = agentIndex >= 0
+                val isAgentDir = name.endsWith("/agent") && name.count { it == '/' } == 1
+
+                if (isAgentEntry || isAgentDir) {
+                    foundAgent = true
+                    val relativePath = if (isAgentEntry) {
+                        name.substring(agentIndex + 1) // "agent/..."
+                    } else {
+                        "agent"
+                    }
+                    val targetFile = File(destDir, relativePath)
+
+                    if (entry.isDirectory) {
+                        targetFile.mkdirs()
+                    } else {
+                        targetFile.parentFile?.mkdirs()
+                        FileOutputStream(targetFile).use { fos ->
+                            zis.copyTo(fos)
+                        }
                     }
                 }
 
@@ -225,11 +222,15 @@ class CodeSyncManager(private val context: Context) {
                 entry = zis.nextEntry
             }
         }
+
+        if (!foundAgent) {
+            Log.w(TAG, "No agent/ directory found in ZIP")
+        }
     }
 
     /** 获取入口脚本路径 */
     fun getEntryPoint(): File {
-        return File(getRuntimeDir(), "main.py")
+        return File(getRuntimeDir(), "stable_entry.py")
     }
 
     /** 检查入口脚本是否存在 */
@@ -241,7 +242,6 @@ class CodeSyncManager(private val context: Context) {
     fun ensureSeedCode(): Boolean {
         val entry = getEntryPoint()
         if (entry.exists()) return true
-        // 创建空的入口脚本作为种子
         val runtimeDir = getRuntimeDir()
         if (!runtimeDir.exists()) runtimeDir.mkdirs()
         try {

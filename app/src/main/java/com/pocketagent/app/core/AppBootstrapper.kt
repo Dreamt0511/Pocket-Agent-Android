@@ -8,6 +8,7 @@ import com.pocketagent.app.termux.TermuxBootstrap
 import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.UpdateChecker
+import com.pocketagent.app.core.SkillManager
 import kotlinx.coroutines.*
 
 /**
@@ -49,6 +50,9 @@ object AppBootstrapper {
 
         // 4. Agent 守护进程
         daemon = AgentDaemonV2(context)
+
+        // 5. 技能管理器（数据目录就绪后初始化）
+        SkillManager.init(context)
 
         Log.i(TAG, "All subsystems initialized")
     }

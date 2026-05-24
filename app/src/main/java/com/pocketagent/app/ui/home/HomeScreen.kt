@@ -2,7 +2,12 @@ package com.pocketagent.app.ui.home
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.draw.clip
+import com.pocketagent.app.ui.theme.GlassSurface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,23 +34,37 @@ fun HomeScreen(navController: NavController) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
     ) {
-        Spacer(Modifier.height(56.dp))
+        Spacer(Modifier.height(48.dp))
         Text(
             text = "Pocket Agent",
-            fontSize = 20.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.3).sp,
-            color = MaterialTheme.colorScheme.primary
+            letterSpacing = (-0.5).sp,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "AI 手机助手",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        Spacer(Modifier.height(32.dp))
 
         NavItem("执行任务", "用 AI 操控手机，一步到位", onClick = { navController.navigate("execute") })
+        Spacer(Modifier.height(8.dp))
         NavItem("历史记录", "查看过往任务与执行结果", onClick = { navController.navigate("history") })
+        Spacer(Modifier.height(8.dp))
         NavItem("技能库", "Agent 已掌握的技能与工具", onClick = { navController.navigate("skills") })
+        Spacer(Modifier.height(8.dp))
         NavItem("终端", "命令行与调试控制台", onClick = { navController.navigate("terminal") })
+        Spacer(Modifier.height(8.dp))
         NavItem("设置", "模型 / MCP / 高级参数", onClick = { navController.navigate("config") })
+        Spacer(Modifier.height(8.dp))
         NavItem("悬浮窗", "后台执行与状态监控", onClick = { navController.navigate("overlay") })
 
         Spacer(Modifier.weight(1f))
@@ -53,38 +72,37 @@ fun HomeScreen(navController: NavController) {
             text = "Agent 就绪",
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-            modifier = Modifier.padding(bottom = 24.dp)
+            modifier = Modifier.padding(bottom = 24.dp, start = 4.dp)
         )
     }
 }
 
 @Composable
 private fun NavItem(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 16.dp)
+    GlassSurface(
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Text(
-            text = title,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 0.3.sp,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            text = subtitle,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            letterSpacing = 0.1.sp
-        )
-        Spacer(Modifier.height(10.dp))
-        HorizontalDivider(
-            thickness = 0.5.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 18.dp, vertical = 18.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.3.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = subtitle,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                letterSpacing = 0.1.sp
+            )
+        }
     }
 }
 

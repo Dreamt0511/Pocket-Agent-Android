@@ -20,6 +20,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.service.TaskQueueManager.TaskStatus
+import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.ui.theme.PocketAgentTheme
 import kotlinx.coroutines.flow.first
 
@@ -183,15 +184,12 @@ fun TaskHistoryItem(
 ) {
     val status by task.status.collectAsState()
     
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
+import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -132,35 +133,47 @@ private fun ChatMessageItem(message: ChatMessage) {
             .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
     ) {
-        Card(
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (message.isUser) 16.dp else 4.dp,
-                bottomEnd = if (message.isUser) 4.dp else 16.dp
-            ),
-            colors = CardDefaults.cardColors(
-                containerColor = if (message.isUser) 
-                    MaterialTheme.colorScheme.primary 
-                else 
-                    MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp)
+        if (message.isUser) {
+            // 用户消息 — 实心黑底
+            Card(
+                shape = RoundedCornerShape(
+                    topStart = 16.dp, topEnd = 16.dp,
+                    bottomStart = 16.dp, bottomEnd = 4.dp
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
             ) {
-                Text(
-                    text = message.text,
-                    color = if (message.isUser) Color.White else MaterialTheme.colorScheme.onSurface,
-                    fontSize = 14.sp
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(text = message.text, color = Color.White, fontSize = 14.sp)
+                    Text(
+                        text = formatTime(message.timestamp),
+                        fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        } else {
+            // AI 消息 — 玻璃气泡
+            GlassCard(
+                shape = RoundedCornerShape(
+                    topStart = 16.dp, topEnd = 16.dp,
+                    bottomStart = 4.dp, bottomEnd = 16.dp
                 )
-                Text(
-                    text = formatTime(message.timestamp),
-                    fontSize = 10.sp,
-                    color = if (message.isUser) Color.White.copy(alpha = 0.7f) 
-                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = message.text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = formatTime(message.timestamp),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         }
     }

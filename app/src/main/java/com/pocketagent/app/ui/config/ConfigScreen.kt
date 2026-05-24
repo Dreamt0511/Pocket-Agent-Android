@@ -8,6 +8,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -16,18 +18,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
+import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.ConfigManager
+import com.pocketagent.app.ui.theme.GlassCard
+import com.pocketagent.app.update.CodeSyncManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
-/**
- * 配置管理页面 — 简洁版
- *
- * 只展示用户真正需要关心的配置：
- *  1. 主模型（LLM 端点 / API Key / 模型名 / 温度 / 最大Token）
- *  2. 子模型（可选，不填则继承主模型）
- *  3. MCP 连接（NeuralBridge 地址）
- *  4. 高级（折叠）：迭代次数、递归限制、上下文窗口
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigScreen(navController: NavController) {
@@ -37,6 +42,20 @@ fun ConfigScreen(navController: NavController) {
     var isLoading by remember { mutableStateOf(true) }
     var saved by remember { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
+
+    // LLM 验证状态
+    var verifying by remember { mutableStateOf(false) }
+    var verifyResult by remember { mutableStateOf<String?>(null) }
+    var verifyOk by remember { mutableStateOf(false) }
+
+    // MCP 测试状态
+    var testingMcp by remember { mutableStateOf(false) }
+    var mcpResult by remember { mutableStateOf<String?>(null) }
+    var mcpOk by remember { mutableStateOf(false) }
+
+    // 更新状态
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<String?>(null) }
 
     // 加载配置
     LaunchedEffect(Unit) {
@@ -79,9 +98,9 @@ fun ConfigScreen(navController: NavController) {
                 SectionCard(title = "主模型") {
                     ConfigField(
                         label = "服务地址",
-                        value = configMap["DEFAULT_LLM_BASE_URL"] ?: "",
+                        value = configMap["LLM_BASE_URL"] ?: "",
                         placeholder = "https://api.openai.com/v1",
-                        onValueChange = { configMap = configMap + ("DEFAULT_LLM_BASE_URL" to it) }
+                        onValueChange = { configMap = configMap + ("LLM_BASE_URL" to it) }
                     )
                     ConfigField(
                         label = "API 密钥",
@@ -111,6 +130,39 @@ fun ConfigScreen(navController: NavController) {
                             modifier = Modifier.weight(1f),
                             onValueChange = { configMap = configMap + ("LLM_MAX_TOKENS" to it) }
                         )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    // 验证按钮
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                verifying = true
+                                verifyResult = null
+                                val result = testLlmConnection(configMap)
+                                verifyOk = result.first
+                                verifyResult = result.second
+                                verifying = false
+                            }
+                        },
+                        enabled = !verifying && configMap["LLM_BASE_URL"]?.isNotBlank() == true,
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (verifyOk) Color(0xFF16A34A) else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        if (verifying) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            if (verifying) "验证中..." else if (verifyOk) "✔ 连接正常" else "验证配置",
+                            fontSize = 14.sp
+                        )
+                    }
+                    verifyResult?.let {
+                        Text(it, fontSize = 12.sp, color = if (verifyOk) Color(0xFF16A34A) else Color(0xFFDC2626),
+                            modifier = Modifier.padding(top = 4.dp))
                     }
                 }
 
@@ -151,6 +203,38 @@ fun ConfigScreen(navController: NavController) {
                         placeholder = "http://127.0.0.1:7474/mcp",
                         onValueChange = { configMap = configMap + ("MCP_SERVER_URL" to it) }
                     )
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                testingMcp = true
+                                mcpResult = null
+                                val result = testMcpConnection(configMap["MCP_SERVER_URL"] ?: "")
+                                mcpOk = result.first
+                                mcpResult = result.second
+                                testingMcp = false
+                            }
+                        },
+                        enabled = !testingMcp && configMap["MCP_SERVER_URL"]?.isNotBlank() == true,
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (mcpOk) Color(0xFF16A34A) else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        if (testingMcp) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            if (testingMcp) "测试中..." else if (mcpOk) "✔ MCP 已连接" else "测试 MCP 连接",
+                            fontSize = 14.sp
+                        )
+                    }
+                    mcpResult?.let {
+                        Text(it, fontSize = 12.sp, color = if (mcpOk) Color(0xFF16A34A) else Color(0xFFDC2626),
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
 
                 // ===== 高级设置（折叠）=====
@@ -202,14 +286,164 @@ fun ConfigScreen(navController: NavController) {
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 32.dp)
+                        .padding(top = 8.dp)
                         .height(48.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("保存设置", fontSize = 16.sp)
                 }
+
+                // ===== 代码更新 =====
+                SectionCard(title = "代码更新") {
+                    val codeVersion = try {
+                        CodeSyncManager.getInstance().getLocalVersion()
+                    } catch (_: Exception) { "未知" }
+                    Text("当前版本: $codeVersion", fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text("从 GitHub 主仓库同步最新 Agent 代码", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                checkingUpdate = true
+                                updateInfo = null
+                                try {
+                                    val result = AppBootstrapper.checkAllUpdates()
+                                    // 简单反馈
+                                    updateInfo = "检查完成"
+                                } catch (e: Exception) {
+                                    updateInfo = "检查失败: ${e.message}"
+                                }
+                                checkingUpdate = false
+                            }
+                        },
+                        enabled = !checkingUpdate,
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        if (checkingUpdate) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (checkingUpdate) "检查中..." else "检查更新", fontSize = 14.sp)
+                    }
+                    updateInfo?.let {
+                        Text(it, fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
             }
         }
+    }
+}
+
+// ─── 网络测试函数 ────────────────────────────────
+
+private suspend fun testLlmConnection(config: Map<String, String>): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    val baseUrl = config["LLM_BASE_URL"]?.trimEnd('/') ?: return@withContext false to "未配置服务地址"
+    val apiKey = config["LLM_API_KEY"] ?: ""
+    val model = config["LLM_MODEL"] ?: ""
+
+    val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    try {
+        // 先用 /models 试试（兼容 OpenAI API）
+        val modelsUrl = if (baseUrl.contains("/v1")) "$baseUrl/models" else "${baseUrl}/v1/models"
+        val req = Request.Builder().url(modelsUrl)
+            .addHeader("Authorization", "Bearer $apiKey")
+            .build()
+        val resp = client.newCall(req).execute()
+
+        if (resp.isSuccessful) {
+            val body = JSONObject(resp.body?.string() ?: "{}")
+            val models = body.optJSONArray("data")
+            if (models != null && models.length() > 0) {
+                val modelNames = (0 until models.length()).map { models.getJSONObject(it).optString("id", "") }
+                val found = model if (model.isBlank()) "" else if (modelNames.any { it.contains(model, ignoreCase = true) }) "（模型匹配）" else "（⚠ 未找到模型 $model）"
+                return@withContext true to "连接成功，可用模型: ${modelNames.take(5).joinToString(", ")}$found"
+            }
+            return@withContext true to "连接成功（未返回模型列表）"
+        } else {
+            val errBody = resp.body?.string() ?: "无响应"
+            // 尝试 chat completion 作为 fallback
+            return@withContext try {
+                val chatUrl = if (baseUrl.contains("/v1")) "$baseUrl/chat/completions" else "${baseUrl}/v1/chat/completions"
+                val json = """{"model":"${model.ifBlank { "gpt-3.5-turbo" }}","messages":[{"role":"user","content":"ping"}],"max_tokens":5}"""
+                val chatReq = Request.Builder().url(chatUrl)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .post(json.toRequestBody("application/json".toMediaType()))
+                    .build()
+                val chatResp = client.newCall(chatReq).execute()
+                if (chatResp.isSuccessful) {
+                    true to "连接成功（ping 通过）"
+                } else {
+                    val code = chatResp.code
+                    val msg = when (code) {
+                        401 -> "认证失败（API Key 无效）"
+                        403 -> "权限不足"
+                        404 -> "接口地址错误（$code）"
+                        429 -> "请求过于频繁"
+                        else -> "HTTP $code: ${chatResp.body?.string()?.take(100) ?: ""}"
+                    }
+                    false to msg
+                }
+            } catch (_: Exception) {
+                false to "连接失败: HTTP ${resp.code}（${errBody.take(100)}）"
+            }
+        }
+    } catch (e: java.net.ConnectException) {
+        false to "无法连接（连接被拒绝），请检查服务地址"
+    } catch (e: java.net.SocketTimeoutException) {
+        false to "连接超时（10s），请检查服务地址和网络"
+    } catch (e: Exception) {
+        false to "错误: ${e.localizedMessage ?: "未知错误"}"
+    }
+}
+
+private suspend fun testMcpConnection(url: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    if (url.isBlank()) return@withContext false to "未配置 MCP 地址"
+
+    val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    try {
+        val json = """{"jsonrpc":"2.0","method":"tools/list","id":1}"""
+        val req = Request.Builder().url(url)
+            .post(json.toRequestBody("application/json".toMediaType()))
+            .addHeader("Content-Type", "application/json")
+            .build()
+        val resp = client.newCall(req).execute()
+
+        if (resp.isSuccessful) {
+            val body = JSONObject(resp.body?.string() ?: "{}")
+            val tools = body.optJSONArray("result") ?: body.optJSONArray("tools")
+            if (tools != null && tools.length() > 0) {
+                val names = (0 until tools.length()).map {
+                    val t = tools.getJSONObject(it)
+                    t.optString("name", t.optString("function", ""))
+                }
+                return@withContext true to "MCP 已连接，可用工具 (${names.size}): ${names.joinToString(", ")}"
+            }
+            return@withContext true to "MCP 已连接（无工具列表返回）"
+        } else {
+            val code = resp.code
+            val errBody = resp.body?.string()?.take(100) ?: ""
+            false to "MCP 连接失败: HTTP $code ${errBody}"
+        }
+    } catch (e: java.net.ConnectException) {
+        false to "无法连接 MCP 服务（连接被拒绝）"
+    } catch (e: java.net.SocketTimeoutException) {
+        false to "MCP 连接超时（10s）"
+    } catch (e: Exception) {
+        false to "MCP 测试错误: ${e.localizedMessage ?: "未知错误"}"
     }
 }
 
@@ -221,12 +455,9 @@ private fun SectionCard(
     trailing: @Composable () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
