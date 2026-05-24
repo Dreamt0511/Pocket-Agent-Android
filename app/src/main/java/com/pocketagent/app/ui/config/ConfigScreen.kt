@@ -365,7 +365,11 @@ private suspend fun testLlmConnection(config: Map<String, String>): Pair<Boolean
             val models = body.optJSONArray("data")
             if (models != null && models.length() > 0) {
                 val modelNames = (0 until models.length()).map { models.getJSONObject(it).optString("id", "") }
-                val found = model if (model.isBlank()) "" else if (modelNames.any { it.contains(model, ignoreCase = true) }) "（模型匹配）" else "（⚠ 未找到模型 $model）"
+                val found = when {
+                                model.isBlank() -> ""
+                                modelNames.any { it.contains(model, ignoreCase = true) } -> "（模型匹配）"
+                                else -> "（⚠ 未找到模型 $model）"
+                            }
                 return@withContext true to "连接成功，可用模型: ${modelNames.take(5).joinToString(", ")}$found"
             }
             return@withContext true to "连接成功（未返回模型列表）"

@@ -117,7 +117,7 @@ fun SkillsScreen(navController: NavController) {
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
-                                Icons.Default.Lightbulb,
+                                Icons.Default.Info,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
@@ -412,7 +412,7 @@ private fun SkillEditDialog(
     var name by remember { mutableStateOf(initialName) }
     var description by remember { mutableStateOf(initialDesc) }
     var content by remember { mutableStateOf(initialContent) }
-    var selectedSubCategory by remember { mutableIntStateOf(0) }
+    var selectedSubCategory by remember { mutableStateOf(0) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
