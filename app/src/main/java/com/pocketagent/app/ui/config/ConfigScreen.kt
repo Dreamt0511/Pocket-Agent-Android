@@ -20,9 +20,13 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.ConfigManager
+import com.pocketagent.app.data.SettingsRepository
+import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.CodeSyncManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -35,8 +39,11 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@OptIn(FlowPreview::class)
 fun ConfigScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
 
     var configMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -61,6 +68,32 @@ fun ConfigScreen(navController: NavController) {
     LaunchedEffect(Unit) {
         configMap = ConfigManager.loadAll()
         isLoading = false
+    }
+
+    // 自动保存：监听 configMap 变化，debounce 1.5 秒后自动持久化
+    LaunchedEffect(Unit) {
+        snapshotFlow { configMap }
+            .debounce(1500L)
+            .collect { map ->
+                if (!isLoading && map.isNotEmpty()) {
+                    ConfigManager.saveAll(map)
+                    try {
+                        settingsRepo.saveSettings(
+                            com.pocketagent.app.data.Settings(
+                                llmBaseUrl = map["LLM_BASE_URL"] ?: "",
+                                llmApiKey = map["LLM_API_KEY"] ?: "",
+                                llmModel = map["LLM_MODEL"] ?: "",
+                                llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
+                                llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
+                                mcpServerUrl = map["MCP_SERVER_URL"] ?: ""
+                            )
+                        )
+                    } catch (_: Exception) {}
+                    saved = true
+                    kotlinx.coroutines.delay(2000)
+                    saved = false
+                }
+            }
     }
 
     Scaffold(
@@ -278,25 +311,6 @@ fun ConfigScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
                     }
-                }
-
-                // ===== 保存按钮 =====
-                Button(
-                    onClick = {
-                        scope.launch {
-                            ConfigManager.saveAll(configMap)
-                            saved = true
-                            kotlinx.coroutines.delay(3000)
-                            saved = false
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("保存设置", fontSize = 16.sp)
                 }
 
                 // ===== 代码更新 =====

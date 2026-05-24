@@ -117,6 +117,12 @@ object OverlayManager {
 
     private fun startService(action: String) {
         val ctx = appContext ?: return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
+            openOverlayPermissionSettings(ctx)
+            return
+        }
+
         val intent = Intent(ctx, OverlayService::class.java).apply {
             this.action = action
         }

@@ -1,11 +1,15 @@
 package com.pocketagent.app.overlay
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.view.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +64,29 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // 前台服务通知
+        val channelId = "overlay_service"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "悬浮窗服务", NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, channelId)
+                .setContentTitle("Pocket Agent")
+                .setContentText("悬浮窗运行中")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("Pocket Agent")
+                .setContentText("悬浮窗运行中")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .build()
+        }
+        startForeground(1001, notification)
+
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
         // 获取屏幕尺寸
@@ -161,6 +188,8 @@ class OverlayService : Service() {
     // ─── 迷你悬浮窗 ─────────────────────────────────
 
     private fun showMini() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
+
         expandedParams?.let { try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
         expandedParams = null
 
@@ -270,6 +299,8 @@ class OverlayService : Service() {
     // ─── 展开悬浮窗 ─────────────────────────────────
 
     private fun showExpanded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
+
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         miniParams = null
 

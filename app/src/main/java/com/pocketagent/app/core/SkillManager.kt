@@ -47,8 +47,14 @@ object SkillManager {
             init(externalDir.absolutePath)
             return
         }
-        val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
-        init(File(runtimeDir, "agent/skills").absolutePath)
+        try {
+            val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
+            init(File(runtimeDir, "agent/skills").absolutePath)
+        } catch (e: Exception) {
+            Log.w(TAG, "CodeSyncManager failed, using internal storage", e)
+            val internalPath = File(context.filesDir, "agent/skills").absolutePath
+            init(internalPath)
+        }
     }
 
     private fun getSkillsRoot(): File =
@@ -89,36 +95,49 @@ object SkillManager {
         val result = mutableListOf<Skill>()
         val skillFile = findSkillFile(dir)
         if (skillFile != null) {
-            val content = skillFile.readText()
-            val (name, description) = parseFrontmatter(content)
-            val relativePath = dir.relativeTo(getSkillsRoot()).path
-            result.add(Skill(
-                name = name ?: dir.name,
-                description = description ?: "",
-                category = category,
-                path = relativePath,
-                content = content
-            ))
+            try {
+                val content = skillFile.readText()
+                val (name, description) = parseFrontmatter(content)
+                val relativePath = dir.relativeTo(getSkillsRoot()).path
+                result.add(Skill(
+                    name = name ?: dir.name,
+                    description = description ?: "",
+                    category = category,
+                    path = relativePath,
+                    content = content
+                ))
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read skill file: ${skillFile.absolutePath}", e)
+            }
             return result
         }
         for (child in dir.listFiles()?.filter { it.isDirectory } ?: emptyList()) {
-            result.addAll(collectAllSkills(child, category))
+            try {
+                result.addAll(collectAllSkills(child, category))
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to collect skills from: ${child.absolutePath}", e)
+            }
         }
         return result
     }
 
     private fun readSingleSkill(dir: File, category: Category): Skill? {
         val skillFile = findSkillFile(dir) ?: return null
-        val content = skillFile.readText()
-        val (name, description) = parseFrontmatter(content)
-        val relativePath = dir.relativeTo(getSkillsRoot()).path
-        return Skill(
-            name = name ?: dir.name,
-            description = description ?: "",
-            category = category,
-            path = relativePath,
-            content = content
-        )
+        return try {
+            val content = skillFile.readText()
+            val (name, description) = parseFrontmatter(content)
+            val relativePath = dir.relativeTo(getSkillsRoot()).path
+            Skill(
+                name = name ?: dir.name,
+                description = description ?: "",
+                category = category,
+                path = relativePath,
+                content = content
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read skill: ${skillFile.absolutePath}", e)
+            null
+        }
     }
 
     suspend fun getAllSkills(): List<Skill> = withContext(Dispatchers.IO) {
@@ -126,21 +145,26 @@ object SkillManager {
     }
 
     suspend fun getSkillByPath(path: String): Skill? = withContext(Dispatchers.IO) {
-        if (!isPathSafe(path)) return@withContext null
-        val file = File(getSkillsRoot(), path)
-        if (!file.isDirectory) return@withContext null
-        val skillFile = findSkillFile(file) ?: return@withContext null
-        val content = skillFile.readText()
-        val (name, description) = parseFrontmatter(content)
-        val category = Category.fromDirName(path.substringBefore("/"))
-            ?: return@withContext null
-        Skill(
-            name = name ?: file.name,
-            description = description ?: "",
-            category = category,
-            path = path,
-            content = content
-        )
+        try {
+            if (!isPathSafe(path)) return@withContext null
+            val file = File(getSkillsRoot(), path)
+            if (!file.isDirectory) return@withContext null
+            val skillFile = findSkillFile(file) ?: return@withContext null
+            val content = skillFile.readText()
+            val (name, description) = parseFrontmatter(content)
+            val category = Category.fromDirName(path.substringBefore("/"))
+                ?: return@withContext null
+            Skill(
+                name = name ?: file.name,
+                description = description ?: "",
+                category = category,
+                path = path,
+                content = content
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get skill by path: $path", e)
+            null
+        }
     }
 
     // ─── 创建（IO 线程）─────────────────────────────
@@ -170,7 +194,12 @@ object SkillManager {
             appendLine()
             appendLine(content.trim())
         }
-        skillFile.writeText(frontmatter)
+        try {
+            skillFile.writeText(frontmatter)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write skill: ${skillFile.absolutePath}", e)
+            return@withContext null
+        }
 
         val relativePath = skillDir.relativeTo(getSkillsRoot()).path
         Skill(name, description, category, relativePath, frontmatter)
@@ -232,7 +261,12 @@ object SkillManager {
                 appendLine()
                 appendLine(content.trim())
             }
-            skillFile.writeText(frontmatter)
+            try {
+                skillFile.writeText(frontmatter)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update skill: ${skillFile.absolutePath}", e)
+                return@withContext false
+            }
             true
         }
 

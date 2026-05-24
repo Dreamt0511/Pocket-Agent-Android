@@ -56,45 +56,22 @@ private class ShellSession {
     private val mutex = Mutex()
     private val marker = "___SHELL_DONE_${Random.nextInt(100000, 999999)}___"
 
-    // 当前工作目录，通过每次命令后解析 pwd 更新
-    var currentDir: String = "/data/data/com.termux/files/home"
+    var currentDir: String = ""
         private set
 
-    /**
-     * 启动持久 bash 会话
-     */
-    suspend fun start(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun start(context: android.content.Context): Boolean = withContext(Dispatchers.IO) {
         try {
-            val shell = if (TermuxBootstrap.isReady) {
-                "${TermuxBootstrap.termuxUsr}/bin/bash"
-            } else {
-                "/system/bin/sh"
-            }
-
-            val homeDir = if (TermuxBootstrap.isReady) {
-                "${TermuxBootstrap.termuxRoot}/home"
-            } else {
-                "/data/local/tmp"
-            }
-            File(homeDir).mkdirs()
+            val shell = "/system/bin/sh"
+            val homeDir = context.filesDir.absolutePath
+            java.io.File(homeDir).mkdirs()
 
             val pb = ProcessBuilder(shell)
-                .directory(File(homeDir))
+                .directory(java.io.File(homeDir))
                 .redirectErrorStream(true)
 
             val env = pb.environment()
             env["HOME"] = homeDir
-            env["PATH"] = if (TermuxBootstrap.isReady) {
-                "${TermuxBootstrap.termuxUsr}/bin:" +
-                "${TermuxBootstrap.termuxUsr}/bin/applets:" +
-                "/system/bin:/system/xbin"
-            } else {
-                "/system/bin:/system/xbin"
-            }
-            if (TermuxBootstrap.isReady) {
-                env["LD_LIBRARY_PATH"] = "${TermuxBootstrap.termuxUsr}/lib"
-                env["TMPDIR"] = "${TermuxBootstrap.termuxRoot}/tmp"
-            }
+            env["PATH"] = "/system/bin:/system/xbin"
             env["TERM"] = "xterm-256color"
             env["LANG"] = "en_US.UTF-8"
 
@@ -216,19 +193,16 @@ fun TerminalScreen(navController: NavController) {
     var sessionReady by remember { mutableStateOf(false) }
     var currentDir by remember { mutableStateOf("~") }
     val session = remember { ShellSession() }
+    val context = androidx.compose.ui.platform.LocalContext.current
     // 启动 Shell 会话
     LaunchedEffect(Unit) {
         terminalLines = listOf(
-            TerminalLine("Pocket Agent · 持久 Shell", TerminalLineType.INFO),
+            TerminalLine("Pocket Agent · Shell", TerminalLineType.INFO),
+            TerminalLine("系统 Shell 会话启动中...", TerminalLineType.INFO),
             TerminalLine("", TerminalLineType.EMPTY),
         )
-        if (TermuxBootstrap.isReady) {
-            terminalLines += TerminalLine("Termux bash 会话启动中...", TerminalLineType.INFO)
-        } else {
-            terminalLines += TerminalLine("Termux 未检测到，使用系统 sh（功能受限）", TerminalLineType.WARNING)
-        }
 
-        val started = session.start()
+        val started = session.start(context)
         if (started) {
             currentDir = session.currentDir
             sessionReady = true
@@ -313,7 +287,7 @@ fun TerminalScreen(navController: NavController) {
                         text = when {
                             !sessionReady -> "启动中..."
                             isExecuting -> "执行中"
-                            else -> if (TermuxBootstrap.isReady) "bash" else "sh"
+                            else -> "sh"
                         },
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
@@ -475,10 +449,10 @@ private fun QuickCommandsRow(
 ) {
     val quickCommands = listOf(
         "pwd" to "当前路径",
-        "ls" to "列出文件",
-        "termux-battery-status" to "电池",
-        "termux-sensor" to "传感器",
-        "termux-wifi-scaninfo" to "WiFi",
+        "ls -la" to "文件列表",
+        "whoami" to "当前用户",
+        "uname -a" to "系统信息",
+        "df -h" to "磁盘空间",
     )
 
     Row(

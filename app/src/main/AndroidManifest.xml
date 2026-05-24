@@ -52,6 +52,13 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
+        <!-- 悬浮窗服务 -->
+        <service
+            android:name=".overlay.OverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
+
         </application>
 
 </manifest>

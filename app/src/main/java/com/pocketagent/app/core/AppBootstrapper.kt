@@ -38,6 +38,7 @@ object AppBootstrapper {
      */
     fun init(context: Context, repoUrl: String = "https://github.com/pocketagent/pocket-agent") {
         this.repoUrl = repoUrl
+        appContext = context.applicationContext
 
         // 1. 悬浮窗管理器
         OverlayManager.init(context)
