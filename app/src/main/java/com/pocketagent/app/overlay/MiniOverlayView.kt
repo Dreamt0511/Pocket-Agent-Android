@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -143,7 +144,8 @@ class MiniOverlayView(
                 val scale = animator.animatedValue as Float
                 statusDot.scaleX = scale
                 statusDot.scaleY = scale
-                (statusDot.background as GradientDrawable).alpha = (255 * (1.5f - scale)).toInt()
+                val alpha = (255 * (1.5f - scale)).toInt()
+                (statusDot.background as GradientDrawable).setAlpha(alpha)
             }
             start()
         }
@@ -154,7 +156,7 @@ class MiniOverlayView(
         pulseAnimator = null
         statusDot.scaleX = 1f
         statusDot.scaleY = 1f
-        (statusDot.background as GradientDrawable).alpha = 255
+        (statusDot.background as GradientDrawable).setAlpha(255)
     }
 
     private fun dp(value: Int): Int {

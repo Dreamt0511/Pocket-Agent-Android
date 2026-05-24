@@ -170,7 +170,7 @@ class ExpandedOverlayView(
                 text = "空闲"
                 setTextColor(Color.parseColor("#4CAF50"))
                 textSize = 10f
-                layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
             addView(statusText)
 
