@@ -131,8 +131,15 @@ class AgentDaemonV2(private val context: Context) {
         pythonRuntime.setOnAction { request ->
             StreamBridge.task("执行: ${request.type} → ${request.target}")
 
-            // 通知悬浮窗：Agent 即将操控手机
+            // 操控手机前检查 NeuralBridge 就绪状态
             if (request.type in listOf("click", "swipe", "input", "launch_app")) {
+                val ready = NeuralBridgeHelper.checkAndAlert(
+                    context,
+                    "Agent 尝试执行: ${request.type}(${request.target})"
+                )
+                if (!ready) {
+                    StreamBridge.info("NeuralBridge 未就绪，请查看弹窗提示")
+                }
                 StreamBridge.signalOperation(true)
             }
 

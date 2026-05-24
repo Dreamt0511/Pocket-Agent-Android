@@ -63,8 +63,9 @@ fun ConfigScreen(navController: NavController) {
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<String?>(null) }
 
-    // 加载配置
+    // 加载配置（首次访问时确保 .env 文件存在）
     LaunchedEffect(Unit) {
+        ConfigManager.ensureEnvFile()
         configMap = ConfigManager.loadAll()
         isLoading = false
     }

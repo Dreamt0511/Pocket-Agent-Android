@@ -43,12 +43,6 @@ object SkillManager {
 
     fun init(context: Context) {
         appContext = context.applicationContext
-        val externalPath = "/storage/emulated/0/手机agent开发/Pocket-Agent/agent/skills"
-        val externalDir = File(externalPath)
-        if (externalDir.exists()) {
-            init(externalDir.absolutePath)
-            return
-        }
         try {
             val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
             init(File(runtimeDir, "agent/skills").absolutePath)
@@ -61,14 +55,6 @@ object SkillManager {
 
     fun rescan() {
         val ctx = appContext ?: return
-        // Re-evaluate which skills root to use (same logic as init(context))
-        val externalPath = "/storage/emulated/0/手机agent开发/Pocket-Agent/agent/skills"
-        val externalDir = File(externalPath)
-        if (externalDir.exists()) {
-            init(externalDir.absolutePath)
-            Log.i(TAG, "Rescanned skills root (external): $externalPath")
-            return
-        }
         try {
             val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
             val skillsDir = File(runtimeDir, "agent/skills").absolutePath

@@ -280,6 +280,13 @@ class PythonRuntime(
             Log.i(TAG, "Seed skills extracted to ${skillsTarget.absolutePath}")
         }
 
+        // 始终提取 .env.example 模板（配置页面需要）
+        val envExample = File(targetDir, ".env.example")
+        if (!envExample.exists()) {
+            copyAssetRecursive("$SEED_ASSET_DIR/.env.example", targetDir)
+            Log.i(TAG, ".env.example extracted to ${envExample.absolutePath}")
+        }
+
         // 主代码：已存在则跳过（防止覆盖 GitHub 同步的代码）
         if (File(targetDir, "stable_entry.py").exists()) {
             Log.d(TAG, "Seed code already extracted, skipping")
@@ -291,18 +298,21 @@ class PythonRuntime(
 
     private fun copyAssetRecursive(assetPath: String, targetDir: File) {
         val assets = context.assets
-        val list: Array<String>
+        // 先尝试作为目录列出
+        val list: Array<String>?
         try {
-            list = assets.list(assetPath) ?: return
+            list = assets.list(assetPath)
         } catch (_: Exception) {
             return
         }
 
-        if (list.isNotEmpty()) {
+        if (list != null && list.isNotEmpty()) {
+            // 是目录 → 递归子项
             for (item in list) {
                 copyAssetRecursive("$assetPath/$item", targetDir)
             }
         } else {
+            // list == null 或空 → 尝试作为文件打开
             val relPath = assetPath.removePrefix("$SEED_ASSET_DIR/")
             val outFile = File(targetDir, relPath)
             outFile.parentFile?.mkdirs()
@@ -313,7 +323,8 @@ class PythonRuntime(
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to extract $assetPath: ${e.message}")
+                // 既不是目录也不是文件（路径不存在），静默跳过
+                Log.w(TAG, "Skipping $assetPath: ${e.message}")
             }
         }
     }
