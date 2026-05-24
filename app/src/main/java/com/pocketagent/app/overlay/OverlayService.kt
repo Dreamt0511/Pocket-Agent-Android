@@ -316,6 +316,13 @@ class OverlayService : Service() {
                         try { windowManager.updateViewLayout(expandedView, params) } catch (_: Exception) {}
                     }
                 },
+                onDrag = { dx, dy ->
+                    expandedParams?.let { params ->
+                        params.x += dx
+                        params.y += dy
+                        try { windowManager.updateViewLayout(expandedView, params) } catch (_: Exception) {}
+                    }
+                },
                 screenWidth = screenWidth,
                 screenHeight = screenHeight
             )
@@ -339,7 +346,6 @@ class OverlayService : Service() {
                 y = dpToPx(60)
             }
 
-            setupExpandedDrag()
             windowManager.addView(expandedView, expandedParams)
         }
 
@@ -349,32 +355,6 @@ class OverlayService : Service() {
 
         currentMode = OverlayMode.EXPANDED
         overlayState.value = OverlayMode.EXPANDED
-    }
-
-    private fun setupExpandedDrag() {
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
-        expandedView.headerView.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = expandedParams!!.x
-                    initialY = expandedParams!!.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    expandedParams!!.x = initialX + (event.rawX - initialTouchX).toInt()
-                    expandedParams!!.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager.updateViewLayout(expandedView, expandedParams)
-                    true
-                }
-                else -> false
-            }
-        }
     }
 
     // ─── 公开 API ────────────────────────────────────

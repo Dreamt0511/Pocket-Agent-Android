@@ -125,6 +125,10 @@ fun SkillsScreen(navController: NavController) {
                         }) {
                             Text("取消", fontSize = 16.sp)
                         }
+                    } else if (selectedSkill != null) {
+                        TextButton(onClick = { selectedSkill = null }) {
+                            Text("← 返回", fontSize = 16.sp)
+                        }
                     } else {
                         TextButton(onClick = { navController.popBackStack() }) {
                             Text("← 返回", fontSize = 16.sp)

@@ -35,6 +35,7 @@ class ExpandedOverlayView(
     private val onMinimize: () -> Unit,
     private val onClose: () -> Unit,
     private val onResize: (width: Int, height: Int) -> Unit,
+    private val onDrag: (dx: Int, dy: Int) -> Unit,
     private val screenWidth: Int,
     private val screenHeight: Int
 ) : LinearLayout(context) {
@@ -45,6 +46,9 @@ class ExpandedOverlayView(
     private val statusText: TextView
 
     private val terminalBuffer = StringBuilder()
+
+    private var dragStartRawX = 0f
+    private var dragStartRawY = 0f
 
     // 双指缩放手势检测 — 缩小到临界值自动关闭
     private val closeThreshold: Int get() = dp(80)
@@ -214,10 +218,32 @@ class ExpandedOverlayView(
 
         elevation = dp(16).toFloat()
 
-        // 双指缩放监听：在缩放中时消费事件，否则传递给子视图（标题栏拖拽、缩放手柄等）
+        // 统一触控：单指拖拽标题栏 + 双指缩放 + 缩放手柄
         setOnTouchListener { _, event ->
             scaleDetector.onTouchEvent(event)
-            scaleDetector.isInProgress
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    if (event.pointerCount == 1) {
+                        dragStartRawX = event.rawX
+                        dragStartRawY = event.rawY
+                    }
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount == 1) {
+                        val dx = (event.rawX - dragStartRawX).toInt()
+                        val dy = (event.rawY - dragStartRawY).toInt()
+                        if (dx != 0 || dy != 0) {
+                            onDrag(dx, dy)
+                            dragStartRawX = event.rawX
+                            dragStartRawY = event.rawY
+                        }
+                    }
+                    true
+                }
+                else -> true
+            }
         }
     }
 
