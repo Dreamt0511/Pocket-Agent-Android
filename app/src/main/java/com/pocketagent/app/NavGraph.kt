@@ -38,9 +38,9 @@ fun AppNavGraph(navController: NavHostController) {
             val context = LocalContext.current
             val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
             val settings by settingsRepo.settingsFlow.collectAsState(initial = null)
-            val modelConfigured = settings != null
-                && settings.llmApiKey.isNotBlank()
-                && settings.llmApiKey != "dummy"
+            val modelConfigured = settings?.let {
+                    it.llmApiKey.isNotBlank() && it.llmApiKey != "dummy"
+                } ?: false
             HomeScreen(
                 navController = navController,
                 modelConfigured = modelConfigured
