@@ -19,3 +19,10 @@
 -keep class com.google.gson.** { *; }
 -keepattributes Signature
 -keepattributes *Annotation*
+
+# compose-markdown
+-keep class dev.jeziellago.compose.markdowntext.** { *; }
+
+# 液态玻璃 UI 组件
+-keep class com.pocketagent.app.ui.theme.** { *; }
+-keep class com.pocketagent.app.ui.components.** { *; }
