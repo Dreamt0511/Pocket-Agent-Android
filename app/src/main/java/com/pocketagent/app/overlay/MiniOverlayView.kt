@@ -3,29 +3,26 @@ package com.pocketagent.app.overlay
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
-import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 
 /**
- * 迷你悬浮窗视图 (40dp 圆形)
+ * 迷你悬浮窗视图 — 药丸形，显示滚动文本
  *
  * 布局:
- * ┌────────────────┐
- * │  [icon] 状态点  │  ← 整个圆形可点击展开
- * └────────────────┘
+ * ┌──────────────────────────────────────┐
+ * │ [icon]  [滚动输出...          ] [●]  │
+ * └──────────────────────────────────────┘
  *
  * 特性:
- * - 半透明深色背景 + 圆角
- * - 中心图标 (app icon)
- * - 右下角状态指示灯 (绿=运行, 黄=思考, 红=错误)
- * - 长按拖拽移动
+ * - 半透明深色背景 + 圆角药丸形
+ * - 左侧图标 (app icon)
+ * - 中间最新流式输出行 (marquee 滚动)
+ * - 右侧状态指示灯 (绿=运行, 黄=思考, 红=错误)
  * - 点击展开
  */
 class MiniOverlayView(
@@ -36,70 +33,82 @@ class MiniOverlayView(
 
     private val iconView: ImageView
     private val statusDot: View
-    private val statusText: TextView
+    private val streamTextView: TextView
     private var pulseAnimator: ValueAnimator? = null
 
     init {
-        val iconSize = dp(36)
-        val containerSize = dp(44)
+        val containerHeight = dp(40)
 
-        layoutParams = LayoutParams(containerSize, containerSize)
+        layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, containerHeight)
 
-        // 背景
+        // 背景 — 药丸形 (高圆角矩形)
         background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(20).toFloat()
             setColor(Color.parseColor("#CC1A1A2E"))
             setStroke(dp(1.5f), Color.parseColor("#33FFFFFF"))
         }
 
+        // 水平内容行
+        val row = LinearLayout(context).apply {
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, containerHeight)
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(10), 0)
+        }
+        addView(row)
+
         // 图标
         iconView = ImageView(context).apply {
-            layoutParams = LayoutParams(iconSize, iconSize).apply {
-                gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24)).apply {
+                setMargins(0, 0, dp(6), 0)
             }
             setImageResource(android.R.drawable.ic_menu_manage) // 替换为真实 logo
             setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             alpha = 0.9f
         }
-        addView(iconView)
+        row.addView(iconView)
+
+        // 滚动输出文本
+        streamTextView = TextView(context).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(100), LayoutParams.WRAP_CONTENT)
+            setTextColor(Color.parseColor("#CCFFFFFF"))
+            textSize = 10f
+            maxLines = 1
+            isSingleLine = true
+            ellipsize = android.text.TextUtils.TruncateAt.MARQUEE
+            marqueeRepeatLimit = -1
+            isSelected = true // 强制 marquee 滚动
+            text = ""
+        }
+        row.addView(streamTextView)
 
         // 状态指示灯
         statusDot = View(context).apply {
-            val dotSize = dp(8)
-            layoutParams = LayoutParams(dotSize, dotSize).apply {
-                gravity = Gravity.BOTTOM or Gravity.END
-                setMargins(0, 0, dp(6), dp(6))
+            val size = dp(8)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                setMargins(dp(6), 0, 0, 0)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#4CAF50"))
             }
         }
-        addView(statusDot)
+        row.addView(statusDot)
 
-        // 状态文本 (显示在旁边)
-        statusText = TextView(context).apply {
-            layoutParams = LayoutParams(
-                LayoutParams.WRAP_CONTENT,
-                LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(0, 0, 0, dp(2))
-            }
-            setTextColor(Color.WHITE)
-            textSize = 9f
-            maxLines = 1
-            alpha = 0f // 默认隐藏
-            text = ""
-        }
-        addView(statusText)
-
-        setOnClickListener {
-            onToggleExpand()
-        }
+        setOnClickListener { onToggleExpand() }
 
         elevation = dp(8).toFloat()
+    }
+
+    /** 更新流式输出文本 — 显示最后一行，过长自动 marquee */
+    fun setStreamText(text: String) {
+        post {
+            val lines = text.trimEnd().split("\n")
+            val lastLine = lines.lastOrNull()?.trim() ?: ""
+            streamTextView.text = lastLine
+        }
     }
 
     fun updateStatus(status: String, isOperating: Boolean) {
@@ -120,8 +129,6 @@ class MiniOverlayView(
             } else {
                 stopPulse()
             }
-
-            statusText.text = status.take(6)
         }
     }
 

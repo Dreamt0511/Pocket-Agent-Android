@@ -2,49 +2,53 @@ package com.pocketagent.app.overlay
 
 import android.animation.ValueAnimator
 import android.content.Context
-import android.graphics.Color
+import android.graphics.*
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.core.widget.NestedScrollView
 
 /**
- * 展开的悬浮窗视图 - 半透明终端风格
+ * 展开的悬浮窗视图 — 半透明终端风格，支持拖拽缩放
  *
  * 布局:
- * ┌──────────────────────────────┐
- * │ ■ Pocket Agent    [－] [×]  │  ← 标题栏 (可拖拽)
- * ├──────────────────────────────┤
- * │ $ 正在分析指令...           │
- * │   → 步骤 1: 打开微信        │  ← 滚动终端 (实时流式)
- * │   → 步骤 2: 搜索联系人      │
- * │   → 步骤 3: 发送消息        │
- * │   ...                       │
- * └──────────────────────────────┘
- *
- * 包含:
- * - 顶部标题栏 (可拖拽移动窗口)
- * - 中间滚动的终端输出
- * - 底部状态栏
- * - 自定义滚动条 (扁平化)
+ * ┌──────────────────────────────────┐
+ * │ ■ Pocket Agent     [－] [×]     │  ← 标题栏 (可拖拽移动)
+ * ├──────────────────────────────────┤
+ * │ $ 正在分析指令...               │
+ * │   → 步骤 1: 打开微信            │  ← 滚动终端 (实时流式)
+ * │   → 步骤 2: 搜索联系人          │
+ * │   → 步骤 3: 发送消息            │
+ * ├──────────────────────────────────┤
+ * │ 空闲                        ╲  │  ← 状态栏 + 右下角缩放手柄
+ * └──────────────────────────────────┘
  */
 class ExpandedOverlayView(
     private val context: Context,
     private val onMinimize: () -> Unit,
+    private val onResize: (width: Int, height: Int) -> Unit,
     private val screenWidth: Int,
     private val screenHeight: Int
 ) : LinearLayout(context) {
 
     val headerView: View
     private val terminalText: TextView
-    private val statusBar: TextView
     private val scrollView: NestedScrollView
+    private val statusText: TextView
 
     private val terminalBuffer = StringBuilder()
+
+    // 缩放状态
+    private var resizeInitialW = 0
+    private var resizeInitialH = 0
+    private var resizeInitialRawX = 0f
+    private var resizeInitialRawY = 0f
 
     init {
         orientation = VERTICAL
@@ -70,13 +74,12 @@ class ExpandedOverlayView(
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadii = floatArrayOf(
-                    dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), // top
-                    0f, 0f, 0f, 0f                      // bottom
+                    dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(), dp(12).toFloat(),
+                    0f, 0f, 0f, 0f
                 )
                 setColor(Color.parseColor("#331A1A2E"))
             }
 
-            // 窗口标题
             val titleText = TextView(context).apply {
                 text = "Pocket Agent"
                 setTextColor(Color.parseColor("#CCFFFFFF"))
@@ -89,7 +92,6 @@ class ExpandedOverlayView(
             }
             addView(titleText)
 
-            // 折叠按钮
             val minimizeBtn = TextView(context).apply {
                 text = "－"
                 setTextColor(Color.parseColor("#AAFFFFFF"))
@@ -100,7 +102,6 @@ class ExpandedOverlayView(
             }
             addView(minimizeBtn)
 
-            // 关闭按钮
             val closeBtn = TextView(context).apply {
                 text = "×"
                 setTextColor(Color.parseColor("#80FFFFFF"))
@@ -153,15 +154,40 @@ class ExpandedOverlayView(
             setBackgroundColor(Color.parseColor("#22FFFFFF"))
         })
 
-        // ═══ 底部状态栏 ═══
-        statusBar = TextView(context).apply {
-            text = "空闲"
-            setTextColor(Color.parseColor("#4CAF50"))
-            textSize = 10f
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+        // ═══ 底部状态栏 + 缩放手柄 ═══
+        val statusRow = LinearLayout(context).apply {
+            layoutParams = LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(4), dp(2), dp(4))
             setBackgroundColor(Color.parseColor("#11000000"))
+
+            // 状态文本
+            statusText = TextView(context).apply {
+                text = "空闲"
+                setTextColor(Color.parseColor("#4CAF50"))
+                textSize = 10f
+                layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+            }
+            addView(statusText)
+
+            // 右下角缩放手柄
+            addView(ResizeGripView(context).apply {
+                val gripSize = dp(24)
+                layoutParams = LinearLayout.LayoutParams(gripSize, gripSize).apply {
+                    setMargins(dp(4), 0, 0, 0)
+                    gravity = Gravity.BOTTOM or Gravity.END
+                }
+                setOnTouchListener { _, event ->
+                    handleResizeTouch(event)
+                    true
+                }
+            })
         }
-        addView(statusBar)
+        addView(statusRow)
 
         elevation = dp(16).toFloat()
     }
@@ -170,7 +196,6 @@ class ExpandedOverlayView(
 
     fun appendStream(text: String) {
         post {
-            // 只追加新增部分
             if (text.length > terminalBuffer.length) {
                 val newText = text.substring(terminalBuffer.length)
                 terminalBuffer.append(newText)
@@ -178,7 +203,6 @@ class ExpandedOverlayView(
                 val styled = formatTerminalText(terminalBuffer.toString())
                 terminalText.text = styled
 
-                // 自动滚动到底部
                 scrollView.post {
                     scrollView.fullScroll(View.FOCUS_DOWN)
                 }
@@ -195,14 +219,56 @@ class ExpandedOverlayView(
                 status.contains("思考") -> Color.parseColor("#FFC107")
                 else -> Color.parseColor("#4CAF50")
             }
-            statusBar.text = status
-            statusBar.setTextColor(color)
+            statusText.text = status
+            statusText.setTextColor(color)
         }
     }
 
-    /**
-     * 终端文本格式化 - 给不同行加颜色
-     */
+    // ─── 缩放触摸处理 ─────────────────────────────
+
+    private fun handleResizeTouch(event: MotionEvent) {
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                resizeInitialW = width
+                resizeInitialH = height
+                resizeInitialRawX = event.rawX
+                resizeInitialRawY = event.rawY
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val deltaX = event.rawX - resizeInitialRawX
+                val deltaY = event.rawY - resizeInitialRawY
+                val newW = (resizeInitialW + deltaX).toInt().coerceAtLeast(dp(200))
+                val newH = (resizeInitialH + deltaY).toInt().coerceAtLeast(dp(150))
+                onResize(newW, newH)
+            }
+        }
+    }
+
+    // ─── 缩放手柄自定义视图 ─────────────────────────
+
+    private inner class ResizeGripView(context: Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#66FFFFFF")
+            strokeWidth = dp(1.5f).toFloat()
+            style = Paint.Style.STROKE
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val step = dp(4).toFloat()
+            // 画三道斜线，模拟缩放手柄
+            for (i in 0 until 3) {
+                val startX = w - step * (3 - i)
+                val startY = step * i
+                canvas.drawLine(startX, startY, w, startY + (w - startX), paint)
+            }
+        }
+    }
+
+    // ─── 终端格式化 ───────────────────────────────
+
     private fun formatTerminalText(text: String): SpannableStringBuilder {
         val result = SpannableStringBuilder()
         val lines = text.split("\n")
@@ -264,7 +330,6 @@ class ExpandedOverlayView(
                 }
             }
         }
-
         return result
     }
 

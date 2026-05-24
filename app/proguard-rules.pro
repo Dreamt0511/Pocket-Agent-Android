@@ -1,14 +1,10 @@
 # ProGuard 规则 - Pocket Agent
 
-# Keep Chaquopy
--keep class com.chaquo.python.** { *; }
+# Keep all app classes (R8 过度裁剪导致安装失败)
+-keep class com.pocketagent.app.** { *; }
 
-# Keep Compose
+# Compose
 -keep class androidx.compose.** { *; }
-
-# Keep models
--keep class com.pocketagent.app.core.** { *; }
--keep class com.pocketagent.app.domain.** { *; }
 
 # OkHttp
 -dontwarn okhttp3.**
@@ -22,7 +18,3 @@
 
 # compose-markdown
 -keep class dev.jeziellago.compose.markdowntext.** { *; }
-
-# 液态玻璃 UI 组件
--keep class com.pocketagent.app.ui.theme.** { *; }
--keep class com.pocketagent.app.ui.components.** { *; }

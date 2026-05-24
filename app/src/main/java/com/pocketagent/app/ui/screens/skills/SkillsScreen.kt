@@ -1,5 +1,6 @@
 package com.pocketagent.app.ui.screens.skills
 
+import android.os.Environment
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,11 +24,13 @@ import com.pocketagent.app.core.SkillManager
 import com.pocketagent.app.ui.theme.GlassCard
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(navController: NavController) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -40,6 +44,12 @@ fun SkillsScreen(navController: NavController) {
 
     // 删除确认
     var showDeleteConfirm by remember { mutableStateOf<SkillManager.Skill?>(null) }
+
+    // 导出状态
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedPaths by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var exporting by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // 当前分类
     val currentCategory = when (selectedTab) {
@@ -56,24 +66,96 @@ fun SkillsScreen(navController: NavController) {
         isLoading = false
     }
 
+    // 单技能导出
+    fun exportSingle(skill: SkillManager.Skill) {
+        scope.launch {
+            exporting = true
+            val dest = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "PocketAgent_Skills"
+            ).also { it.mkdirs() }
+            val result = SkillManager.exportSkill(skill.path, dest.absolutePath)
+            if (result != null) {
+                snackbarHostState.showSnackbar("已导出: ${skill.name}")
+            } else {
+                snackbarHostState.showSnackbar("导出失败: ${skill.name}")
+            }
+            exporting = false
+        }
+    }
+
+    // 批量导出
+    fun exportBatch() {
+        scope.launch {
+            exporting = true
+            val dest = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "PocketAgent_Skills"
+            ).also { it.mkdirs() }
+            val selectedCount = selectedPaths.size
+            val exported = SkillManager.batchExportSkills(selectedPaths.toList(), dest.absolutePath)
+            isSelectionMode = false
+            selectedPaths = emptySet()
+            exporting = false
+            val msg = if (exported.size == selectedCount) {
+                "已导出 ${exported.size} 个技能到 Downloads/PocketAgent_Skills/"
+            } else {
+                "导出完成: ${exported.size}/${selectedCount} 个成功"
+            }
+            snackbarHostState.showSnackbar(msg)
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("技能库") },
+                title = {
+                    Text(if (isSelectionMode) "选择技能" else "技能库")
+                },
                 navigationIcon = {
-                    TextButton(onClick = { navController.popBackStack() }) {
-                        Text("← 返回", fontSize = 16.sp)
+                    if (isSelectionMode) {
+                        TextButton(onClick = {
+                            isSelectionMode = false
+                            selectedPaths = emptySet()
+                        }) {
+                            Text("取消", fontSize = 16.sp)
+                        }
+                    } else {
+                        TextButton(onClick = { navController.popBackStack() }) {
+                            Text("← 返回", fontSize = 16.sp)
+                        }
                     }
                 },
                 actions = {
-                    if (selectedSkill == null && !currentCategory.isSystem) {
-                        TextButton(onClick = {
-                            editSkill = null
-                            showSkillDialog = true
-                        }) {
-                            Icon(Icons.Default.Add, contentDescription = "新建技能", modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("新建", fontSize = 14.sp)
+                    if (isSelectionMode) {
+                        if (selectedPaths.isNotEmpty()) {
+                            TextButton(
+                                onClick = { exportBatch() },
+                                enabled = !exporting
+                            ) {
+                                if (exporting) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Text("导出 (${selectedPaths.size})", fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    } else if (selectedSkill == null) {
+                        if (skills.isNotEmpty()) {
+                            IconButton(onClick = { isSelectionMode = true }) {
+                                Icon(Icons.Default.FileDownload, contentDescription = "批量导出")
+                            }
+                        }
+                        if (!currentCategory.isSystem) {
+                            TextButton(onClick = {
+                                editSkill = null
+                                showSkillDialog = true
+                            }) {
+                                Icon(Icons.Default.Add, contentDescription = "新建技能", modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("新建", fontSize = 14.sp)
+                            }
                         }
                     }
                 }
@@ -91,7 +173,8 @@ fun SkillsScreen(navController: NavController) {
                 },
                 onDelete = {
                     showDeleteConfirm = selectedSkill
-                }
+                },
+                onExport = { exportSingle(selectedSkill!!) }
             )
         } else {
             Column(
@@ -150,10 +233,30 @@ fun SkillsScreen(navController: NavController) {
                             SkillCard(
                                 skill = skill,
                                 canDelete = !skill.category.isSystem,
-                                onClick = { selectedSkill = skill },
+                                isSelectionMode = isSelectionMode,
+                                isSelected = selectedPaths.contains(skill.path),
+                                onToggleSelect = {
+                                    selectedPaths = if (selectedPaths.contains(skill.path)) {
+                                        selectedPaths - skill.path
+                                    } else {
+                                        selectedPaths + skill.path
+                                    }
+                                },
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        selectedPaths = if (selectedPaths.contains(skill.path)) {
+                                            selectedPaths - skill.path
+                                        } else {
+                                            selectedPaths + skill.path
+                                        }
+                                    } else {
+                                        selectedSkill = skill
+                                    }
+                                },
                                 onDelete = {
                                     showDeleteConfirm = skill
-                                }
+                                },
+                                onExport = { exportSingle(skill) }
                             )
                         }
                     }
@@ -223,8 +326,12 @@ fun SkillsScreen(navController: NavController) {
 private fun SkillCard(
     skill: SkillManager.Skill,
     canDelete: Boolean,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onToggleSelect: () -> Unit,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onExport: () -> Unit
 ) {
     GlassCard(
         modifier = Modifier.fillMaxWidth(),
@@ -236,6 +343,15 @@ private fun SkillCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.Top
         ) {
+            // 选择模式复选框
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelect() },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+            }
+
             // 图标
             Icon(
                 imageVector = when {
@@ -271,17 +387,22 @@ private fun SkillCard(
 
             // 操作按钮
             Row {
-                IconButton(onClick = onClick) {
-                    Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(20.dp))
-                }
-                if (canDelete) {
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "删除",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                if (!isSelectionMode) {
+                    IconButton(onClick = onClick) {
+                        Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onExport) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(20.dp))
+                    }
+                    if (canDelete) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
@@ -296,7 +417,8 @@ private fun SkillDetailView(
     skill: SkillManager.Skill,
     onBack: () -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onExport: () -> Unit
 ) {
     val body = remember(skill) { SkillManager.getContentBody(skill.content) }
 
@@ -345,6 +467,9 @@ private fun SkillDetailView(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                }
+                IconButton(onClick = onExport) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "导出")
                 }
                 if (!skill.category.isSystem) {
                     IconButton(onClick = onEdit) {
@@ -503,7 +628,6 @@ private fun SkillEditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    // 格式校验
                     val validation = SkillManager.validateSkillFormat(name, description, content)
                     if (!validation.valid || validation.warnings.isNotEmpty()) {
                         warnings = validation.warnings

@@ -236,6 +236,33 @@ object SkillManager {
             true
         }
 
+    // ─── 导出（IO 线程）─────────────────────────────
+
+    /**
+     * 导出单个技能到目标目录
+     * @param path 技能路径（如 "auto-skills/phone-control"）
+     * @param destDir 目标目录路径（如 Downloads/PocketAgent_Skills）
+     * @return 导出的目录路径，失败返回 null
+     */
+    suspend fun exportSkill(path: String, destDir: String): String? = withContext(Dispatchers.IO) {
+        if (!isPathSafe(path)) return@withContext null
+        val skillDir = File(getSkillsRoot(), path)
+        if (!skillDir.isDirectory) return@withContext null
+        val exportDir = File(destDir, skillDir.name)
+        try {
+            skillDir.copyRecursively(exportDir, overwrite = true)
+            Log.i(TAG, "Exported: $path -> $exportDir")
+            exportDir.absolutePath
+        } catch (e: Exception) {
+            Log.e(TAG, "Export failed: $path", e)
+            null
+        }
+    }
+
+    suspend fun batchExportSkills(paths: List<String>, destDir: String): List<String> = withContext(Dispatchers.IO) {
+        paths.mapNotNull { path -> exportSkill(path, destDir) }
+    }
+
     // ─── 删除（IO 线程）─────────────────────────────
 
     suspend fun deleteSkill(path: String): Boolean = withContext(Dispatchers.IO) {

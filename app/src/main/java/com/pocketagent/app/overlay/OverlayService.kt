@@ -7,7 +7,6 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.view.*
-import android.widget.FrameLayout
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
 
@@ -15,10 +14,12 @@ import kotlinx.coroutines.flow.StateFlow
  * 全局悬浮窗服务 - 退到后台后仍悬浮在所有应用上层
  *
  * 双模式:
- * - MINI:   40dp 圆形图标，可拖拽，显示执行状态
- * - EXPANDED: 半透明终端卡片，实时流式输出，占屏幕 1/3
+ * - MINI:   ~160dp 药丸形迷你条，图标 + 流式文本滚动 + 状态点
+ * - EXPANDED: 半透明终端卡片，实时流式输出，可拖拽缩放
  *
- * 无障碍协作: 检测到 Agent 正在操控手机时自动切到 MINI 并移到右上角
+ * 无障碍协作:
+ * - Agent 操作时 EXPANDED → MINI 并移角落
+ * - MINI 模式下加 FLAG_NOT_TOUCHABLE 完全不干扰 UI 树获取
  */
 class OverlayService : Service() {
 
@@ -32,8 +33,6 @@ class OverlayService : Service() {
         val overlayState = kotlinx.coroutines.flow.MutableStateFlow(OverlayMode.HIDDEN)
         val streamText = kotlinx.coroutines.flow.MutableStateFlow("")
         val taskStatus = kotlinx.coroutines.flow.MutableStateFlow("空闲")
-
-        // 无障碍操作信号
         val isAgentOperating = kotlinx.coroutines.flow.MutableStateFlow(false)
     }
 
@@ -45,13 +44,19 @@ class OverlayService : Service() {
 
     private var miniParams: WindowManager.LayoutParams? = null
     private var expandedParams: WindowManager.LayoutParams? = null
-    private var currentMode = OverlayMode.MINI
+    private var currentMode = OverlayMode.HIDDEN
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // 屏幕尺寸
     private var screenWidth = 0
     private var screenHeight = 0
+
+    /** mini 模式基础 flags（不含 NOT_TOUCHABLE） */
+    private val miniBaseFlags =
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
 
     override fun onCreate() {
         super.onCreate()
@@ -70,6 +75,11 @@ class OverlayService : Service() {
             screenWidth = metrics.widthPixels
             screenHeight = metrics.heightPixels
         }
+
+        // 一次性启动所有观察者（避免 onStartCommand 重复创建）
+        observeTaskStatus()
+        observeStreamText()
+        observeAgentOperation()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,19 +91,76 @@ class OverlayService : Service() {
             else -> showMini()
         }
 
-        // 监听无障碍操作信号
-        observeAgentOperation()
-
         overlayState.value = currentMode
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ─── 观察者（在 onCreate 中一次性启动）────────────────
+
+    /** 监听流式文本 → 同步到当前模式的视图 */
+    private fun observeStreamText() {
+        serviceScope.launch {
+            streamText.collect { text ->
+                when (currentMode) {
+                    OverlayMode.MINI -> {
+                        if (::miniView.isInitialized) miniView.setStreamText(text)
+                    }
+                    OverlayMode.EXPANDED -> {
+                        if (::expandedView.isInitialized) expandedView.appendStream(text)
+                    }
+                    OverlayMode.HIDDEN -> {}
+                }
+            }
+        }
+    }
+
+    /** 监听任务状态 → 同步到当前模式的视图 */
+    private fun observeTaskStatus() {
+        serviceScope.launch {
+            taskStatus.collect { status ->
+                when (currentMode) {
+                    OverlayMode.MINI -> {
+                        if (::miniView.isInitialized)
+                            miniView.updateStatus(status, isAgentOperating.value)
+                    }
+                    OverlayMode.EXPANDED -> {
+                        if (::expandedView.isInitialized) expandedView.updateStatus(status)
+                    }
+                    OverlayMode.HIDDEN -> {}
+                }
+            }
+        }
+    }
+
+    /** 监听无障碍操作信号 → 自动缩小 + 设置触控穿透 */
+    private fun observeAgentOperation() {
+        serviceScope.launch {
+            isAgentOperating.collect { operating ->
+                if (operating && currentMode == OverlayMode.EXPANDED) {
+                    showMini()
+                    moveMiniToCorner()
+                }
+
+                // MINI 模式下：操作中 → FLAG_NOT_TOUCHABLE 触控穿透
+                if (currentMode == OverlayMode.MINI && ::miniView.isInitialized && miniParams != null) {
+                    if (operating) {
+                        miniParams!!.flags = miniBaseFlags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    } else {
+                        miniParams!!.flags = miniBaseFlags
+                    }
+                    try {
+                        windowManager.updateViewLayout(miniView, miniParams)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
     // ─── 迷你悬浮窗 ─────────────────────────────────
 
     private fun showMini() {
-        // 先移除展开视图
         expandedParams?.let { try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
         expandedParams = null
 
@@ -112,9 +179,7 @@ class OverlayService : Service() {
                     WindowManager.LayoutParams.TYPE_PHONE
                 }
 
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                flags = miniBaseFlags
 
                 format = PixelFormat.TRANSLUCENT
                 width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -128,18 +193,19 @@ class OverlayService : Service() {
             windowManager.addView(miniView, miniParams)
         }
 
-        // 更新迷你视图的状态文本
-        serviceScope.launch {
-            taskStatus.collect { status ->
-                miniView.updateStatus(
-                    status = status,
-                    isOperating = isAgentOperating.value
-                )
-            }
-        }
+        // 同步当前状态
+        miniView.updateStatus(taskStatus.value, isAgentOperating.value)
+        miniView.setStreamText(streamText.value)
 
         currentMode = OverlayMode.MINI
         overlayState.value = OverlayMode.MINI
+
+        // 如果 agent 正在操作，立即设置触控穿透
+        //（防止先于 agent 操作状态变化显示 mini 时状态流不重复发射）
+        if (isAgentOperating.value && miniParams != null) {
+            miniParams!!.flags = miniBaseFlags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            try { windowManager.updateViewLayout(miniView, miniParams) } catch (_: Exception) {}
+        }
     }
 
     private fun setupMiniDrag() {
@@ -173,7 +239,6 @@ class OverlayService : Service() {
                         miniParams!!.x = initialX + deltaX.toInt()
                         miniParams!!.y = initialY + deltaY.toInt()
 
-                        // 边界限制
                         val viewW = view.width
                         val viewH = view.height
                         miniParams!!.x = miniParams!!.x.coerceIn(0, screenWidth - viewW)
@@ -184,7 +249,6 @@ class OverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    // 如果只是点击（没有拖拽），则展开
                     if (!isDragging) {
                         miniView.performClick()
                     }
@@ -206,7 +270,6 @@ class OverlayService : Service() {
     // ─── 展开悬浮窗 ─────────────────────────────────
 
     private fun showExpanded() {
-        // 先移除迷你视图
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         miniParams = null
 
@@ -214,6 +277,13 @@ class OverlayService : Service() {
             expandedView = ExpandedOverlayView(
                 context = this,
                 onMinimize = { showMini() },
+                onResize = { newW, newH ->
+                    expandedParams?.let { params ->
+                        params.width = newW.coerceAtLeast(dpToPx(200))
+                        params.height = newH.coerceAtLeast(dpToPx(150))
+                        try { windowManager.updateViewLayout(expandedView, params) } catch (_: Exception) {}
+                    }
+                },
                 screenWidth = screenWidth,
                 screenHeight = screenHeight
             )
@@ -241,19 +311,9 @@ class OverlayService : Service() {
             windowManager.addView(expandedView, expandedParams)
         }
 
-        // 监听流式文本
-        serviceScope.launch {
-            streamText.collect { text ->
-                expandedView.appendStream(text)
-            }
-        }
-
-        // 监听状态
-        serviceScope.launch {
-            taskStatus.collect { status ->
-                expandedView.updateStatus(status)
-            }
-        }
+        // 同步当前状态
+        expandedView.updateStatus(taskStatus.value)
+        expandedView.appendStream(streamText.value)
 
         currentMode = OverlayMode.EXPANDED
         overlayState.value = OverlayMode.EXPANDED
@@ -285,20 +345,6 @@ class OverlayService : Service() {
         }
     }
 
-    // ─── 无障碍协作 ─────────────────────────────────
-
-    private fun observeAgentOperation() {
-        serviceScope.launch {
-            isAgentOperating.collect { operating ->
-                if (operating && currentMode == OverlayMode.EXPANDED) {
-                    // Agent 正在操作 → 缩到迷你模式并移到角落
-                    showMini()
-                    moveMiniToCorner()
-                }
-            }
-        }
-    }
-
     // ─── 公开 API ────────────────────────────────────
 
     fun hideAll() {
@@ -311,9 +357,6 @@ class OverlayService : Service() {
         stopSelf()
     }
 
-    /**
-     * 追加流式输出文本（供 AgentDaemon 等外部调用）
-     */
     fun appendStreamText(text: String) {
         streamText.value += text
     }
