@@ -380,13 +380,14 @@ class OverlayService : Service() {
     // ─── 公开 API ────────────────────────────────────
 
     fun hideAll() {
+        try { stopForeground(true) } catch (_: Exception) {}
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         expandedParams?.let { try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
         miniParams = null
         expandedParams = null
         currentMode = OverlayMode.HIDDEN
         overlayState.value = OverlayMode.HIDDEN
-        stopSelf()
+        try { stopSelf() } catch (_: Exception) {}
     }
 
     fun appendStreamText(text: String) {
@@ -405,13 +406,14 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        try { stopForeground(true) } catch (_: Exception) {}
         hideAll()
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        try { stopForeground(true) } catch (_: Exception) {}
         hideAll()
-        stopSelf()
         super.onTaskRemoved(rootIntent)
     }
 }
