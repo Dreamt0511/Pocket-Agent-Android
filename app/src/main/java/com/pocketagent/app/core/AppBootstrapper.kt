@@ -10,6 +10,7 @@ import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.UpdateChecker
 import com.pocketagent.app.core.SkillManager
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * App 启动协调器 — 统一的启动入口
@@ -32,6 +33,10 @@ object AppBootstrapper {
 
     private lateinit var daemon: AgentDaemonV2
     private var repoUrl: String = ""
+
+    /** 暴露 daemon 状态供 UI 层收集 */
+    val daemonStatus: StateFlow<AgentDaemonV2.DaemonStatus>
+        get() = daemon.status
 
     /**
      * 初始化所有子系统（Application.onCreate 中调用）
@@ -73,6 +78,8 @@ object AppBootstrapper {
             val success = daemon.bootstrap()
 
             if (success) {
+                // 代码同步可能改变了 skills 目录，重新扫描
+                SkillManager.rescan()
                 StreamBridge.status("就绪 — 随时可以开始")
             } else {
                 StreamBridge.error("启动失败，请检查网络连接后重试")

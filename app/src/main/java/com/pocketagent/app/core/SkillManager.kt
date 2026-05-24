@@ -9,6 +9,7 @@ import java.io.File
 object SkillManager {
     private const val TAG = "SkillManager"
     private var skillsRoot: File? = null
+    private var appContext: Context? = null
 
     enum class Category(val dirName: String, val displayName: String, val isSystem: Boolean) {
         MAIN_SKILLS("main-skills", "主 Agent 技能", true),
@@ -41,6 +42,7 @@ object SkillManager {
     }
 
     fun init(context: Context) {
+        appContext = context.applicationContext
         val externalPath = "/storage/emulated/0/手机agent开发/Pocket-Agent/agent/skills"
         val externalDir = File(externalPath)
         if (externalDir.exists()) {
@@ -54,6 +56,26 @@ object SkillManager {
             Log.w(TAG, "CodeSyncManager failed, using internal storage", e)
             val internalPath = File(context.filesDir, "agent/skills").absolutePath
             init(internalPath)
+        }
+    }
+
+    fun rescan() {
+        val ctx = appContext ?: return
+        // Re-evaluate which skills root to use (same logic as init(context))
+        val externalPath = "/storage/emulated/0/手机agent开发/Pocket-Agent/agent/skills"
+        val externalDir = File(externalPath)
+        if (externalDir.exists()) {
+            init(externalDir.absolutePath)
+            Log.i(TAG, "Rescanned skills root (external): $externalPath")
+            return
+        }
+        try {
+            val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
+            val skillsDir = File(runtimeDir, "agent/skills").absolutePath
+            init(skillsDir)
+            Log.i(TAG, "Rescanned skills root (runtime): $skillsDir")
+        } catch (e: Exception) {
+            Log.w(TAG, "Rescan failed, keeping current skills root", e)
         }
     }
 

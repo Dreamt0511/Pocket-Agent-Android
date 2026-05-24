@@ -147,15 +147,22 @@ fun SkillsScreen(navController: NavController) {
                                 Icon(Icons.Default.FileDownload, contentDescription = "批量导出")
                             }
                         }
-                        if (!currentCategory.isSystem) {
-                            TextButton(onClick = {
-                                editSkill = null
-                                showSkillDialog = true
-                            }) {
-                                Icon(Icons.Default.Add, contentDescription = "新建技能", modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("新建", fontSize = 14.sp)
+                        IconButton(onClick = {
+                            scope.launch {
+                                isLoading = true
+                                skills = SkillManager.getSkills(currentCategory)
+                                isLoading = false
                             }
+                        }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        }
+                        TextButton(onClick = {
+                            editSkill = null
+                            showSkillDialog = true
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "新建技能", modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("新建", fontSize = 14.sp)
                         }
                     }
                 }

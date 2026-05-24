@@ -180,8 +180,16 @@ class CodeSyncManager(private val context: Context) {
      * 我们只需要 agent/ 及其子目录
      */
     private fun extractAgentDir(zipFile: File, destDir: File) {
-        // 清空旧 agent 目录
+        // 备份旧 skills 目录（防止用户自建技能被清除）
         val oldAgentDir = File(destDir, "agent")
+        val skillsBackup = File(destDir.parentFile, "skills_backup")
+        val oldSkillsDir = File(oldAgentDir, "skills")
+        if (oldSkillsDir.exists()) {
+            oldSkillsDir.copyRecursively(skillsBackup, overwrite = true)
+            Log.i(TAG, "Backed up skills to ${skillsBackup.absolutePath}")
+        }
+
+        // 清空旧 agent 目录
         if (oldAgentDir.exists()) {
             oldAgentDir.deleteRecursively()
         }
@@ -221,6 +229,14 @@ class CodeSyncManager(private val context: Context) {
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
+        }
+
+        // 恢复备份的技能目录
+        if (skillsBackup.exists()) {
+            val newSkillsDir = File(File(destDir, "agent"), "skills")
+            skillsBackup.copyRecursively(newSkillsDir, overwrite = true)
+            skillsBackup.deleteRecursively()
+            Log.i(TAG, "Restored skills backup to ${newSkillsDir.absolutePath}")
         }
 
         if (!foundAgent) {

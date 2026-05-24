@@ -40,7 +40,7 @@ private val navEntries = listOf(
 )
 
 @Composable
-fun HomeScreen(navController: NavController, modelConfigured: Boolean = false) {
+fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
     Box(modifier = Modifier.fillMaxSize()) {
         // ─── 液态玻璃动态背景 ───
         AnimatedBackground(

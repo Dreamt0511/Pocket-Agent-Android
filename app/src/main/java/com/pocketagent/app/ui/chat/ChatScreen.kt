@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
+import com.pocketagent.app.core.AgentDaemonV2
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
@@ -36,6 +37,9 @@ fun ChatScreen(navController: NavController) {
     var inputText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+
+    val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
+    val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
 
     // 监听流式输出
     LaunchedEffect(Unit) {
@@ -66,7 +70,7 @@ fun ChatScreen(navController: NavController) {
                 inputText = inputText,
                 onInputChange = { inputText = it },
                 onSend = {
-                    if (inputText.isNotBlank() && !isProcessing) {
+                    if (inputText.isNotBlank() && !isProcessing && isDaemonReady) {
                         scope.launch {
                             isProcessing = true
                             messages = messages + ChatMessage(
@@ -96,20 +100,89 @@ fun ChatScreen(navController: NavController) {
                         }
                     }
                 },
-                enabled = !isProcessing
+                enabled = !isProcessing && isDaemonReady
             )
         }
     ) { paddingValues ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
-            state = listState,
-            reverseLayout = false,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(paddingValues)
         ) {
-            items(messages) { message ->
-                ChatMessageItem(message)
+            DaemonStatusBar(
+                status = daemonStatus,
+                onRetry = { scope.launch { AppBootstrapper.start() } }
+            )
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                state = listState,
+                reverseLayout = false,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages) { message ->
+                    ChatMessageItem(message)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Agent 守护进程状态栏 — 在聊天页面顶部展示连接状态
+ */
+@Composable
+private fun DaemonStatusBar(
+    status: AgentDaemonV2.DaemonStatus,
+    onRetry: () -> Unit
+) {
+    val bgColor: Color
+    val message: String
+    val showRetry: Boolean
+
+    when (status) {
+        is AgentDaemonV2.DaemonStatus.Ready -> {
+            bgColor = Color(0xFF1B5E20).copy(alpha = 0.08f)
+            message = "Agent 就绪"
+            showRetry = false
+        }
+        is AgentDaemonV2.DaemonStatus.Error -> {
+            bgColor = Color(0xFFB71C1C).copy(alpha = 0.08f)
+            message = "Agent 错误: ${status.message}"
+            showRetry = true
+        }
+        is AgentDaemonV2.DaemonStatus.Idle -> {
+            bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
+            message = "Agent 未就绪"
+            showRetry = true
+        }
+        is AgentDaemonV2.DaemonStatus.Syncing,
+        is AgentDaemonV2.DaemonStatus.Initializing -> {
+            bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
+            message = "Agent 正在初始化..."
+            showRetry = false
+        }
+        is AgentDaemonV2.DaemonStatus.Executing -> {
+            bgColor = Color(0xFF1565C0).copy(alpha = 0.08f)
+            message = "Agent 执行中..."
+            showRetry = false
+        }
+    }
+
+    Surface(modifier = Modifier.fillMaxWidth(), color = bgColor) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = message,
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f)
+            )
+            if (showRetry) {
+                TextButton(onClick = onRetry) {
+                    Text("重试", fontSize = 12.sp)
+                }
             }
         }
     }
