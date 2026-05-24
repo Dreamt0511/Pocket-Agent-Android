@@ -1,122 +1,195 @@
 package com.pocketagent.app.ui.home
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import com.pocketagent.app.ui.theme.GlassSurface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavController
-import androidx.navigation.compose.rememberNavController
+import com.pocketagent.app.ui.components.AnimatedBackground
+import com.pocketagent.app.ui.theme.*
 
-/**
- * 首页 — Ollama 风格极简文字导航
- *
- * 入口基于主仓库核心能力设计：
- *  执行任务 → 主入口，操控手机完成任务
- *  历史记录 → 过往任务回顾
- *  技能库   → Agent 已掌握的技能
- *  终端     → Shell 调试
- *  设置     → 模型配置
- *  悬浮窗   → 后台执行视图
- */
+private data class NavEntry(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val route: String
+)
+
+private val navEntries = listOf(
+    NavEntry("执行任务", "用 AI 操控手机，一步到位", Icons.Default.PlayArrow, "execute"),
+    NavEntry("历史记录", "查看过往任务与执行结果", Icons.Default.History, "history"),
+    NavEntry("技能库", "Agent 已掌握的技能与工具", Icons.Default.Psychology, "skills"),
+    NavEntry("终端", "命令行与调试控制台", Icons.Default.Terminal, "terminal"),
+    NavEntry("设置", "模型 / MCP / 高级参数", Icons.Default.Settings, "config"),
+    NavEntry("悬浮窗", "后台执行与状态监控", Icons.Default.PictureInPicture, "overlay"),
+)
+
 @Composable
-fun HomeScreen(navController: NavController) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(Modifier.height(48.dp))
-        Text(
-            text = "Pocket Agent",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.sp,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 4.dp)
+fun HomeScreen(navController: NavController, modelConfigured: Boolean = false) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // ─── 液态玻璃动态背景 ───
+        AnimatedBackground(
+            orbColors = orbColors(),
+            modifier = Modifier.fillMaxSize()
         )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "AI 手机助手",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
-        Spacer(Modifier.height(32.dp))
 
-        NavItem("执行任务", "用 AI 操控手机，一步到位", onClick = { navController.navigate("execute") })
-        Spacer(Modifier.height(8.dp))
-        NavItem("历史记录", "查看过往任务与执行结果", onClick = { navController.navigate("history") })
-        Spacer(Modifier.height(8.dp))
-        NavItem("技能库", "Agent 已掌握的技能与工具", onClick = { navController.navigate("skills") })
-        Spacer(Modifier.height(8.dp))
-        NavItem("终端", "命令行与调试控制台", onClick = { navController.navigate("terminal") })
-        Spacer(Modifier.height(8.dp))
-        NavItem("设置", "模型 / MCP / 高级参数", onClick = { navController.navigate("config") })
-        Spacer(Modifier.height(8.dp))
-        NavItem("悬浮窗", "后台执行与状态监控", onClick = { navController.navigate("overlay") })
+        // ─── 前景内容 ───
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
+            Spacer(Modifier.height(48.dp))
 
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = "Agent 就绪",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-            modifier = Modifier.padding(bottom = 24.dp, start = 4.dp)
-        )
+            // 标题区域（渐入动画）
+            AnimatedStaggeredItem(delayMs = 0) {
+                Column(modifier = Modifier.padding(horizontal = 4.dp)) {
+                    Text(
+                        text = "Pocket Agent",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.3f).sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "AI 手机助手",
+                        fontSize = 13.sp,
+                        letterSpacing = (0.3f).sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            // ─── 导航项列表（错峰入场） ───
+            navEntries.forEachIndexed { index, entry ->
+                AnimatedStaggeredItem(delayMs = 100 + index * 80) {
+                    PressBounceContainer(onClick = { navController.navigate(entry.route) }) {
+                        NavCard(entry = entry)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            // 底部 Agent 状态
+            if (modelConfigured) {
+                Spacer(Modifier.height(8.dp))
+                AnimatedStaggeredItem(delayMs = 100 + navEntries.size * 80) {
+                    AgentStatusBadge()
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+        }
     }
 }
 
+// ─── 导航卡片 ──────────────────────────────────
+
 @Composable
-private fun NavItem(title: String, subtitle: String, onClick: () -> Unit) {
-    GlassSurface(
-        shape = RoundedCornerShape(14.dp)
+private fun NavCard(entry: NavEntry) {
+    GlassCard(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 18.dp, vertical = 18.dp)
+                .padding(horizontal = 18.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = (0.3f).sp,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = subtitle,
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                letterSpacing = (0.1f).sp
+            // 图标圆形容器
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(navIconBackground()),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = entry.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                )
+            }
+
+            Spacer(Modifier.width(14.dp))
+
+            // 文字区域
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = entry.title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = (0.2f).sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = entry.subtitle,
+                    fontSize = 12.5.sp,
+                    letterSpacing = (0.1f).sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                )
+            }
+
+            // 箭头指示
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
             )
         }
     }
 }
 
-@Preview(showBackground = true, showSystemUi = true, name = "首页亮色")
-@Composable
-private fun HomeScreenLightPreview() {
-    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
-        HomeScreen(navController = rememberNavController())
-    }
-}
+// ─── Agent 就绪徽章 ────────────────────────────
 
-@Preview(showBackground = true, showSystemUi = true, name = "首页暗色")
 @Composable
-private fun HomeScreenDarkPreview() {
-    com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
-        HomeScreen(navController = rememberNavController())
+private fun AgentStatusBadge() {
+    GlassSurface(shape = RoundedCornerShape(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            // 绿点指示灯
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF4CAF50))
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Agent 就绪",
+                fontSize = 12.5.sp,
+                letterSpacing = (0.3f).sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }

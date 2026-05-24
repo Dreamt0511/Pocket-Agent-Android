@@ -16,8 +16,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 初始化应用核心
-        AppBootstrapper.init(application)
+        // 启动 Agent 守护进程（异步：同步代码 + 初始化 Python）
+        AppBootstrapper.start()
 
         setContent {
             PocketAgentTheme {

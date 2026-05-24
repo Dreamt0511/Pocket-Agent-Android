@@ -1,10 +1,14 @@
 package com.pocketagent.app.data
 
+import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+
+val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
 
 data class Settings(
     val llmBaseUrl: String = "http://127.0.0.1:8080/v1",

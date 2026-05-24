@@ -20,10 +20,13 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.pocketagent.app.core.SkillManager
 import com.pocketagent.app.ui.theme.GlassCard
+import dev.jeziellago.compose.markdowntext.MarkdownText
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(navController: NavController) {
+    val scope = rememberCoroutineScope()
     var selectedTab by remember { mutableStateOf(0) }
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -38,16 +41,18 @@ fun SkillsScreen(navController: NavController) {
     // 删除确认
     var showDeleteConfirm by remember { mutableStateOf<SkillManager.Skill?>(null) }
 
+    // 当前分类
+    val currentCategory = when (selectedTab) {
+        0 -> SkillManager.Category.MAIN_SKILLS
+        1 -> SkillManager.Category.EXECUTOR_SKILLS
+        2 -> SkillManager.Category.AUTO_SKILLS
+        else -> SkillManager.Category.MAIN_SKILLS
+    }
+
     // 加载技能
     LaunchedEffect(selectedTab) {
         isLoading = true
-        val category = when (selectedTab) {
-            0 -> SkillManager.Category.MAIN_SKILLS
-            1 -> SkillManager.Category.EXECUTOR_SKILLS
-            2 -> SkillManager.Category.AUTO_SKILLS
-            else -> SkillManager.Category.MAIN_SKILLS
-        }
-        skills = SkillManager.getSkills(category)
+        skills = SkillManager.getSkills(currentCategory)
         isLoading = false
     }
 
@@ -61,7 +66,7 @@ fun SkillsScreen(navController: NavController) {
                     }
                 },
                 actions = {
-                    if (selectedTab == 2 && selectedSkill == null) {
+                    if (selectedSkill == null && !currentCategory.isSystem) {
                         TextButton(onClick = {
                             editSkill = null
                             showSkillDialog = true
@@ -128,13 +133,11 @@ fun SkillsScreen(navController: NavController) {
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
-                            if (selectedTab == 2) {
-                                Text(
-                                    "点击右上角「新建」添加自动技能",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                                )
-                            }
+                            Text(
+                                "点击右上角「新建」添加新技能",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
                         }
                     }
                 } else {
@@ -163,20 +166,22 @@ fun SkillsScreen(navController: NavController) {
     if (showSkillDialog) {
         SkillEditDialog(
             skill = editSkill,
+            category = currentCategory,
             onDismiss = {
                 showSkillDialog = false
                 editSkill = null
             },
             onSave = { name, description, content ->
-                if (editSkill != null) {
-                    SkillManager.updateSkill(editSkill!!.path, name, description, content)
-                } else {
-                    SkillManager.createSkill(name, description, content)
+                scope.launch {
+                    if (editSkill != null) {
+                        SkillManager.updateSkill(editSkill!!.path, name, description, content)
+                    } else {
+                        SkillManager.createSkill(name, description, content, currentCategory)
+                    }
+                    showSkillDialog = false
+                    editSkill = null
+                    skills = SkillManager.getSkills(currentCategory)
                 }
-                showSkillDialog = false
-                editSkill = null
-                // 刷新列表
-                selectedTab = 2
             }
         )
     }
@@ -192,10 +197,11 @@ fun SkillsScreen(navController: NavController) {
             confirmButton = {
                 Button(
                     onClick = {
-                        SkillManager.deleteSkill(showDeleteConfirm!!.path)
-                        showDeleteConfirm = null
-                        // 刷新列表
-                        skills = SkillManager.getSkills(SkillManager.Category.AUTO_SKILLS)
+                        scope.launch {
+                            SkillManager.deleteSkill(showDeleteConfirm!!.path)
+                            showDeleteConfirm = null
+                            skills = SkillManager.getSkills(currentCategory)
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
@@ -327,6 +333,19 @@ private fun SkillDetailView(
             }
 
             Row {
+                if (skill.category.isSystem) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Text(
+                            text = "系统技能 · 只读",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
                 if (!skill.category.isSystem) {
                     IconButton(onClick = onEdit) {
                         Icon(Icons.Default.Edit, contentDescription = "编辑")
@@ -336,18 +355,6 @@ private fun SkillDetailView(
                             Icons.Default.Delete,
                             contentDescription = "删除",
                             tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                } else {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = "系统技能",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
@@ -370,7 +377,7 @@ private fun SkillDetailView(
 
         Spacer(Modifier.height(16.dp))
 
-        // 内容
+        // 内容（Markdown 渲染）
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -378,19 +385,24 @@ private fun SkillDetailView(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = if (body.isNotBlank()) body else "(空)",
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 20.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                if (body.isNotBlank()) {
+                    MarkdownText(
+                        markdown = body,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = "(空)",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
             }
         }
     }
@@ -401,6 +413,7 @@ private fun SkillDetailView(
 @Composable
 private fun SkillEditDialog(
     skill: SkillManager.Skill?,
+    category: SkillManager.Category,
     onDismiss: () -> Unit,
     onSave: (name: String, description: String, content: String) -> Unit
 ) {
@@ -412,11 +425,11 @@ private fun SkillEditDialog(
     var name by remember { mutableStateOf(initialName) }
     var description by remember { mutableStateOf(initialDesc) }
     var content by remember { mutableStateOf(initialContent) }
-    var selectedSubCategory by remember { mutableStateOf(0) }
+    var warnings by remember { mutableStateOf<List<String>>(emptyList()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (isEdit) "编辑技能" else "新建技能") },
+        title = { Text(if (isEdit) "编辑技能" else "新建技能 — ${category.displayName}") },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -424,7 +437,7 @@ private fun SkillEditDialog(
             ) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = it; warnings = emptyList() },
                     label = { Text("技能名称") },
                     placeholder = { Text("如: phone-control") },
                     singleLine = true,
@@ -434,31 +447,20 @@ private fun SkillEditDialog(
 
                 OutlinedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { description = it; warnings = emptyList() },
                     label = { Text("技能描述") },
                     placeholder = { Text("一句话描述技能用途") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                if (!isEdit) {
-                    Text("目标分类", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Main" to "主技能", "Executor" to "执行技能").forEachIndexed { i, (_, label) ->
-                            FilterChip(
-                                selected = selectedSubCategory == i,
-                                onClick = { selectedSubCategory = i },
-                                label = { Text(label, fontSize = 12.sp) }
-                            )
-                        }
-                    }
-                }
-
                 OutlinedTextField(
                     value = content,
-                    onValueChange = { content = it },
+                    onValueChange = { content = it; warnings = emptyList() },
                     label = { Text("SKILL.md 内容") },
-                    placeholder = { Text("## 任务目标\n...\n\n## 执行步骤\n...") },
+                    placeholder = {
+                        Text("---\nname: ${if (name.isNotBlank()) name else "技能名称"}\ndescription: 技能描述\n---\n\n## 任务目标\n...\n\n## 执行步骤\n...")
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
@@ -467,11 +469,48 @@ private fun SkillEditDialog(
                         fontSize = 12.sp
                     )
                 )
+
+                // 格式校验警告
+                if (warnings.isNotEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            warnings.forEach { warning ->
+                                Row(
+                                    verticalAlignment = Alignment.Top,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text("⚠", fontSize = 12.sp)
+                                    Text(
+                                        text = warning,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onErrorContainer
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSave(name, description, content) },
+                onClick = {
+                    // 格式校验
+                    val validation = SkillManager.validateSkillFormat(name, description, content)
+                    if (!validation.valid || validation.warnings.isNotEmpty()) {
+                        warnings = validation.warnings
+                    } else {
+                        onSave(name, description, content)
+                    }
+                },
                 enabled = name.isNotBlank()
             ) {
                 Text(if (isEdit) "保存" else "创建")

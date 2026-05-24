@@ -1,5 +1,10 @@
 package com.pocketagent.app.ui.overlay
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,9 +15,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
@@ -211,47 +220,69 @@ private fun OverlayControlPanel(
                 text = "控制面板",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 12.dp)
+            )
+            Text(
+                text = "控制悬浮窗的显示状态与模式，方便在后台实时追踪 Agent 执行进度",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
             )
 
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // 显示/隐藏按钮
-                Button(
-                    onClick = onToggleVisibility,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isVisible) Color(0xFFF44336) else Color(0xFF4CAF50)
-                    )
+            // 显示/隐藏
+            Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(if (isVisible) "隐藏悬浮窗" else "显示悬浮窗")
-                }
+                    Button(
+                        onClick = onToggleVisibility,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isVisible) Color(0xFFF44336) else Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Text(if (isVisible) "隐藏悬浮窗" else "显示悬浮窗")
+                    }
 
-                // 模式切换按钮
-                Button(
-                    onClick = onSwitchMode,
-                    modifier = Modifier.weight(1f),
-                    enabled = isVisible,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2196F3)
-                    )
-                ) {
-                    Text(if (mode == "MINI") "展开视图" else "折叠视图")
+                    Button(
+                        onClick = onSwitchMode,
+                        modifier = Modifier.weight(1f),
+                        enabled = isVisible,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2196F3)
+                        )
+                    ) {
+                        Text(if (mode == "MINI") "展开视图" else "折叠视图")
+                    }
                 }
+                Text(
+                    text = if (isVisible) "悬浮窗已显示${if (mode == "MINI") "，迷你模式仅显示状态图标" else "，展开模式可查看完整输出"}" else "打开悬浮窗，在桌面显示 Agent 运行状态",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+                )
             }
 
+            HorizontalDivider()
             Spacer(modifier = Modifier.height(8.dp))
 
             // 快捷操作
+            Text(
+                text = "快捷操作",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = "用于调试和验证流式输出是否正常工作",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+            )
+
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = {
-                        // 清空输出
-                        // TODO: 清空 StreamBridge
-                    },
+                    onClick = { /* TODO: 清空 StreamBridge */ },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("清空输出")
@@ -259,7 +290,6 @@ private fun OverlayControlPanel(
 
                 OutlinedButton(
                     onClick = {
-                        // 测试输出
                         StreamBridge.out("[测试] 悬浮窗输出测试\n")
                     },
                     modifier = Modifier.weight(1f)
@@ -267,6 +297,12 @@ private fun OverlayControlPanel(
                     Text("测试输出")
                 }
             }
+            Text(
+                text = "「清空输出」清除所有流式内容，「测试输出」发送一条测试消息验证悬浮窗响应",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp)
+            )
         }
     }
 }
@@ -317,78 +353,129 @@ private fun OverlayStreamPreview(streamText: String) {
     }
 }
 
-// ─── 权限提示 ───────────────────────────────────
+// ─── 权限管理 ───────────────────────────────────
 
 @Composable
 private fun OverlayPermissionHint() {
-    var showPermissionDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(OverlayManager.hasOverlayPermission(context)) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFF3CD)
-        )
+    // 从设置页面返回后刷新权限状态
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("⚠️", fontSize = 20.sp)
-                Text(
-                    text = "悬浮窗权限",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF856404)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "如果悬浮窗无法显示，请检查是否已授予「在其他应用上层显示」权限。",
-                fontSize = 12.sp,
-                color = Color(0xFF856404)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Button(
-                onClick = { showPermissionDialog = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF856404)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("检查权限")
-            }
-        }
+        hasPermission = OverlayManager.hasOverlayPermission(context)
     }
 
-    if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("悬浮窗权限") },
-            text = {
-                Text("""
-                    悬浮窗需要「在其他应用上层显示」权限。
-                    
-                    1. 打开「系统设置」
-                    2. 进入「应用管理」
-                    3. 找到「Pocket Agent」
-                    4. 开启「在其他应用上层显示」
-                    
-                    开启后返回应用即可使用悬浮窗功能。
-                """.trimIndent())
-            },
-            confirmButton = {
-                Button(onClick = { showPermissionDialog = false }) {
-                    Text("知道了")
+    // 从后台切换回前台时刷新权限状态（用户可能在系统设置中更改）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasPermission = OverlayManager.hasOverlayPermission(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    if (hasPermission) {
+        // ─── 已授权 ───
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFD4EDDA))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("✓", fontSize = 20.sp, color = Color(0xFF155724))
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "悬浮窗权限已授予",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF155724)
+                    )
+                    Text(
+                        text = "可在其他应用上层正常显示",
+                        fontSize = 12.sp,
+                        color = Color(0xFF155724).copy(alpha = 0.8f)
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        permissionLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                ) {
+                    Text("管理", fontSize = 12.sp)
                 }
             }
-        )
+        }
+    } else {
+        // ─── 未授权 → 直接引导授权 ───
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3CD))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚠️", fontSize = 20.sp)
+                    Text(
+                        text = "需要悬浮窗权限",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF856404)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "开启后方可在其他应用上层显示悬浮窗，实时查看 Agent 执行状态。",
+                    fontSize = 12.sp,
+                    color = Color(0xFF856404)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = {
+                        permissionLauncher.launch(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF856404)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("去授权")
+                }
+
+                Text(
+                    text = "点击「去授权」将直接跳转到系统设置页，开启「在其他应用上层显示」后返回即可",
+                    fontSize = 11.sp,
+                    color = Color(0xFF856404).copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+                )
+            }
+        }
     }
 }
