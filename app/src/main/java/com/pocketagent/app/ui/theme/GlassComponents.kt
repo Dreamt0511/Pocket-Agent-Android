@@ -70,7 +70,7 @@ fun GlassCard(
                 shape = shape
             )
             .border(
-                width = if (light) 0.5.dp else 0.5.dp,
+                width = if (light) (0.5f).dp else (0.5f).dp,
                 color = if (light) glassLightBorder else glassDarkBorder,
                 shape = shape
             )
@@ -98,7 +98,7 @@ fun GlassSurface(
                 shape = shape
             )
             .border(
-                width = 0.5.dp,
+                width = (0.5f).dp,
                 color = if (light) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f),
                 shape = shape
             )
