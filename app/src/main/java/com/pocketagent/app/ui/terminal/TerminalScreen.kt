@@ -125,7 +125,7 @@ private class ShellSession {
     suspend fun execute(command: String): CommandOutput = withContext(Dispatchers.IO) {
         mutex.withLock {
             try {
-                val w = writer ?: return@withLock CommandOutput("", "Shell 未启动", false)
+                val w = writer ?: return@withLock CommandOutput("Shell 未启动", false)
 
                 w.write("$command 2>&1\n")
                 w.write("echo \"$marker\"\n")
@@ -160,7 +160,7 @@ private class ShellSession {
                 val text = output.toString().trimEnd('\n')
                 CommandOutput(text = text, success = foundMarker)
             } catch (e: Exception) {
-                CommandOutput("", "执行错误: ${e.message}", false)
+                CommandOutput("执行错误: ${e.message}", false)
             }
         }
     }

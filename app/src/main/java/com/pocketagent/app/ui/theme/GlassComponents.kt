@@ -67,7 +67,7 @@ fun GlassCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .clip(RoundedCornerShape(topStart = shape.topStart, topEnd = shape.topEnd))
+                .clip(shape)
                 .background(glassTopHighlight())
                 .align(Alignment.TopCenter)
         )

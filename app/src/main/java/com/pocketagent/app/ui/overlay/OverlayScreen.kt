@@ -3,6 +3,7 @@ package com.pocketagent.app.ui.overlay
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -21,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
@@ -368,15 +368,16 @@ private fun OverlayPermissionHint() {
     }
 
     // 从后台切换回前台时刷新权限状态（用户可能在系统设置中更改）
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    val lifecycleOwner = (LocalContext.current as? ComponentActivity)
+    val lifecycle = lifecycleOwner?.lifecycle
+    DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasPermission = OverlayManager.hasOverlayPermission(context)
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
     }
 
     if (hasPermission) {
