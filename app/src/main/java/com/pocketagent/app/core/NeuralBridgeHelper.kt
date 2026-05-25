@@ -18,14 +18,27 @@ import kotlinx.coroutines.flow.StateFlow
 object NeuralBridgeHelper {
     private const val TAG = "NeuralBridge"
 
-    /** NeuralBridge 包名（后续可配置） */
-    var packageName: String = "com.neuralbridge.companion"
+    /** NeuralBridge 可能的包名列表（按优先级排序） */
+    private val packageNames = listOf(
+        "com.neuralbridge.companion",
+        "com.neuralbridge.app",
+    )
+
+    /** 当前检测到的实际包名，未安装时返回空 */
+    var detectedPackageName: String = ""
+        private set
 
     /** NeuralBridge 无障碍服务组件全名 */
     var accessibilityService: String = "com.neuralbridge.app/.accessibility.NeuralBridgeService"
 
     /** 安装地址（后续会在主库 Release 中发布 APK） */
     var installUrl: String = "https://github.com/Dreamt0511/Pocket-Agent/releases"
+
+    /** 当前实际检测到的包名 */
+    @Deprecated("使用 detectedPackageName", ReplaceWith("detectedPackageName.ifEmpty { packageNames.first() }"))
+    var packageName: String
+        get() = detectedPackageName.ifEmpty { packageNames.first() }
+        set(_) {} // 向后兼容，不再使用
 
     sealed class Status {
         /** 已安装且无障碍已开启 */
@@ -76,12 +89,28 @@ object NeuralBridgeHelper {
     }
 
     fun isInstalled(context: Context): Boolean {
-        return try {
-            context.packageManager.getPackageInfo(packageName, 0)
-            true
-        } catch (_: Exception) {
-            false
+        // 依次尝试所有已知包名
+        for (pkg in packageNames) {
+            try {
+                context.packageManager.getPackageInfo(pkg, 0)
+                detectedPackageName = pkg
+                return true
+            } catch (_: Exception) {
+                // 未找到，继续尝试下一个
+            }
         }
+        // 最后尝试搜索所有可见应用中匹配 "neuralbridge" 的包
+        try {
+            val allPackages = context.packageManager.getInstalledPackages(0)
+            for (pkg in allPackages) {
+                if (pkg.packageName.contains("neuralbridge", ignoreCase = true)) {
+                    detectedPackageName = pkg.packageName
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+        detectedPackageName = ""
+        return false
     }
 
     private fun isAccessibilityEnabled(context: Context): Boolean {
@@ -91,8 +120,9 @@ object NeuralBridgeHelper {
         ) ?: return false
 
         // enabledServices 格式: "pkg1/svc1:pkg2/svc2:..."
-        // 按包名匹配（不依赖具体 service 类名）
-        return enabledServices.split(":").any { it.startsWith("$packageName/") }
+        // 先用 detectedPackageName 匹配，失败则尝试所有已知包名
+        val pkgToCheck = detectedPackageName.ifEmpty { packageNames.first() }
+        return enabledServices.split(":").any { it.startsWith("$pkgToCheck/") }
     }
 
     /** 无障碍设置页 Intent */
