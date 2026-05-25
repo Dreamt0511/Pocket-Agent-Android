@@ -274,6 +274,25 @@ class PythonRuntime(
      * 运行内置 Python（设置 LD_LIBRARY_PATH 指向 bundled lib 目录）
      */
     private fun runBundledPython(pythonBin: String, args: List<String>, workDir: File? = null): CommandResult {
+        // Try 1: 直接执行
+        val directResult = execBundled(pythonBin, args, workDir)
+        if (directResult.success || !isPermissionError(directResult)) {
+            return directResult
+        }
+        // Try 2: SELinux 阻止直接 exec，通过 system linker64 间接加载
+        Log.w(TAG, "Permission denied, retrying via linker64...")
+        return execBundledViaLinker(pythonBin, args, workDir)
+    }
+
+    /** 判断 CommandResult 是否为 Permission denied 错误 */
+    private fun isPermissionError(result: CommandResult): Boolean {
+        return result.output.contains("error=13") ||
+               result.output.contains("Permission denied") ||
+               result.output.contains("EACCES")
+    }
+
+    /** 直接通过 ProcessBuilder 执行 bundled Python */
+    private fun execBundled(pythonBin: String, args: List<String>, workDir: File? = null): CommandResult {
         return try {
             val pb = ProcessBuilder(listOf(pythonBin) + args)
             if (workDir != null) pb.directory(workDir)
@@ -292,6 +311,39 @@ class PythonRuntime(
             CommandResult(exitCode, output, exitCode == 0)
         } catch (e: Exception) {
             CommandResult(-1, "Bundled Python error: ${e.message}", false)
+        }
+    }
+
+    /**
+     * 通过 system linker64 执行 bundled Python（绕过 SELinux exec 检查）
+     *
+     * 某些国产 ROM 的 SELinux 策略禁止 app 执行自己 data 目录下的二进制。
+     * system linker64 有 system_exec 上下文，app 可以执行它；
+     * linker64 加载 python3.13 时只需 read 权限（而非 exec），
+     * 而 app_data_file 上下文允许 read。
+     */
+    private fun execBundledViaLinker(pythonBin: String, args: List<String>, workDir: File? = null): CommandResult {
+        return try {
+            // linker64 在 64 位系统上，32 位是 linker
+            val linker = if (File("/system/bin/linker64").exists()) "/system/bin/linker64" else "/system/bin/linker"
+            val cmd = listOf(linker, pythonBin) + args
+            val pb = ProcessBuilder(cmd)
+            if (workDir != null) pb.directory(workDir)
+            val pythonDir = BundledPythonManager.getPythonDir(context)
+            val libDir = File(pythonDir, "lib").absolutePath
+            val env = pb.environment()
+            env["LD_LIBRARY_PATH"] = libDir
+            env["HOME"] = pythonDir.absolutePath
+            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
+            env["TMPDIR"] = "/data/local/tmp"
+            val process = pb.start()
+            val stdout = BufferedReader(InputStreamReader(process.inputStream))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream))
+            val output = (stdout.readText() + stderr.readText()).trim()
+            val exitCode = process.waitFor()
+            CommandResult(exitCode, output, exitCode == 0)
+        } catch (e: Exception) {
+            CommandResult(-1, "Bundled Python linker error: ${e.message}", false)
         }
     }
 

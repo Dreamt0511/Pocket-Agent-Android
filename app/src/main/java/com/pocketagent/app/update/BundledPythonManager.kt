@@ -161,6 +161,14 @@ object BundledPythonManager {
                     Log.e(TAG, "chmod 也失败: ${e.message}")
                 }
             }
+            // SELinux 可能阻止执行 app_data_file 上下文的二进制
+            // restorecon 将上下文重置为策略默认值（app_exec_data_file → 允许执行）
+            try {
+                Runtime.getRuntime().exec(arrayOf("restorecon", destFile.absolutePath)).waitFor()
+                Log.i(TAG, "restorecon 成功")
+            } catch (e: Exception) {
+                Log.w(TAG, "restorecon 失败（可能无此命令）: ${e.message}")
+            }
             Log.i(TAG, "python3.13 可执行: ${destFile.canExecute()} (${destFile.absolutePath})")
         }
     }
