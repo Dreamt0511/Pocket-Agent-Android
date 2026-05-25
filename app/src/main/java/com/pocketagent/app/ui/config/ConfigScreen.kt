@@ -16,6 +16,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
@@ -369,19 +371,15 @@ fun ConfigScreen(navController: NavController) {
                     }
                     if (getTermuxVersion(context) != null && !termuxPermGranted) {
                         Spacer(Modifier.height(6.dp))
+                        val permLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.RequestPermission()
+                        ) { _ -> }
                         Button(
-                            onClick = {
-                                context.startActivity(
-                                    android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = android.net.Uri.parse("package:${context.packageName}")
-                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                )
-                            },
+                            onClick = { permLauncher.launch("com.termux.permission.RUN_COMMAND") },
                             modifier = Modifier.fillMaxWidth().height(36.dp),
                             shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("去系统设置 → 权限 → 开启 RUN_COMMAND", fontSize = 13.sp)
+                            Text("授权 Termux 命令执行权限", fontSize = 13.sp)
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
