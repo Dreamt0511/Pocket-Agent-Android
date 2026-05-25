@@ -208,7 +208,6 @@ object BundledPythonManager {
             Log.w(TAG, "restorecon 失败（${file.name}）: ${e.message}")
         }
     }
-    }
 
     /**
      * 从 assets 递归复制目录到目标路径。
