@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
@@ -464,16 +463,27 @@ private fun SkillDetailView(
     onDelete: () -> Unit,
     onExport: () -> Unit
 ) {
-    val body = remember(skill) { reduceHeadings(SkillManager.getContentBody(skill.content)) }
+    // 将名称和描述拼入正文顶部，用户下滑即可浏览完整内容
+    val fullMarkdown = remember(skill) {
+        buildString {
+            appendLine("# ${skill.name}")
+            if (skill.description.isNotBlank()) {
+                appendLine()
+                appendLine(skill.description)
+            }
+            appendLine()
+            appendLine("---")
+            appendLine()
+            append(SkillManager.getContentBody(skill.content))
+        }.let { reduceHeadings(it) }
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(12.dp)
-    ) {
-        // 顶部栏
+    Column(modifier = Modifier.fillMaxSize()) {
+        // 紧凑操作栏
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -481,27 +491,11 @@ private fun SkillDetailView(
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                 }
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = skill.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (skill.description.isNotBlank()) {
-                        Text(
-                            text = skill.description,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
+                AssistChip(
+                    onClick = {},
+                    label = { Text(skill.category.displayName, fontSize = 10.sp) }
+                )
             }
-
             Row {
                 IconButton(onClick = onExport) {
                     Icon(Icons.Default.FileDownload, contentDescription = "导出")
@@ -511,33 +505,13 @@ private fun SkillDetailView(
                         Icon(Icons.Default.Edit, contentDescription = "编辑")
                     }
                     IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "删除",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        // 标签
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AssistChip(
-                onClick = {},
-                label = { Text(skill.category.displayName, fontSize = 10.sp) }
-            )
-            AssistChip(
-                onClick = {},
-                label = { Text(skill.path, fontSize = 10.sp) }
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // 内容（Markdown 渲染）
+        // 完整内容（滚动浏览）
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -551,9 +525,9 @@ private fun SkillDetailView(
                     .padding(12.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                if (body.isNotBlank()) {
+                if (fullMarkdown.isNotBlank()) {
                     MarkdownText(
-                        markdown = body,
+                        markdown = fullMarkdown,
                         modifier = Modifier.fillMaxWidth(),
                         style = TextStyle(fontSize = 13.sp)
                     )
