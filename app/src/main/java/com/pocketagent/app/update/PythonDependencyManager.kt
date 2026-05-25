@@ -16,7 +16,7 @@ import java.io.InputStreamReader
  *
  * 架构：
  *   首页 "环境配置" → ensurepip 自举 pip → pip install -r requirements.txt
- *   → 验证 import dotenv 成功 → 标记完成
+ *   → 验证 site-packages 有 .dist-info → 标记完成
  *
  * 依赖安装到 filesDir/python/site-packages/，通过 PYTHONPATH 引入。
  * 这样 APK 体积不受影响，依赖在设备本地安装，更新主库代码后重新配置即可。
@@ -53,34 +53,16 @@ object PythonDependencyManager {
     }
 
     /**
-     * 检查依赖是否已安装（尝试 import dotenv，如果失败则未就绪）
+     * 检查依赖是否已安装（检查 site-packages 中是否有已安装的包）
      */
-    suspend fun checkReady(context: Context, pythonBin: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun checkReady(context: Context): Boolean = withContext(Dispatchers.IO) {
         val sitePackages = getSitePackagesDir(context)
         if (!sitePackages.exists() || !sitePackages.isDirectory) {
             return@withContext false
         }
-        if (sitePackages.listFiles()?.isEmpty() != false) {
-            return@withContext false
-        }
-        // 尝试 import dotenv 确认依赖可用
-        try {
-            val env = mutableMapOf<String, String>()
-            val pythonDir = BundledPythonManager.getPythonDir(context)
-            env["LD_LIBRARY_PATH"] = File(pythonDir, "lib").absolutePath
-            env["PYTHONPATH"] = sitePackages.absolutePath
-            env["PYTHONHOME"] = pythonDir.absolutePath
-
-            val pb = ProcessBuilder(pythonBin, "-c", "import dotenv; print('ok')")
-            pb.environment().putAll(env)
-            val process = pb.start()
-            val output = BufferedReader(InputStreamReader(process.inputStream)).readText().trim()
-            val exitCode = process.waitFor()
-            exitCode == 0 && output == "ok"
-        } catch (e: Exception) {
-            Log.w(TAG, "checkReady 异常", e)
-            false
-        }
+        // 检查是否存在 .dist-info 目录（pip 安装后留下的元数据）
+        val files = sitePackages.listFiles() ?: return@withContext false
+        files.any { it.name.endsWith(".dist-info") }
     }
 
     /**
@@ -90,7 +72,7 @@ object PythonDependencyManager {
      * 1. 自举 pip（python3 -m ensurepip）
      * 2. 从已同步的代码仓库读取 requirements.txt
      * 3. pip install --target site-packages
-     * 4. 验证 import dotenv 可用
+     * 4. 验证 site-packages 有 .dist-info
      *
      * 注意：依赖安装前必须先通过 CodeSyncManager 完成代码同步，
      * 否则运行时目录下没有 requirements.txt 会失败。
@@ -186,9 +168,9 @@ object PythonDependencyManager {
 
             // Step 4: 验证
             _setupState.value = SetupState.Installing("验证中...")
-            val ready = checkReady(context, pythonBin)
+            val ready = checkReady(context)
             if (!ready) {
-                val msg = "依赖验证失败：dotenv 不可用"
+                val msg = "依赖验证失败：site-packages 中没有已安装的包"
                 Log.e(TAG, msg)
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false

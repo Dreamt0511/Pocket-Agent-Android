@@ -31,6 +31,7 @@ import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
 import com.pocketagent.app.update.BundledPythonManager
 import com.pocketagent.app.update.PythonDependencyManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class NavEntry(
@@ -55,16 +56,18 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
     val scope = rememberCoroutineScope()
     val depsReady = remember { mutableStateOf(false) }
     val setupState by PythonDependencyManager.setupState.collectAsState()
-    val isPythonReady = remember { mutableStateOf(false) }
+    val isPythonReady = remember { mutableStateOf(BundledPythonManager.isReady(context)) }
 
-    // 初始检查依赖状态
+    // 如果 Python 尚未就绪（首次安装正在解压），等待解压完成后再检查依赖
     LaunchedEffect(Unit) {
-        isPythonReady.value = BundledPythonManager.isReady(context)
-        if (isPythonReady.value) {
-            val pyBin = BundledPythonManager.findPythonBinary(context)
-            if (pyBin != null) {
-                depsReady.value = PythonDependencyManager.checkReady(context, pyBin)
+        if (!isPythonReady.value) {
+            while (!BundledPythonManager.isReady(context)) {
+                delay(800)
             }
+            isPythonReady.value = true
+        }
+        if (isPythonReady.value) {
+            depsReady.value = PythonDependencyManager.checkReady(context)
         }
     }
 
@@ -162,7 +165,7 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                                     PythonDependencyManager.installDependencies(
                                         context, pyBin
                                     )
-                                    depsReady.value = PythonDependencyManager.checkReady(context, pyBin)
+                                    depsReady.value = PythonDependencyManager.checkReady(context)
                                 }
                             }
                         },
