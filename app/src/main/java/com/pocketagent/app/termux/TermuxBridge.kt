@@ -39,11 +39,16 @@ class TermuxBridge {
 
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"
-            val workingDir = File(homeDir)
-            if (!workingDir.exists()) workingDir.mkdirs()
-
             val processBuilder = ProcessBuilder(shell, "-c", command)
-                .directory(workingDir)
+
+            // 尝试设置工作目录为 Termux home，不可访问时使用默认目录
+            // （App 进程可能因跨 UID 限制无法访问 Termux 目录）
+            val workingDir = File(homeDir)
+            if (workingDir.exists() || workingDir.mkdirs()) {
+                processBuilder.directory(workingDir)
+            } else {
+                Log.w(TAG, "Cannot access Termux home directory, using default CWD")
+            }
 
             // 设置 Termux 环境变量
             val env = processBuilder.environment()
@@ -119,7 +124,11 @@ class TermuxBridge {
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"
             val processBuilder = ProcessBuilder(shell, "-c", command)
-                .directory(File(homeDir))
+
+            val workingDir = File(homeDir)
+            if (workingDir.exists() || workingDir.mkdirs()) {
+                processBuilder.directory(workingDir)
+            }
 
             val env = processBuilder.environment()
             env["HOME"] = homeDir
@@ -191,7 +200,11 @@ class TermuxBridge {
         try {
             val homeDir = TermuxBootstrap.termuxRoot + "/home"
             val processBuilder = ProcessBuilder(shell, "-c", command)
-                .directory(File(homeDir))
+
+            val workingDir = File(homeDir)
+            if (workingDir.exists() || workingDir.mkdirs()) {
+                processBuilder.directory(workingDir)
+            }
 
             val env = processBuilder.environment()
             env["HOME"] = homeDir
@@ -254,11 +267,9 @@ class TermuxBridge {
      * 检查 Python 是否可用
      */
     suspend fun checkPython(): Boolean = withContext(Dispatchers.IO) {
-        if (!TermuxBootstrap.isReady) return@withContext false
-
-        val pythonBin = TermuxBootstrap.termuxUsr + "/bin/python3"
-        val result = execute("$pythonBin --version")
-        result.success
+        val result = execute("python --version")
+        if (result.success) return@withContext true
+        execute("python3 --version").success
     }
 
     /**
@@ -266,21 +277,14 @@ class TermuxBridge {
      */
     suspend fun checkDependencies(): List<String> = withContext(Dispatchers.IO) {
         val missing = mutableListOf<String>()
-
-        if (!TermuxBootstrap.isReady) {
-            missing.add("Termux 环境未就绪")
-            return@withContext missing
-        }
-
-        val pythonBin = TermuxBootstrap.termuxUsr + "/bin/python3"
         val deps = listOf("dotenv", "langchain", "rich", "requests", "aiohttp")
         for (dep in deps) {
-            val result = execute("$pythonBin -c 'import $dep'")
+            val result = execute("python -c 'import $dep'")
             if (!result.success) {
-                missing.add(dep)
+                val result3 = execute("python3 -c 'import $dep'")
+                if (!result3.success) missing.add(dep)
             }
         }
-
         missing
     }
 

@@ -25,12 +25,12 @@ import java.io.InputStreamReader
  *          │  onStatus ←───────────  │ 状态更新回调
  *
  * Python 发现顺序：
- *   1. Termux 环境: /data/data/com.termux/files/usr/bin/python3
- *   2. 系统 PATH:   python3 (通过 /system/bin/sh)
- *   3. 常见系统路径: /system/bin/python3, /system/xbin/python3 等
+ *   1. Termux 环境: python/python3 (ProcessBuilder 直接执行)
+ *   2. Termux 环境: python/python3 (系统 shell)
+ *   3. 系统 PATH:   python → python3 → 各常见系统路径
  *
  * 依赖：
- *   - Termux app + Python 3 (推荐) 或系统 Python 3
+ *   - Termux app + Python (推荐) 或系统 Python 3
  *   - 必要 pip 依赖 (Termux 模式下)
  */
 class PythonRuntime(
@@ -43,10 +43,15 @@ class PythonRuntime(
         private const val SEED_ASSET_DIR = "agent-seed"
         /** 系统 python3 搜索路径（按优先级） */
         private val SYSTEM_PYTHON_PATHS = listOf(
-            "python3",                  // 通过 shell PATH 查找
+            "python",                   // Termux pkg install python 安装为 python
+            "python3",                  // 部分系统提供 python3
+            "/system/bin/python",
+            "/system/xbin/python",
             "/system/bin/python3",
             "/system/xbin/python3",
+            "/data/local/tmp/python",
             "/data/local/tmp/python3",
+            "/data/data/com.termux/files/usr/bin/python",
             "/data/data/com.termux/files/usr/bin/python3",
         )
     }
@@ -162,13 +167,12 @@ class PythonRuntime(
     }
 
     /**
-     * 发现可用的 python3 二进制路径
+     * 发现可用的 python 二进制路径
      *
      * 搜索顺序：
-     *  1. Direct ProcessBuilder — 直接执行 python3 二进制（绕过 shell SELinux 限制）
-     *  2. Termux bash -c — 通过 Termux 自己的 shell 执行
-     *  3. termuxBridge.execute — 通过 /system/bin/sh 执行
-     *  4. 系统 PATH 搜索
+     *  1. Termux 路径: python → python3 (ProcessBuilder 直接执行)
+     *  2. Termux 路径: python → python3 (系统 shell)
+     *  3. 系统 PATH 搜索: python → python3 → 各常见系统路径
      *
      * 记录发现方式 (pythonDiscoveryMethod)，用于后续验证时使用相同的方式。
      */
@@ -177,13 +181,6 @@ class PythonRuntime(
         val pyNames = listOf("python3", "python")
         for (pyName in pyNames) {
             val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
-
-            // ── 检查文件是否存在 ──
-            val pyFile = java.io.File(termuxPy)
-            diagLog.add("检查 $termuxPy: ${if (pyFile.exists()) "存在" else "不存在"}")
-            if (pyFile.exists()) {
-                diagLog.add("  可执行: ${pyFile.canExecute()}, 大小: ${pyFile.length()}")
-            }
 
             // 1. ProcessBuilder 直接执行
             try {
