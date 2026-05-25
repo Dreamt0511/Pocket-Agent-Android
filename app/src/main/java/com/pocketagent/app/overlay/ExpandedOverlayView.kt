@@ -42,7 +42,7 @@ class ExpandedOverlayView(
 ) : LinearLayout(context) {
 
     val headerView: View
-    private val terminalText: TextView
+    private lateinit var terminalText: TextView
     private val scrollView: NestedScrollView
     private val statusText: TextView
 
