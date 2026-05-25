@@ -400,7 +400,8 @@ sys.stdout.write("pip bootstrap done\n")
 
             // 查找并复制 .so 文件
             val count = findAndCopySoFiles(extractDir, libDir)
-            Log.i(TAG, "自愈: 从 $soname 的 deb 提取了 $count 个 .so 文件")
+            val pkgName = debUrl.substringAfterLast('/').substringBeforeLast('_')
+            Log.i(TAG, "自愈: 从 $pkgName 的 deb 提取了 $count 个 .so 文件")
             return count > 0
 
         } catch (e: Exception) {
