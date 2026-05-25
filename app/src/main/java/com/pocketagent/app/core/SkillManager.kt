@@ -221,8 +221,8 @@ object SkillManager {
 
     fun isValidSkillName(name: String): Boolean {
         if (name.isBlank()) return false
-        return name.matches(Regex("^[a-z0-9][a-z0-9-]*[a-z0-9]$")) ||
-               name.matches(Regex("^[a-z0-9]$"))
+        return name.matches(Regex("^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$")) ||
+               name.matches(Regex("^[a-zA-Z0-9]$"))
     }
 
     data class SkillValidation(
@@ -233,7 +233,7 @@ object SkillManager {
     fun validateSkillFormat(name: String, description: String, content: String): SkillValidation {
         val warnings = mutableListOf<String>()
         if (name.isBlank()) warnings += "技能名称不能为空"
-        else if (!isValidSkillName(name)) warnings += "技能名称不规范：仅支持小写字母、数字和连字符，且不能以连字符开头或结尾"
+        else if (!isValidSkillName(name)) warnings += "技能名称不规范：仅支持字母、数字、下划线和连字符"
         if (description.isBlank()) warnings += "技能描述不能为空"
         else if (description.length < 5) warnings += "技能描述过短，建议至少 5 个字"
         if (content.isBlank()) warnings += "SKILL.md 正文不能为空"

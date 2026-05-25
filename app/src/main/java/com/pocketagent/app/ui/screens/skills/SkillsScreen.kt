@@ -590,8 +590,7 @@ private fun SkillEditDialog(
                     label = { Text("技能名称") },
                     placeholder = { Text("如: phone-control") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isEdit
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
@@ -657,16 +656,11 @@ private fun SkillEditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (isEdit) {
-                        // 编辑模式：名称不可改，直接保存
-                        onSave(name, description, content)
+                    val validation = SkillManager.validateSkillFormat(name, description, content)
+                    if (!validation.valid || validation.warnings.isNotEmpty()) {
+                        warnings = validation.warnings
                     } else {
-                        val validation = SkillManager.validateSkillFormat(name, description, content)
-                        if (!validation.valid || validation.warnings.isNotEmpty()) {
-                            warnings = validation.warnings
-                        } else {
-                            onSave(name, description, content)
-                        }
+                        onSave(name, description, content)
                     }
                 },
                 enabled = name.isNotBlank()
