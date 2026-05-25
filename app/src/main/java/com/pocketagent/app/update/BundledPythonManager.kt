@@ -16,12 +16,13 @@ import java.io.FileOutputStream
  *
  * 资产结构：
  *   assets/python/
- *       bin/python3.13           — Python 解释器二进制
- *       lib/libpython3.13.so     — Python 共享库
- *       lib/python3.13/          — Python 标准库（含 lib-dynload .so 模块）
+ *       bin/python3.13              — Python 解释器二进制
+ *       lib/libpython3.13.so        — Python 共享库
+ *       lib/libandroid-support.so   — Python 的 Termux 依赖库（bionic 补充）
+ *       lib/python3.13/             — Python 标准库（含 lib-dynload .so 模块）
  *
  * 执行时需要设置 LD_LIBRARY_PATH 指向 python/lib/，
- * 以便动态链接器找到 libpython3.13.so。
+ * 以便动态链接器找到 libpython3.13.so 和 libandroid-support.so。
  */
 object BundledPythonManager {
     private const val TAG = "BundledPython"
@@ -57,7 +58,8 @@ object BundledPythonManager {
      * 复制以下内容：
      * 1. bin/python3.13              — Python 解释器
      * 2. lib/libpython3.13.so        — Python 共享库
-     * 3. lib/python3.13/             — Python 标准库（递归）
+     * 3. lib/libandroid-support.so   — Python 的 Termux 依赖库
+     * 4. lib/python3.13/             — Python 标准库（递归）
      *
      * assets 中的符号链接无法通过 APK 打包保留，因此只复制实际文件。
      * 标记文件 (bin/python, bin/python3) 会被跳过。
@@ -83,6 +85,14 @@ object BundledPythonManager {
                 File(pythonDir, "lib/libpython3.13.so")
             )
             Log.i(TAG, "lib/libpython3.13.so 已复制")
+
+            // 复制 libandroid-support（Termux 依赖，否则 linker 报 CANNOT LINK EXECUTABLE）
+            copyAssetToFile(
+                context,
+                "$ASSET_ROOT/lib/libandroid-support.so",
+                File(pythonDir, "lib/libandroid-support.so")
+            )
+            Log.i(TAG, "lib/libandroid-support.so 已复制")
 
             // 递归复制 Python 标准库
             copyAssetDir(
@@ -127,11 +137,18 @@ object BundledPythonManager {
     /**
      * 检查 Python 运行时是否已就绪。
      *
-     * 就绪条件：python3.13 二进制文件存在且可执行。
+     * 就绪条件：
+     * - python3.13 二进制文件存在且可执行
+     * - libandroid-support.so 存在（Termux Python 的必需依赖）
+     *
+     * 缺少 libandroid-support.so 声明未就绪，触发重新解压。
      */
     fun isReady(context: Context): Boolean {
         val pythonBin = File(getPythonDir(context), "bin/python3.13")
-        return pythonBin.exists() && pythonBin.canExecute()
+        if (!pythonBin.exists() || !pythonBin.canExecute()) return false
+        // libandroid-support.so 是 Python 二进制链接时必需的依赖库
+        val libas = File(getPythonDir(context), "lib/libandroid-support.so")
+        return libas.exists()
     }
 
     // ─── 内部方法 ─────────────────────────────────
