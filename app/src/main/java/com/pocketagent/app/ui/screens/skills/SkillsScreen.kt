@@ -657,11 +657,16 @@ private fun SkillEditDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val validation = SkillManager.validateSkillFormat(name, description, content)
-                    if (!validation.valid || validation.warnings.isNotEmpty()) {
-                        warnings = validation.warnings
-                    } else {
+                    if (isEdit) {
+                        // 编辑模式：名称不可改，直接保存
                         onSave(name, description, content)
+                    } else {
+                        val validation = SkillManager.validateSkillFormat(name, description, content)
+                        if (!validation.valid || validation.warnings.isNotEmpty()) {
+                            warnings = validation.warnings
+                        } else {
+                            onSave(name, description, content)
+                        }
                     }
                 },
                 enabled = name.isNotBlank()
