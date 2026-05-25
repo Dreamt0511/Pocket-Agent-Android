@@ -128,15 +128,21 @@ object BundledPythonManager {
     /**
      * 返回已解压的 Python 解释器绝对路径。
      *
+     * 每次调用都会尝试修复 SELinux 上下文，
+     * 即使 file.canExecute() 返回 true，SELinux 仍可能阻止执行。
+     *
      * @return 完整路径如 "/data/data/com.pocketagent.app/files/python/bin/python3.13"，
      *         未就绪时返回 null。
      */
     fun findPythonBinary(context: Context): String? {
         val pythonBin = File(getPythonDir(context), "bin/python3.13")
-        if (pythonBin.exists() && pythonBin.canExecute()) {
-            return pythonBin.absolutePath
+        if (!pythonBin.exists()) return null
+        // 修复 SELinux 上下文（app_data_file → app_exec_data_file）
+        restoreconSelinux(pythonBin)
+        if (!pythonBin.canExecute()) {
+            pythonBin.setExecutable(true)
         }
-        return null
+        return if (pythonBin.canExecute()) pythonBin.absolutePath else null
     }
 
     /**
