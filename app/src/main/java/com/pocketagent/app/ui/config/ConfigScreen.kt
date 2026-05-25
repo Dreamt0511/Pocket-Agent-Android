@@ -345,14 +345,16 @@ fun ConfigScreen(navController: NavController) {
 
                     // ── Termux RUN_COMMAND 权限 ──
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    val termuxPermGranted = remember {
-                        try {
+                    var termuxPermGranted by remember { mutableStateOf(false) }
+                    fun checkTermuxPerm() {
+                        termuxPermGranted = try {
                             context.packageManager.checkPermission(
                                 "com.termux.permission.RUN_COMMAND",
                                 context.packageName
                             ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                         } catch (_: Exception) { false }
                     }
+                    LaunchedEffect(Unit) { checkTermuxPerm() }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Termux RUN_COMMAND", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         Text(
@@ -373,7 +375,7 @@ fun ConfigScreen(navController: NavController) {
                         Spacer(Modifier.height(6.dp))
                         val permLauncher = rememberLauncherForActivityResult(
                             contract = ActivityResultContracts.RequestPermission()
-                        ) { _ -> }
+                        ) { _ -> checkTermuxPerm() }
                         Button(
                             onClick = { permLauncher.launch("com.termux.permission.RUN_COMMAND") },
                             modifier = Modifier.fillMaxWidth().height(36.dp),
