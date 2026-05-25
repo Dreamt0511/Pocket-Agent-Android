@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.navigation.NavController
 import com.pocketagent.app.core.SkillManager
 import com.pocketagent.app.ui.theme.GlassCard
@@ -38,6 +39,11 @@ fun SkillsScreen(navController: NavController) {
 
     // 详情视图状态
     var selectedSkill by remember { mutableStateOf<SkillManager.Skill?>(null) }
+
+    // 拦截系统返回手势：在详情视图时回到列表，而非退到首页
+    BackHandler(enabled = selectedSkill != null) {
+        selectedSkill = null
+    }
 
     // 技能说明弹窗
     var showDescriptionDialog by remember { mutableStateOf<SkillManager.Skill?>(null) }

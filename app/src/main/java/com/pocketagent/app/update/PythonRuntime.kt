@@ -2,13 +2,16 @@ package com.pocketagent.app.update
 
 import android.content.Context
 import android.util.Log
+import com.pocketagent.app.termux.CommandResult
 import com.pocketagent.app.termux.TermuxBridge
 import com.pocketagent.app.termux.TermuxBootstrap
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
 
 /**
  * Python 运行时管理器 — 通过 Python 执行动态加载的主仓库代码
@@ -155,19 +158,46 @@ class PythonRuntime(
      * 发现可用的 python3 二进制路径
      *
      * 搜索顺序：
-     *  1. Termux: /data/data/com.termux/files/usr/bin/python3（最完备的包环境）
-     *  2. 通过 shell PATH 查找 python3
-     *  3. 常见系统路径
+     *  1. Direct ProcessBuilder — 直接执行 python3 二进制（绕过 shell SELinux 限制）
+     *  2. Termux bash -c — 通过 Termux 自己的 shell 执行
+     *  3. termuxBridge.execute — 通过 /system/bin/sh 执行（原方法）
+     *  4. 系统 PATH 搜索
+     *
+     * Android 11+ 的 SELinux 策略可能阻止 /system/bin/sh 跨 UID 执行
+     * Termux 的二进制文件，因此需要多种尝试方法。
      */
     private suspend fun discoverPython(): String? {
-        // 1. 优先使用 Termux 的 Python（包环境最全）
+        // 1. Direct ProcessBuilder — 直接执行 python3 二进制
+        val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/python3"
+        val bashShell = "${TermuxBootstrap.termuxRoot}/usr/bin/bash"
+
         if (TermuxBootstrap.isReady) {
-            val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/python3"
+            // 1a. 直接运行 python3 二进制（绕过 shell）
+            try {
+                val result = runPythonDirect(termuxPy)
+                if (result.success) {
+                    isFallbackMode = false
+                    Log.i(TAG, "Found Termux Python (direct): $termuxPy")
+                    return termuxPy
+                }
+            } catch (_: Exception) {}
+
+            // 1b. 通过 Termux 自身的 bash 执行（有正确的 SELinux 域和 LD_PRELOAD）
+            try {
+                val r = termuxBridge.execute("$bashShell -c 'python3 --version'")
+                if (r.success) {
+                    isFallbackMode = false
+                    Log.i(TAG, "Found Termux Python (bash): $termuxPy")
+                    return termuxPy
+                }
+            } catch (_: Exception) {}
+
+            // 1c. 通过系统 shell 执行（原方法）
             try {
                 val r = termuxBridge.execute("$termuxPy --version")
                 if (r.success) {
                     isFallbackMode = false
-                    Log.i(TAG, "Found Termux Python at $termuxPy")
+                    Log.i(TAG, "Found Termux Python (sh): $termuxPy")
                     return termuxPy
                 }
             } catch (_: Exception) {}
@@ -175,7 +205,7 @@ class PythonRuntime(
 
         // 2. Termux 不可用，搜索系统路径
         isFallbackMode = true
-        Log.i(TAG, "Termux not available, searching system python3...")
+        Log.i(TAG, "Termux methods exhausted, searching system python3...")
 
         for (path in SYSTEM_PYTHON_PATHS) {
             try {
@@ -188,6 +218,35 @@ class PythonRuntime(
         }
 
         return null
+    }
+
+    /**
+     * 直接通过 ProcessBuilder 运行 Python 二进制（不使用 shell）
+     * 这对某些 Android 11+ 设备有效，因为 shell → 跨 UID 执行被 SELinux 阻止，
+     * 但 ProcessBuilder 直接 exec 二进制可能绕过此限制。
+     */
+    private fun runPythonDirect(pythonPath: String): CommandResult {
+        return try {
+            val pb = ProcessBuilder(pythonPath, "--version")
+            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            val process = pb.start()
+            val stdout = BufferedReader(InputStreamReader(process.inputStream))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream))
+            val output = (stdout.readText() + stderr.readText()).trim()
+            val exitCode = process.waitFor()
+            CommandResult(
+                exitCode = exitCode,
+                output = output,
+                success = exitCode == 0
+            )
+        } catch (e: Exception) {
+            CommandResult(
+                exitCode = -1,
+                output = e.message ?: "",
+                success = false
+            )
+        }
     }
 
     /**
