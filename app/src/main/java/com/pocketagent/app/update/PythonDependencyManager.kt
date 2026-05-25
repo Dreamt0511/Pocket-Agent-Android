@@ -117,6 +117,13 @@ object PythonDependencyManager {
                 listOf("-m", "ensurepip", "--upgrade", "--default-pip")
             )
             if (!ensurepipResult.success && !ensurepipResult.output.contains("already satisfied")) {
+                // 检查是否为 Permission denied（SELinux），立即上报不继续
+                if (ensurepipResult.output.contains("error=13") || ensurepipResult.output.contains("Permission denied")) {
+                    val msg = "Python 无法执行（SELinux 阻止），请重启应用重试"
+                    Log.e(TAG, "$msg: ${ensurepipResult.output.take(200)}")
+                    _setupState.value = SetupState.Failed(msg)
+                    return@withContext false
+                }
                 Log.w(TAG, "ensurepip 失败，尝试备用方法: ${ensurepipResult.output}")
             }
 

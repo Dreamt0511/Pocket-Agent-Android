@@ -128,8 +128,8 @@ object BundledPythonManager {
     /**
      * 返回已解压的 Python 解释器绝对路径。
      *
-     * 每次调用都会尝试修复 SELinux 上下文，
-     * 即使 file.canExecute() 返回 true，SELinux 仍可能阻止执行。
+     * 每次调用都会确保 SELinux 上下文为 app_exec_data_file，
+     * 因为 file.canExecute() 只看 Unix 权限位，不检查 SELinux 策略。
      *
      * @return 完整路径如 "/data/data/com.pocketagent.app/files/python/bin/python3.13"，
      *         未就绪时返回 null。
@@ -138,7 +138,10 @@ object BundledPythonManager {
         val pythonBin = File(getPythonDir(context), "bin/python3.13")
         if (!pythonBin.exists()) return null
         // 修复 SELinux 上下文（app_data_file → app_exec_data_file）
-        restoreconSelinux(pythonBin)
+        // 注意：不能用 restorecon，它会重置为默认 app_data_file（不可执行）
+        fixSelinuxContext(pythonBin)
+        fixSelinuxContext(File(getPythonDir(context), "lib/libpython3.13.so"))
+        fixSelinuxContext(File(getPythonDir(context), "lib/libandroid-support.so"))
         if (!pythonBin.canExecute()) {
             pythonBin.setExecutable(true)
         }
@@ -179,7 +182,7 @@ object BundledPythonManager {
         }
         // 设置权限 + SELinux 上下文
         when {
-            // Python 解释器二进制 → 可执行 + restorecon
+            // Python 解释器二进制 → 可执行
             destFile.name == "python3.13" -> {
                 destFile.setExecutable(true)
                 if (!destFile.canExecute()) {
@@ -190,28 +193,45 @@ object BundledPythonManager {
                         Log.e(TAG, "chmod 也失败: ${e.message}")
                     }
                 }
-                restoreconSelinux(destFile)
+                fixSelinuxContext(destFile)
                 Log.i(TAG, "python3.13 可执行: ${destFile.canExecute()} (${destFile.absolutePath})")
             }
-            // 共享库 (.so) → restorecon，确保 linker 可 mmap 为可执行页
+            // 共享库 (.so) → 确保 linker 可 mmap 为可执行页
             destFile.name.endsWith(".so") -> {
-                restoreconSelinux(destFile)
-                Log.d(TAG, "${destFile.name} restorecon 完成")
+                fixSelinuxContext(destFile)
+                Log.d(TAG, "${destFile.name} SELinux 上下文修复完成")
             }
         }
     }
 
     /**
-     * 调用 restorecon 将文件的 SELinux 上下文重置为策略默认值。
+     * 使用 chcon 将文件的 SELinux 类型从 app_data_file 改为 app_exec_data_file。
      *
-     * app_data_file → app_exec_data_file，允许执行和可执行 mmap。
-     * 某些国产 ROM 会阻止 app_data_file 上下文的二进制执行和 .so 加载。
+     * 注意：不能用 restorecon，因为它会重置为策略默认的 app_data_file，
+     * 而 untrusted_app 域不允许执行 app_data_file 类型的文件。
+     *
+     * chcon -t 只修改类型（type）部分，保留 user 和 category 不变，
+     * 这样不需要知道设备特定的 category（如 c512,c768）。
      */
-    private fun restoreconSelinux(file: File) {
+    private fun fixSelinuxContext(file: File) {
+        if (!file.exists()) return
         try {
-            Runtime.getRuntime().exec(arrayOf("restorecon", file.absolutePath)).waitFor()
+            val proc = Runtime.getRuntime().exec(arrayOf(
+                "chcon", "-t", "app_exec_data_file", file.absolutePath
+            ))
+            proc.waitFor()
+            if (proc.exitValue() != 0) {
+                Log.w(TAG, "chcon -t 失败(exit=${proc.exitValue()})，尝试 chcon 完整上下文")
+                val proc2 = Runtime.getRuntime().exec(arrayOf(
+                    "chcon", "u:object_r:app_exec_data_file:s0", file.absolutePath
+                ))
+                proc2.waitFor()
+                if (proc2.exitValue() != 0) {
+                    Log.w(TAG, "chcon 完整上下文也失败(exit=${proc2.exitValue()})，${file.name} 可能仍不可执行")
+                }
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "restorecon 失败（${file.name}）: ${e.message}")
+            Log.w(TAG, "SELinux context fix 失败（${file.name}）: ${e.message}")
         }
     }
 
