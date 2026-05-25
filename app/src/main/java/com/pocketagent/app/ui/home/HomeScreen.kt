@@ -394,7 +394,7 @@ private fun SetupDependenciesCard(
                         text = when (setupState) {
                             is PythonDependencyManager.SetupState.Idle -> "环境配置"
                             is PythonDependencyManager.SetupState.EnsuringPip -> "准备 pip..."
-                            is PythonDependencyManager.SetupState.Installing -> "安装 ${setupState.package}"
+                            is PythonDependencyManager.SetupState.Installing -> "安装 ${setupState.pkg}"
                             is PythonDependencyManager.SetupState.Completed -> "环境就绪"
                             is PythonDependencyManager.SetupState.Failed -> "配置失败"
                         },

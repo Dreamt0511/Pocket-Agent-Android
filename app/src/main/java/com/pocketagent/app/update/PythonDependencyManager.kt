@@ -32,7 +32,7 @@ object PythonDependencyManager {
         /** 正在自举 pip */
         object EnsuringPip : SetupState()
         /** 正在安装依赖（显示当前包名） */
-        class Installing(val package: String) : SetupState()
+        class Installing(val pkg: String) : SetupState()
         /** 全部完成 */
         class Completed(val timestamp: Long) : SetupState()
         /** 失败 */
