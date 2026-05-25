@@ -7,9 +7,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 
 /**
  * Python 依赖管理器 — 使用内置 Python 的 pip 安装第三方包
@@ -24,6 +28,26 @@ import java.io.InputStreamReader
 object PythonDependencyManager {
     private const val TAG = "PyDependencyMgr"
     private const val SITE_PACKAGES_DIR = "python/site-packages"
+
+    // ─── Termux 依赖库自愈映射 ──────────────────────
+    // soname → Termux .deb 下载 URL
+    // 当 assets 中缺失对应共享库时，自动从 Termux 仓库下载
+    private val TERMUX_DEB_URLS = mapOf(
+        "libz.so.1" to "https://packages.termux.dev/apt/termux-main/pool/main/z/zlib/zlib_1.3.2_aarch64.deb",
+        "libssl.so.3" to "https://packages.termux.dev/apt/termux-main/pool/main/o/openssl/openssl_1%3A3.6.2_aarch64.deb",
+        "libcrypto.so.3" to "https://packages.termux.dev/apt/termux-main/pool/main/o/openssl/openssl_1%3A3.6.2_aarch64.deb",
+        "libffi.so" to "https://packages.termux.dev/apt/termux-main/pool/main/libf/libffi/libffi_3.5.2_aarch64.deb",
+        "libsqlite3.so" to "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsqlite/libsqlite_3.53.1_aarch64.deb",
+        "libexpat.so.1" to "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.8.1_aarch64.deb",
+        "libbz2.so.1.0" to "https://packages.termux.dev/apt/termux-main/pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb",
+        "liblzma.so.5" to "https://packages.termux.dev/apt/termux-main/pool/main/libl/liblzma/liblzma_5.8.3_aarch64.deb",
+        "libandroid-posix-semaphore.so" to "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb",
+        "libncursesw.so.6" to "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses/ncurses_6.6.20260307%2Breally6.5.20250830_aarch64.deb",
+        "libpanelw.so.6" to "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307%2Breally6.5.20250830_aarch64.deb",
+        "libgdbm.so" to "https://packages.termux.dev/apt/termux-main/pool/main/g/gdbm/gdbm_1.26-1_aarch64.deb",
+        "libgdbm_compat.so" to "https://packages.termux.dev/apt/termux-main/pool/main/g/gdbm/gdbm_1.26-1_aarch64.deb",
+        "libreadline.so.8" to "https://packages.termux.dev/apt/termux-main/pool/main/r/readline/readline_8.3.3_aarch64.deb",
+    )
 
     // ─── 状态 ──────────────────────────────────────
 
@@ -109,6 +133,12 @@ object PythonDependencyManager {
                 put("TMPDIR", "/data/local/tmp")
                 // 指向 Android 系统 CA 证书，否则 Termux Python 的 SSL 找不到证书
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
+            }
+
+            // Step 0: 自愈 — 确保 Termux 依赖共享库就绪
+            // 若 assets 解压遗漏或本地构建缺少 .so 文件，自动从 Termux 仓库下载
+            if (!ensureTermuxLibraries(context, pythonBin, baseEnv)) {
+                Log.w(TAG, "依赖库自愈不完整，pip 阶段可能失败")
             }
 
             // Step 1: 检查 pip 是否可用（CI 已预装）
@@ -227,6 +257,287 @@ sys.stdout.write("pip bootstrap done\n")
     /** 重置状态为 Idle */
     fun resetState() {
         _setupState.value = SetupState.Idle
+    }
+
+    // ─── Termux 依赖库自愈 ──────────────────────────
+
+    /**
+     * 确保所有 Termux 依赖共享库就绪。
+     *
+     * 流程：
+     * 1. 运行 canary 测试（import zlib — 基础 C 扩展）
+     * 2. 若失败，先尝试从 APK assets 复制缺失的 .so
+     * 3. 若仍然失败，从错误信息解析缺失的库名，从 Termux 仓库下载对应 .deb 并提取
+     * 4. 最终验证
+     *
+     * 这是 CI 打包之外的第二层保障。即使 assets 中没有对应 .so 文件
+     * （如本地调试构建），也能自动修复。
+     */
+    private suspend fun ensureTermuxLibraries(
+        context: Context,
+        pythonBin: String,
+        baseEnv: Map<String, String>
+    ): Boolean = withContext(Dispatchers.IO) {
+        Log.i(TAG, "自愈检查: Termux 依赖库...")
+        val libDir = File(BundledPythonManager.getPythonDir(context), "lib")
+
+        // Step 1: canary 测试
+        if (runCanaryTest(pythonBin, baseEnv, 2)) {
+            Log.i(TAG, "自愈: 依赖库完整")
+            return@withContext true
+        }
+
+        // Step 2: 先尝试从 APK assets 同步 .so 文件（覆盖 extract() 遗漏的情况）
+        Log.w(TAG, "自愈: canary 失败，尝试从 assets 同步...")
+        var synced = syncSoFromAssets(context, libDir)
+        if (synced && runCanaryTest(pythonBin, baseEnv, 1)) {
+            Log.i(TAG, "自愈: 从 assets 同步后恢复正常")
+            return@withContext true
+        }
+
+        // Step 3: 从 dlopen 错误中解析缺失的库名，下载对应的 Termux .deb
+        val errorOutput = collectCanaryError(pythonBin, baseEnv)
+        val missingLib = parseMissingLibrary(errorOutput)
+
+        if (missingLib != null) {
+            Log.w(TAG, "自愈: 检测到缺失库 [$missingLib]，从 Termux 仓库下载...")
+            _setupState.value = SetupState.Installing("下载依赖库 $missingLib...")
+            val downloaded = downloadAndExtractDeb(context, missingLib, libDir)
+            if (downloaded) {
+                // 可能一个 deb 包含多个 .so（如 openssl → libssl.so.3+libcrypto.so.3）
+                // 重新同步 assets（覆盖其他可能缺失的库）
+                syncSoFromAssets(context, libDir)
+                if (runCanaryTest(pythonBin, baseEnv, 1)) {
+                    Log.i(TAG, "自愈: 下载 $missingLib 后恢复正常")
+                    return@withContext true
+                }
+            }
+        }
+
+        Log.w(TAG, "自愈: 未完全修复，pip 安装可能失败")
+        false
+    }
+
+    /** canary 测试：import zlib（最基础的 C 扩展模块） */
+    private fun runCanaryTest(
+        pythonBin: String,
+        baseEnv: Map<String, String>,
+        retries: Int = 1
+    ): Boolean {
+        for (i in 0 until retries) {
+            val result = tryExec(pythonBin, listOf("-c", "import zlib; print('ok')"), baseEnv)
+            if (result.success) return true
+            if (i < retries - 1) Thread.sleep(500)
+        }
+        return false
+    }
+
+    /** 获取 canary 失败的完整错误输出 */
+    private fun collectCanaryError(
+        pythonBin: String,
+        baseEnv: Map<String, String>
+    ): String {
+        val result = tryExec(pythonBin, listOf("-c", "import zlib"), baseEnv)
+        return result.output
+    }
+
+    /** 从 dlopen 错误中解析缺失的共享库名 */
+    private fun parseMissingLibrary(error: String): String? {
+        val regex = Regex("""library "([^"]+)" not found""")
+        return regex.find(error)?.groupValues?.get(1)
+    }
+
+    /**
+     * 从 APK assets 中复制缺失的 .so 文件到 lib 目录。
+     * 这是 BundledPythonManager.extract() 的补充保障。
+     */
+    private fun syncSoFromAssets(context: Context, libDir: File): Boolean {
+        return try {
+            val assetPath = "python/lib"
+            val entries = context.assets.list(assetPath) ?: return false
+            var copied = false
+            for (entry in entries) {
+                if (entry == "python3.13") continue
+                if (!entry.contains(".so")) continue
+                val destFile = File(libDir, entry)
+                if (destFile.exists()) continue
+                // 从 assets 复制到 libDir
+                context.assets.open("$assetPath/$entry").use { input ->
+                    FileOutputStream(destFile).use { output -> input.copyTo(output) }
+                }
+                copied = true
+                Log.i(TAG, "自愈: 从 assets 复制 $entry")
+            }
+            copied
+        } catch (e: Exception) {
+            Log.e(TAG, "自愈: 从 assets 同步失败: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * 从 Termux 仓库下载 .deb 并提取 .so 文件。
+     *
+     * 使用纯 Kotlin 解析 ar 归档，通过系统 tar 命令提取 .tar.xz。
+     * Android 10+ (API 29) 的 toybox 内置 xzcat，可直接处理。
+     */
+    private fun downloadAndExtractDeb(
+        context: Context,
+        soname: String,
+        libDir: File
+    ): Boolean {
+        val debUrl = TERMUX_DEB_URLS[soname] ?: return false
+
+        val tmpDir = File(context.cacheDir, "termux_deb_${System.nanoTime()}")
+        tmpDir.mkdirs()
+
+        try {
+            // 下载 .deb
+            Log.i(TAG, "下载 $debUrl")
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build()
+            val request = Request.Builder().url(debUrl).build()
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.e(TAG, "下载失败: HTTP ${response.code}")
+                return false
+            }
+            val debBytes = response.body?.bytes() ?: return false
+
+            // 解析 ar 归档 → 提取 data.tar.xz
+            val dataTarXz = extractArEntry(debBytes, "data.tar.xz")
+            if (dataTarXz == null) {
+                Log.e(TAG, "ar 解析失败: data.tar.xz 未找到")
+                return false
+            }
+
+            // 提取 .so 文件
+            val extractDir = File(tmpDir, "extract")
+            extractDir.mkdirs()
+            val ok = extractTarXz(dataTarXz, extractDir)
+            if (!ok) {
+                Log.e(TAG, "tar.xz 提取失败")
+                return false
+            }
+
+            // 查找并复制 .so 文件
+            val count = findAndCopySoFiles(extractDir, libDir)
+            Log.i(TAG, "自愈: 从 $soname 的 deb 提取了 $count 个 .so 文件")
+            return count > 0
+
+        } catch (e: Exception) {
+            Log.e(TAG, "自愈: 下载/提取失败: ${e.message}")
+            return false
+        } finally {
+            tmpDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * 纯 Kotlin 解析 ar 归档。
+     *
+     * .deb 文件是 ar 归档，包含 debian-binary、control.tar.xz、data.tar.xz。
+     * 格式简单：!<arch>\n 头部后接多个 "60 字节头 + 文件数据" 条目。
+     */
+    private fun extractArEntry(data: ByteArray, targetName: String): ByteArray? {
+        if (data.size < 8) return null
+        val magic = data.copyOfRange(0, 8).toString(Charsets.US_ASCII)
+        if (magic != "!<arch>\n") return null
+
+        var offset = 8
+        while (offset + 60 <= data.size) {
+            val header = data.copyOfRange(offset, offset + 60)
+            val name = header.copyOfRange(0, 16)
+                .toString(Charsets.US_ASCII).trimEnd(' ')
+            // GNU ar: 以 / 结尾表示文件名，// 为长文件名表
+            val cleanName = name.trimEnd('/')
+            val sizeStr = header.copyOfRange(48, 58)
+                .toString(Charsets.US_ASCII).trim()
+            val size = sizeStr.toIntOrNull() ?: break
+            offset += 60
+
+            if (cleanName == targetName) {
+                return data.copyOfRange(offset, offset + size)
+            }
+
+            // 跳过符号表、长名表等特殊条目
+            offset += size
+            if (offset % 2 != 0) offset++ // ar 对齐到偶数
+        }
+        return null
+    }
+
+    /**
+     * 提取 .tar.xz 中的 .so 文件。
+     *
+     * 使用系统 tar 命令（Android 10+ toybox 内置 xzcat）。
+     * 若系统不支持 xz 解压，返回 false 由上游处理。
+     */
+    private fun extractTarXz(data: ByteArray, destDir: File): Boolean {
+        val tmpFile = File(destDir.parentFile, ".tmp_data.tar.xz")
+
+        try {
+            tmpFile.writeBytes(data)
+
+            // 方法 1: tar -xJf（toybox 内置 xzcat, Android 10+）
+            if (execTar(listOf("-xJf", tmpFile.absolutePath, "-C", destDir.absolutePath))) {
+                return true
+            }
+
+            // 方法 2: xzcat | tar xf -（兼容某些旧版 toybox）
+            val pipeCmd = "xzcat '${tmpFile.absolutePath}' | tar xf - -C '${destDir.absolutePath}'"
+            val shPb = ProcessBuilder("sh", "-c", pipeCmd)
+            shPb.redirectErrorStream(true)
+            val shProc = shPb.start()
+            shProc.waitFor()
+            if (shProc.exitValue() == 0 && destDir.listFiles()?.isNotEmpty() == true) {
+                return true
+            }
+
+            Log.w(TAG, "系统不支持 xz 解压（需 Android 10+），无法自愈下载")
+            return false
+
+        } catch (e: Exception) {
+            Log.e(TAG, "tar.xz 提取失败: ${e.message}")
+            return false
+        } finally {
+            tmpFile.delete()
+        }
+    }
+
+    /** 执行 tar 命令 */
+    private fun execTar(args: List<String>): Boolean {
+        return try {
+            val pb = ProcessBuilder(listOf("tar") + args)
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            val out = BufferedReader(InputStreamReader(proc.inputStream)).readText()
+            val ec = proc.waitFor()
+            if (ec == 0) return true
+            Log.w(TAG, "tar 返回 $ec: $out".take(200))
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "tar 不可用: ${e.message}")
+            false
+        }
+    }
+
+    /** 递归查找目录中的 .so 文件并复制到目标目录 */
+    private fun findAndCopySoFiles(sourceDir: File, targetLibDir: File): Int {
+        var count = 0
+        sourceDir.walk().forEach { file ->
+            if (file.isFile && file.name.contains(".so")) {
+                val dest = File(targetLibDir, file.name)
+                if (!dest.exists()) {
+                    file.copyTo(dest)
+                    count++
+                }
+            }
+        }
+        return count
     }
 
     // ─── 内部 ──────────────────────────────────────
