@@ -3,10 +3,14 @@ package com.pocketagent.app.update
 import android.content.Context
 import android.util.Log
 import com.pocketagent.app.update.CodeSyncManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -56,6 +60,9 @@ object PythonDependencyManager {
         .followRedirects(true)
         .build()
 
+    // 安装协程作用域（不绑定 UI 生命周期，离开页面后安装继续执行）
+    private val installScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     // ─── 状态 ──────────────────────────────────────
 
     sealed class SetupState {
@@ -98,6 +105,18 @@ object PythonDependencyManager {
 
     /**
      * 一键安装所有依赖。
+     *
+     * 内部使用 [installScope] 启动协程，不绑定 UI 生命周期。
+     * 用户离开页面后安装继续执行，返回后通过 [setupState] 获取状态。
+     */
+    fun launchInstall(context: Context, pythonBin: String) {
+        installScope.launch {
+            installDependencies(context, pythonBin)
+        }
+    }
+
+    /**
+     * 一键安装所有依赖（挂起函数）。
      *
      * 流程：
      * 1. 自举 pip（python3 -m ensurepip）
@@ -253,6 +272,11 @@ sys.stdout.write("pip bootstrap done\n")
             Log.i(TAG, "依赖安装完成")
             true
 
+        } catch (e: CancellationException) {
+            // 协程被取消（如 installScope 关闭），重置为 Idle
+            Log.i(TAG, "安装被取消")
+            _setupState.value = SetupState.Idle
+            false
         } catch (e: Exception) {
             val msg = "安装异常: ${e.message}"
             Log.e(TAG, msg, e)

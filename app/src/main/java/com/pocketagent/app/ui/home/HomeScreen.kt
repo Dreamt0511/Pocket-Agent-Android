@@ -32,7 +32,6 @@ import com.pocketagent.app.ui.theme.*
 import com.pocketagent.app.update.BundledPythonManager
 import com.pocketagent.app.update.PythonDependencyManager
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 private data class NavEntry(
     val title: String,
@@ -53,7 +52,6 @@ private val navEntries = listOf(
 @Composable
 fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val depsReady = remember { mutableStateOf(false) }
     val setupState by PythonDependencyManager.setupState.collectAsState()
     val isPythonReady = remember { mutableStateOf(BundledPythonManager.isReady(context)) }
@@ -165,12 +163,7 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                         onStartSetup = {
                             val pyBin = BundledPythonManager.findPythonBinary(context)
                             if (pyBin != null) {
-                                scope.launch {
-                                    PythonDependencyManager.installDependencies(
-                                        context, pyBin
-                                    )
-                                    depsReady.value = PythonDependencyManager.checkReady(context)
-                                }
+                                PythonDependencyManager.launchInstall(context, pyBin)
                             }
                         },
                         onRetry = { PythonDependencyManager.resetState() }
