@@ -152,8 +152,12 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
 
             Spacer(Modifier.height(24.dp))
 
-            // ─── 环境配置卡片（依赖未安装时显示） ───
-            val showSetupCard = isPythonReady.value && !depsReady.value
+            // ─── 环境配置卡片（依赖未安装或未完成时显示） ───
+            val showSetupCard = isPythonReady.value && (
+                !depsReady.value ||
+                setupState !is PythonDependencyManager.SetupState.Idle &&
+                setupState !is PythonDependencyManager.SetupState.Completed
+            )
             if (showSetupCard) {
                 AnimatedStaggeredItem(delayMs = 80) {
                     SetupDependenciesCard(
