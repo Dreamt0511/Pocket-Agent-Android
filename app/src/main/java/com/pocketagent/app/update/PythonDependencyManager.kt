@@ -117,14 +117,7 @@ object PythonDependencyManager {
                 listOf("-m", "ensurepip", "--upgrade", "--default-pip")
             )
             if (!ensurepipResult.success && !ensurepipResult.output.contains("already satisfied")) {
-                // 检查是否为 Permission denied（SELinux），立即上报不继续
-                if (ensurepipResult.output.contains("error=13") || ensurepipResult.output.contains("Permission denied")) {
-                    val msg = "Python 无法执行（SELinux 阻止），请重启应用重试"
-                    Log.e(TAG, "$msg: ${ensurepipResult.output.take(200)}")
-                    _setupState.value = SetupState.Failed(msg)
-                    return@withContext false
-                }
-                Log.w(TAG, "ensurepip 失败，尝试备用方法: ${ensurepipResult.output}")
+                Log.w(TAG, "ensurepip 未成功，继续尝试: ${ensurepipResult.output.take(200)}")
             }
 
             // Step 2: 检查 requirements.txt
@@ -218,7 +211,10 @@ object PythonDependencyManager {
 
     /**
      * 运行 Python 命令并返回结果。
-     * 使用 ProcessBuilder 直接执行，设置必要的环境变量。
+     *
+     * 先尝试直接 ProcessBuilder exec。
+     * 如果被 SELinux 阻止（error=13），自动通过 system linker64 重试。
+     * linker64 有 system_exec 上下文可被 app 执行，加载二进制只需 read 权限。
      */
     private fun runPython(
         context: Context,
@@ -226,10 +222,26 @@ object PythonDependencyManager {
         baseEnv: Map<String, String>,
         args: List<String>
     ): PipResult {
+        // Try 1: 直接执行
+        val directResult = tryExec(pythonBin, args, baseEnv)
+        if (directResult.success || !isExecError(directResult.output)) {
+            return directResult
+        }
+        // Try 2: 通过 linker64 间接加载（绕过 SELinux exec 检查）
+        Log.w(TAG, "直接 exec 被 SELinux 阻止，通过 linker64 重试...")
+        val linker = BundledPythonManager.getLinkerPath()
+        return tryExec(linker, listOf(pythonBin) + args, baseEnv)
+    }
+
+    /** 尝试执行命令，返回 PipResult */
+    private fun tryExec(
+        binary: String,
+        args: List<String>,
+        env: Map<String, String>
+    ): PipResult {
         return try {
-            val pb = ProcessBuilder(listOf(pythonBin) + args)
-            val env = pb.environment()
-            env.putAll(baseEnv)
+            val pb = ProcessBuilder(listOf(binary) + args)
+            pb.environment().putAll(env)
             val process = pb.start()
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val stderr = BufferedReader(InputStreamReader(process.errorStream))
@@ -239,5 +251,12 @@ object PythonDependencyManager {
         } catch (e: Exception) {
             PipResult(false, e.message ?: "")
         }
+    }
+
+    /** 判断错误是否为 SELinux 阻止导致的执行错误 */
+    private fun isExecError(output: String): Boolean {
+        return output.contains("error=13") ||
+               output.contains("Permission denied") ||
+               output.contains("EACCES")
     }
 }
