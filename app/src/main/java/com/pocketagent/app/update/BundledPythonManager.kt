@@ -152,6 +152,16 @@ object BundledPythonManager {
         // 为 Python 二进制设置可执行权限
         if (destFile.name == "python3.13") {
             destFile.setExecutable(true)
+            // File.setExecutable() 在某些 Android 版本/ROM 可能失效
+            if (!destFile.canExecute()) {
+                Log.w(TAG, "setExecutable 无效，尝试 chmod...")
+                try {
+                    Runtime.getRuntime().exec(arrayOf("chmod", "700", destFile.absolutePath)).waitFor()
+                } catch (e: Exception) {
+                    Log.e(TAG, "chmod 也失败: ${e.message}")
+                }
+            }
+            Log.i(TAG, "python3.13 可执行: ${destFile.canExecute()} (${destFile.absolutePath})")
         }
     }
 
