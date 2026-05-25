@@ -409,7 +409,7 @@ private fun SkillCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = skill.name,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -417,7 +417,7 @@ private fun SkillCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = skill.description,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         maxLines = 2
                     )
