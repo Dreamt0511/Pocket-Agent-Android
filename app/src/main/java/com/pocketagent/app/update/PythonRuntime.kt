@@ -190,6 +190,31 @@ class PythonRuntime(
      */
     private suspend fun discoverPython(): String? {
         diagLog.clear()
+
+        // 0. 内置 Python（优先使用）
+        if (BundledPythonManager.isReady(context)) {
+            val bundledPy = BundledPythonManager.findPythonBinary(context)
+            if (bundledPy != null) {
+                isFallbackMode = false
+                pythonDiscoveryMethod = "bundled"
+                diagLog.add("✅ 内置 Python: $bundledPy")
+                Log.i(TAG, "Using bundled Python: $bundledPy")
+                return bundledPy
+            }
+        }
+        // 没有内置 Python 时，尝试解压（安装后首次运行）
+        if (BundledPythonManager.ensureExtracted(context)) {
+            val bundledPy = BundledPythonManager.findPythonBinary(context)
+            if (bundledPy != null) {
+                isFallbackMode = false
+                pythonDiscoveryMethod = "bundled"
+                diagLog.add("✅ 内置 Python（首次解压）: $bundledPy")
+                Log.i(TAG, "Using bundled Python (extracted): $bundledPy")
+                return bundledPy
+            }
+        }
+        diagLog.add("  内置 Python 不可用，尝试 Termux...")
+
         val termuxVer = getTermuxVersion()
         diagLog.add("Termux 版本: ${termuxVer ?: "未安装"}")
         // 检查 RUN_COMMAND 权限是否已被授予
@@ -312,8 +337,34 @@ class PythonRuntime(
     private suspend fun verifyPython(pythonBin: String): CommandResult {
         return when (pythonDiscoveryMethod) {
             "direct" -> runPythonDirect(pythonBin)
+            "bundled" -> runBundledPython(pythonBin, listOf("--version"))
             "termux_intent" -> runViaTermuxIntent(pythonBin, listOf("--version"))
             else -> termuxBridge.execute("$pythonBin --version")
+        }
+    }
+
+    /**
+     * 运行内置 Python（设置 LD_LIBRARY_PATH 指向 bundled lib 目录）
+     */
+    private fun runBundledPython(pythonBin: String, args: List<String>, workDir: File? = null): CommandResult {
+        return try {
+            val pb = ProcessBuilder(listOf(pythonBin) + args)
+            if (workDir != null) pb.directory(workDir)
+            val pythonDir = BundledPythonManager.getPythonDir(context)
+            val libDir = File(pythonDir, "lib").absolutePath
+            val env = pb.environment()
+            env["LD_LIBRARY_PATH"] = libDir
+            env["HOME"] = pythonDir.absolutePath
+            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
+            env["TMPDIR"] = "/data/local/tmp"
+            val process = pb.start()
+            val stdout = BufferedReader(InputStreamReader(process.inputStream))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream))
+            val output = (stdout.readText() + stderr.readText()).trim()
+            val exitCode = process.waitFor()
+            CommandResult(exitCode, output, exitCode == 0)
+        } catch (e: Exception) {
+            CommandResult(-1, "Bundled Python error: ${e.message}", false)
         }
     }
 
@@ -322,12 +373,21 @@ class PythonRuntime(
      */
     private fun setTermuxEnv(pb: ProcessBuilder) {
         val env = pb.environment()
-        env["HOME"] = TermuxBootstrap.termuxRoot + "/home"
-        env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
-                TermuxBootstrap.termuxUsr + "/bin/applets:" +
-                "/system/bin:/system/xbin"
-        env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
-        env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
+        if (pythonDiscoveryMethod == "bundled") {
+            val pythonDir = BundledPythonManager.getPythonDir(context)
+            val libDir = File(pythonDir, "lib").absolutePath
+            env["LD_LIBRARY_PATH"] = libDir
+            env["HOME"] = pythonDir.absolutePath
+            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
+            env["TMPDIR"] = "/data/local/tmp"
+        } else {
+            env["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+            env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
+                    TermuxBootstrap.termuxUsr + "/bin/applets:" +
+                    "/system/bin:/system/xbin"
+            env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
+        }
     }
 
     /**
@@ -349,10 +409,26 @@ class PythonRuntime(
             val pyArgs = parts.drop(1)
             return runViaTermuxIntent(pyPath, pyArgs, workDir = wd)
         }
+        if (pythonDiscoveryMethod == "bundled") {
+            // 内置 Python：ProcessBuilder + LD_LIBRARY_PATH
+            var workingDir: java.io.File? = null
+            var actualCommand = shellCmd
+            val cdMatch = Regex("^cd (\\S+) && ").find(shellCmd)
+            if (cdMatch != null) {
+                workingDir = java.io.File(cdMatch.groupValues[1])
+                actualCommand = shellCmd.removeRange(cdMatch.range)
+            }
+            val parts = actualCommand.split(" ").filter { it.isNotBlank() }
+            if (parts.isEmpty()) return CommandResult(-1, "Empty command", false)
+            return withContext(Dispatchers.IO) {
+                val result = runBundledPython(parts.first(), parts.drop(1), workDir = workingDir)
+                result
+            }
+        }
         if (pythonDiscoveryMethod != "direct") {
             return termuxBridge.execute(shellCmd)
         }
-        // direct 模式：解析 cd 前缀，用 ProcessBuilder 运行
+        // direct + bundled 模式：解析 cd 前缀，用 ProcessBuilder 运行
         return try {
             var workingDir: java.io.File? = null
             var actualCommand = shellCmd
@@ -750,7 +826,7 @@ class PythonRuntime(
             val shellCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=task"
 
             val result = when (pythonDiscoveryMethod) {
-                "direct" -> {
+                "direct", "bundled" -> {
                     executePythonWithInput(runtimeDir, command, ::handleOutputLine, { line -> onOutput?.invoke("[err] $line") })
                 }
                 "termux_intent" -> {
