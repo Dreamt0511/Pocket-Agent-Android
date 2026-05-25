@@ -300,6 +300,7 @@ class PythonRuntime(
             val libDir = File(pythonDir, "lib").absolutePath
             val env = pb.environment()
             env["LD_LIBRARY_PATH"] = libDir
+            env["PYTHONHOME"] = pythonDir.absolutePath
             env["HOME"] = pythonDir.absolutePath
             env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
             env["TMPDIR"] = "/data/local/tmp"
@@ -333,6 +334,9 @@ class PythonRuntime(
             val libDir = File(pythonDir, "lib").absolutePath
             val env = pb.environment()
             env["LD_LIBRARY_PATH"] = libDir
+            // linker64 执行时 argv[0] 指向 linker 而非 python，
+            // Python 无法自动计算 stdlib 路径，必须靠 PYTHONHOME 指定
+            env["PYTHONHOME"] = pythonDir.absolutePath
             env["HOME"] = pythonDir.absolutePath
             env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
             env["TMPDIR"] = "/data/local/tmp"
@@ -356,6 +360,7 @@ class PythonRuntime(
             val pythonDir = BundledPythonManager.getPythonDir(context)
             val libDir = File(pythonDir, "lib").absolutePath
             env["LD_LIBRARY_PATH"] = libDir
+            env["PYTHONHOME"] = pythonDir.absolutePath
             env["HOME"] = pythonDir.absolutePath
             env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
             env["TMPDIR"] = "/data/local/tmp"

@@ -13,27 +13,44 @@ jobs:
         uses: actions/checkout@v4
 
       # 步骤：下载并提取 Termux Python 运行环境（aarch64）
-      # 从 Termux 官方仓库获取 Python 3.13 deb 包，解压后将二进制、动态库和标准库
-      # 复制到 app/src/main/assets/python/ 目录，供 Android 应用内置使用
+      # 从 Termux 官方仓库获取 Python 3.13 deb 包以及依赖的 libandroid-support，
+      # 解压后将二进制、动态库和标准库复制到 app/src/main/assets/python/ 目录，
+      # 供 Android 应用内置使用。
+      #
+      # 为什么需要 libandroid-support：
+      #   Termux 编译的 Python 依赖 libandroid-support.so（提供 Android bionic libc
+      #   缺失的 locale/multibyte 支持）。该库不是 Android 系统库，必须一起打包。
       - name: Download bundled Python
         run: |
           mkdir -p app/src/main/assets/python
           cd /tmp
+
+          # --- Python 解释器 ---
           curl -sL -o python.deb "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.13.13-1_aarch64.deb"
           mkdir -p py-extract && cd py-extract
           ar x ../python.deb
           tar xf data.tar.xz
-          # 仅提取必要的文件：python 二进制、动态库和标准库
           mkdir -p $GITHUB_WORKSPACE/app/src/main/assets/python/bin
           mkdir -p $GITHUB_WORKSPACE/app/src/main/assets/python/lib
           cp -a data/data/com.termux/files/usr/bin/python3.13 $GITHUB_WORKSPACE/app/src/main/assets/python/bin/
           cp -a data/data/com.termux/files/usr/lib/libpython3.13.so $GITHUB_WORKSPACE/app/src/main/assets/python/lib/
           cp -a data/data/com.termux/files/usr/lib/python3.13 $GITHUB_WORKSPACE/app/src/main/assets/python/lib/
-          # 创建符号链接，方便调用
+
+          # --- libandroid-support（Python 的 Termux 依赖库）---
+          cd /tmp
+          curl -sL -o libas.deb "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-support/libandroid-support_29-1_aarch64.deb"
+          mkdir -p libas-extract && cd libas-extract
+          ar x ../libas.deb
+          tar xf data.tar.xz
+          cp -a data/data/com.termux/files/usr/lib/libandroid-support.so \
+                $GITHUB_WORKSPACE/app/src/main/assets/python/lib/
+
+          # --- 符号链接 ---
           cd $GITHUB_WORKSPACE/app/src/main/assets/python/bin
           ln -sf python3.13 python3
           ln -sf python3.13 python
           ln -sf ../lib/libpython3.13.so ../lib/libpython3.so
+
           echo "Python bundled size:"
           du -sh $GITHUB_WORKSPACE/app/src/main/assets/python/
           echo "File count:"
