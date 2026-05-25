@@ -465,15 +465,22 @@ class PythonRuntime(
             override fun onReceive(context: Context?, intent: Intent?) {
                 try {
                     if (deferred.isCompleted) return
-                    val exitCode = intent?.getIntExtra(
-                        "com.termux.RUN_COMMAND_EXIT_CODE", -1
-                    ) ?: -1
-                    val stdout = intent?.getStringExtra(
-                        "com.termux.RUN_COMMAND_STDOUT"
-                    ) ?: ""
-                    val stderr = intent?.getStringExtra(
-                        "com.termux.RUN_COMMAND_STDERR"
-                    ) ?: ""
+                    // Termux v0.109+ 通过子 bundle 传递结果
+                    val resultBundle = intent?.getBundleExtra("result")
+                    val (exitCode, stdout, stderr) = if (resultBundle != null) {
+                        Triple(
+                            resultBundle.getInt("exitCode", -1),
+                            resultBundle.getString("stdout") ?: "",
+                            resultBundle.getString("stderr") ?: ""
+                        )
+                    } else {
+                        // 旧版 Termux — 从 intent 顶层读取
+                        Triple(
+                            intent?.getIntExtra("com.termux.RUN_COMMAND_EXIT_CODE", -1) ?: -1,
+                            intent?.getStringExtra("com.termux.RUN_COMMAND_STDOUT") ?: "",
+                            intent?.getStringExtra("com.termux.RUN_COMMAND_STDERR") ?: ""
+                        )
+                    }
                     val output = buildString {
                         if (stdout.isNotBlank()) append(stdout.trim())
                         if (stderr.isNotBlank()) {

@@ -20,6 +20,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.ConfigManager
+import com.pocketagent.app.core.NeuralBridgeHelper
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
@@ -273,6 +274,71 @@ fun ConfigScreen(navController: NavController) {
                     mcpResult?.let {
                         Text(it, fontSize = 12.sp, color = if (mcpOk) Color(0xFF16A34A) else Color(0xFFDC2626),
                             modifier = Modifier.padding(top = 4.dp))
+                    }
+
+                    // ── NeuralBridge 状态 ──
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    val neuralStatus = remember { NeuralBridgeHelper.checkStatus(context) }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("NeuralBridge", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = when (neuralStatus) {
+                                is NeuralBridgeHelper.Status.Ready -> "✔ 就绪"
+                                is NeuralBridgeHelper.Status.NotInstalled -> "未安装"
+                                is NeuralBridgeHelper.Status.AccessibilityDisabled -> "未启用无障碍"
+                            },
+                            fontSize = 12.sp,
+                            color = when (neuralStatus) {
+                                is NeuralBridgeHelper.Status.Ready -> Color(0xFF16A34A)
+                                else -> Color(0xFFDC2626)
+                            }
+                        )
+                    }
+
+                    when (neuralStatus) {
+                        is NeuralBridgeHelper.Status.NotInstalled -> {
+                            Spacer(Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.parse(NeuralBridgeHelper.installUrl)
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                },
+                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("下载 NeuralBridge", fontSize = 13.sp)
+                            }
+                        }
+                        is NeuralBridgeHelper.Status.AccessibilityDisabled -> {
+                            Spacer(Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    val launchIntent = context.packageManager.getLaunchIntentForPackage(NeuralBridgeHelper.packageName)
+                                    if (launchIntent != null) {
+                                        context.startActivity(launchIntent)
+                                    } else {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                data = android.net.Uri.parse("package:${NeuralBridgeHelper.packageName}")
+                                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(36.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("前往应用设置", fontSize = 13.sp)
+                            }
+                        }
+                        else -> {}
                     }
                 }
 
