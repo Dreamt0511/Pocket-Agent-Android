@@ -134,7 +134,7 @@ sys.stdout.write("pip bootstrap done\n")
                     listOf("-m", "pip", "--version")
                 )
                 if (!pipCheck.success) {
-                    val msg = "pip 安装失败: ${pipCheck.output.take(200)}"
+                    val msg = "pip 安装失败: ${pipCheck.output}"
                     Log.e(TAG, msg)
                     _setupState.value = SetupState.Failed(msg)
                     return@withContext false
@@ -191,7 +191,7 @@ sys.stdout.write("pip bootstrap done\n")
                     val fallbackResult = runPython(context, pythonBin, baseEnv, fallbackArgs)
                     if (!fallbackResult.success) {
                         if (firstError == null) {
-                            firstError = "${pkg}: ${fallbackResult.output.take(200)}"
+                            firstError = "${pkg}: ${fallbackResult.output}"
                         }
                         Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output.take(200)}")
                     }
