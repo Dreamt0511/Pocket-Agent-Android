@@ -459,6 +459,7 @@ private val pypiMirrors = listOf(
     "豆瓣" to "https://pypi.doubanio.com/simple/",
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MirrorSelectorCard(currentUrl: String, settingsRepo: SettingsRepository) {
     val scope = rememberCoroutineScope()
