@@ -55,6 +55,8 @@ class PythonRuntime(
     private var pythonBin: String = ""
     /** 是否降级模式 — 使用系统 python3 而非 Termux */
     private var isFallbackMode: Boolean = false
+    /** 发现 Python 时使用的验证方式 — 验证阶段需用同一种方式 */
+    private var pythonDiscoveryMethod: String = "shell"
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -76,6 +78,8 @@ class PythonRuntime(
 
     @Volatile
     private var cancelled = false
+    /** direct 模式下运行的进程，用于 cancel() */
+    private var directProcess: Process? = null
 
     // ─── 公开接口 ─────────────────────────────────
 
@@ -116,8 +120,8 @@ class PythonRuntime(
             pythonBin = discovered
             Log.i(TAG, "Using python3: $pythonBin (fallback=$isFallbackMode)")
 
-            // 3. 验证 Python 可用
-            val pythonCheck = termuxBridge.execute("$pythonBin --version")
+            // 3. 验证 Python 可用（用与发现时相同的方式，防止 SELinux 误判）
+            val pythonCheck = verifyPython(pythonBin)
             if (!pythonCheck.success) {
                 val msg = "Python 3 不可用 (exit=${pythonCheck.exitCode}): ${pythonCheck.output}"
                 _state.value = RuntimeState.Error(msg)
@@ -126,9 +130,8 @@ class PythonRuntime(
             }
             onStatus?.invoke("Python 就绪")
 
-            // 4. 验证 Agent 代码
-            val readyCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=ready"
-            val readyResult = termuxBridge.execute(readyCmd)
+            // 4. 验证 Agent 代码（使用与发现时相同的方式执行）
+            val readyResult = executePythonCommand("cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=ready")
             if (!readyResult.success) {
                 if (isFallbackMode) {
                     // 降级模式: 系统 python 可能缺少 pip 包，跳过校验
@@ -160,51 +163,54 @@ class PythonRuntime(
      * 搜索顺序：
      *  1. Direct ProcessBuilder — 直接执行 python3 二进制（绕过 shell SELinux 限制）
      *  2. Termux bash -c — 通过 Termux 自己的 shell 执行
-     *  3. termuxBridge.execute — 通过 /system/bin/sh 执行（原方法）
+     *  3. termuxBridge.execute — 通过 /system/bin/sh 执行
      *  4. 系统 PATH 搜索
      *
-     * Android 11+ 的 SELinux 策略可能阻止 /system/bin/sh 跨 UID 执行
-     * Termux 的二进制文件，因此需要多种尝试方法。
+     * 记录发现方式 (pythonDiscoveryMethod)，用于后续验证时使用相同的方式。
      */
     private suspend fun discoverPython(): String? {
-        // 1. Direct ProcessBuilder — 直接执行 python3 二进制
         val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/python3"
         val bashShell = "${TermuxBootstrap.termuxRoot}/usr/bin/bash"
 
-        if (TermuxBootstrap.isReady) {
-            // 1a. 直接运行 python3 二进制（绕过 shell）
-            try {
-                val result = runPythonDirect(termuxPy)
-                if (result.success) {
-                    isFallbackMode = false
-                    Log.i(TAG, "Found Termux Python (direct): $termuxPy")
-                    return termuxPy
-                }
-            } catch (_: Exception) {}
+        // 1. Direct ProcessBuilder — 直接执行 python3 二进制（绕过 shell SELinux 限制）
+        //    不依赖 TermuxBootstrap.isReady，因为 python3 二进制可能可执行即使 bash 不可用
+        try {
+            val result = runPythonDirect(termuxPy)
+            if (result.success) {
+                isFallbackMode = false
+                pythonDiscoveryMethod = "direct"
+                Log.i(TAG, "Found Termux Python (direct): $termuxPy")
+                return termuxPy
+            }
+        } catch (_: Exception) {}
 
-            // 1b. 通过 Termux 自身的 bash 执行（有正确的 SELinux 域和 LD_PRELOAD）
+        // 2. 通过系统 shell 执行 Termux 的 python3
+        try {
+            val r = termuxBridge.execute("$termuxPy --version")
+            if (r.success) {
+                isFallbackMode = false
+                pythonDiscoveryMethod = "shell"
+                Log.i(TAG, "Found Termux Python (sh): $termuxPy")
+                return termuxPy
+            }
+        } catch (_: Exception) {}
+
+        // 3. Termux bash 已就绪时，尝试通过 bash 执行
+        if (TermuxBootstrap.isReady) {
             try {
                 val r = termuxBridge.execute("$bashShell -c 'python3 --version'")
                 if (r.success) {
                     isFallbackMode = false
+                    pythonDiscoveryMethod = "shell"
                     Log.i(TAG, "Found Termux Python (bash): $termuxPy")
-                    return termuxPy
-                }
-            } catch (_: Exception) {}
-
-            // 1c. 通过系统 shell 执行（原方法）
-            try {
-                val r = termuxBridge.execute("$termuxPy --version")
-                if (r.success) {
-                    isFallbackMode = false
-                    Log.i(TAG, "Found Termux Python (sh): $termuxPy")
                     return termuxPy
                 }
             } catch (_: Exception) {}
         }
 
-        // 2. Termux 不可用，搜索系统路径
+        // 4. 搜索系统路径
         isFallbackMode = true
+        pythonDiscoveryMethod = "shell"
         Log.i(TAG, "Termux methods exhausted, searching system python3...")
 
         for (path in SYSTEM_PYTHON_PATHS) {
@@ -218,6 +224,100 @@ class PythonRuntime(
         }
 
         return null
+    }
+
+    /**
+     * 用与发现时相同的方式验证 python3 可用性
+     */
+    private suspend fun verifyPython(pythonBin: String): CommandResult {
+        return when (pythonDiscoveryMethod) {
+            "direct" -> runPythonDirect(pythonBin)
+            else -> termuxBridge.execute("$pythonBin --version")
+        }
+    }
+
+    /**
+     * 执行 Python 命令，使用与发现时相同的方式（直接 vs shell）
+     */
+    private suspend fun executePythonCommand(shellCmd: String): CommandResult {
+        if (pythonDiscoveryMethod != "direct") {
+            return termuxBridge.execute(shellCmd)
+        }
+        // direct 模式：解析 cd 前缀，用 ProcessBuilder 运行
+        return try {
+            var workingDir: java.io.File? = null
+            var actualCommand = shellCmd
+            val cdMatch = Regex("^cd (\\S+) && ").find(shellCmd)
+            if (cdMatch != null) {
+                workingDir = java.io.File(cdMatch.groupValues[1])
+                actualCommand = shellCmd.removeRange(cdMatch.range)
+            }
+            val parts = actualCommand.split(" ").filter { it.isNotBlank() }
+            if (parts.isEmpty()) return CommandResult(-1, "Empty command", false)
+            val pb = ProcessBuilder(parts)
+            if (workingDir != null) pb.directory(workingDir)
+            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            val process = pb.start()
+            val stdout = BufferedReader(InputStreamReader(process.inputStream))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream))
+            val output = (stdout.readText() + stderr.readText()).trim()
+            val exitCode = process.waitFor()
+            CommandResult(exitCode, output, exitCode == 0)
+        } catch (e: Exception) {
+            CommandResult(-1, e.message ?: "", false)
+        }
+    }
+
+    /**
+     * 直接模式下的 Python 进程执行（带 stdin 写入 + stdout 流式回调）
+     */
+    private suspend fun executePythonWithInput(
+        workingDir: java.io.File,
+        input: String,
+        onLine: (String) -> Unit,
+        onError: (String) -> Unit
+    ): CommandResult = withContext(Dispatchers.IO) {
+        try {
+            val pb = ProcessBuilder(pythonBin, "stable_entry.py", "--mode=task")
+            pb.directory(workingDir)
+            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            val process = pb.start().also { directProcess = it }
+
+            // 写入 stdin 后关闭
+            process.outputStream.write(input.toByteArray(Charsets.UTF_8))
+            process.outputStream.flush()
+            process.outputStream.close()
+
+            // 逐行读取 stdout
+            val stdout = BufferedReader(InputStreamReader(process.inputStream, Charsets.UTF_8))
+            val stderr = BufferedReader(InputStreamReader(process.errorStream, Charsets.UTF_8))
+
+            val outputBuilder = StringBuilder()
+            var line: String?
+            while (stdout.readLine().also { line = it } != null) {
+                val l = line ?: ""
+                outputBuilder.appendLine(l)
+                onLine(l)
+            }
+
+            val errorBuilder = StringBuilder()
+            while (stderr.readLine().also { line = it } != null) {
+                val l = line ?: ""
+                errorBuilder.appendLine("[ERR] $l")
+                onError(l)
+            }
+
+            val exitCode = process.waitFor()
+            CommandResult(
+                exitCode = exitCode,
+                output = outputBuilder.toString().trim(),
+                success = exitCode == 0
+            )
+        } catch (e: Exception) {
+            CommandResult(-1, "Error: ${e.message}", false)
+        }
     }
 
     /**
@@ -270,12 +370,16 @@ class PythonRuntime(
             val runtimeDir = getRuntimeDir()
             val shellCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=task"
 
-            val result = termuxBridge.executeWithInput(
-                command = shellCmd,
-                input = command,
-                onLine = { line -> handleOutputLine(line) },
-                onError = { line -> onOutput?.invoke("[err] $line") }
-            )
+            val result = if (pythonDiscoveryMethod == "direct") {
+                executePythonWithInput(runtimeDir, command, ::handleOutputLine, { line -> onOutput?.invoke("[err] $line") })
+            } else {
+                termuxBridge.executeWithInput(
+                    command = shellCmd,
+                    input = command,
+                    onLine = { line -> handleOutputLine(line) },
+                    onError = { line -> onOutput?.invoke("[err] $line") }
+                )
+            }
 
             if (cancelled) {
                 _state.value = RuntimeState.Ready
@@ -310,11 +414,15 @@ class PythonRuntime(
     fun cancel() {
         cancelled = true
         termuxBridge.kill()
+        directProcess?.let { if (it.isAlive) it.destroyForcibly() }
+        directProcess = null
     }
 
     fun destroy() {
         scope.cancel()
         termuxBridge.kill()
+        directProcess?.let { if (it.isAlive) it.destroyForcibly() }
+        directProcess = null
     }
 
     // ─── 内部 ─────────────────────────────────────
