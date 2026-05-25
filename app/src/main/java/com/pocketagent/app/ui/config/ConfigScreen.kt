@@ -421,36 +421,6 @@ fun ConfigScreen(navController: NavController) {
                     }
                 }
 
-                // ===== 安全卸载 =====
-                SectionCard(title = "安全卸载") {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    Text(
-                        "从桌面直接卸载会因悬浮窗权限冲突导致闪退。请通过应用内跳转至系统设置卸载。",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    Button(
-                        onClick = {
-                            // 先停止前台服务
-                            context.stopService(android.content.Intent(context, com.pocketagent.app.service.AgentService::class.java))
-                            // 跳转系统应用详情页（可在此处卸载）
-                            val intent = android.content.Intent(
-                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                android.net.Uri.parse("package:${context.packageName}")
-                            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.fillMaxWidth().height(40.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFDC2626)
-                        )
-                    ) {
-                        Text("进入系统设置卸载", fontSize = 14.sp)
-                    }
-                }
-
                 Spacer(Modifier.height(16.dp))
             }
         }

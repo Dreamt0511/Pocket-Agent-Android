@@ -454,38 +454,22 @@ sys.stdout.write("pip bootstrap done\n")
     }
 
     /**
-     * 用系统 xzcat 命令解压 data.tar.xz → data.tar。
-     *
-     * 多种方法尝试：xzcat、toybox xzcat、busybox xzcat。
-     * Android 10+ 的 toybox 内置 xzcat。
+     * 用纯 Java XZInputStream 解压 data.tar.xz → data.tar。
+     * 不依赖系统 xzcat（Android <10 无此命令），使用 org.tukaani:xz 库。
      */
     private fun xzcatToFile(xzData: ByteArray, destFile: File): Boolean {
-        val xzTmp = File(destFile.parentFile, "data.tar.xz.tmp")
-        try {
-            xzTmp.writeBytes(xzData)
-
-            // 多种 xzcat 路径尝试
-            val xzcmds = listOf("xzcat", "toybox xzcat", "busybox xzcat")
-            for (xzcmd in xzcmds) {
-                val cmd = "$xzcmd '${xzTmp.absolutePath}' > '${destFile.absolutePath}'"
-                val shPb = ProcessBuilder("sh", "-c", cmd)
-                shPb.redirectErrorStream(true)
-                val proc = shPb.start()
-                BufferedReader(InputStreamReader(proc.inputStream)).readText()
-                val exitCode = proc.waitFor()
-                if (exitCode == 0 && destFile.exists() && destFile.length() > 0) {
-                    Log.i(TAG, "$xzcmd 解压成功")
-                    return true
+        return try {
+            java.io.FileOutputStream(destFile).use { fos ->
+                org.tukaani.xz.XZInputStream(xzData.inputStream()).use { xzIn ->
+                    xzIn.copyTo(fos)
                 }
             }
-
-            Log.e(TAG, "所有 xzcat 方法均失败")
-            return false
+            Log.i(TAG, "XZInputStream 解压成功: ${destFile.length()} bytes")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "xzcat 执行异常: ${e.message}")
-            return false
-        } finally {
-            xzTmp.delete()
+            Log.e(TAG, "XZ 解压失败: ${e.message}")
+            destFile.delete()
+            false
         }
     }
 
