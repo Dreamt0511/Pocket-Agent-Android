@@ -402,15 +402,15 @@ sys.stdout.write("pip bootstrap done\n")
     /**
      * 从 Termux 仓库下载 .deb 并提取 .so 文件到 libDir。
      *
-     * 使用纯 Kotlin 解析 ar 归档，通过系统 tar 命令提取 .tar.xz。
-     * Android 10+ (API 29) 的 toybox 内置 xzcat，可直接处理。
+     * 流程：ar 解析 → xzcat 解压 → 纯 Kotlin tar 解析提取 .so 文件。
+     * 不依赖系统 tar 命令提取（许多 Android 设备不支持 tar -xJf）。
      */
     private fun downloadAndExtractDeb(
         debUrl: String,
         libDir: File
     ): Boolean {
-        val tmpDir = File(libDir, ".termux_deb_${System.nanoTime()}")
-        tmpDir.mkdirs()
+        val cacheDir = File(libDir, ".termux_cache")
+        cacheDir.mkdirs()
 
         try {
             // 下载 .deb
@@ -422,42 +422,194 @@ sys.stdout.write("pip bootstrap done\n")
                 return false
             }
             val debBytes = response.body?.bytes() ?: return false
+            Log.i(TAG, "下载完成: ${debBytes.size} bytes")
 
-            // 解析 ar 归档 → 提取 data.tar.xz
+            // Step 1: ar 解析 → 提取 data.tar.xz
             val dataTarXz = extractArEntry(debBytes, "data.tar.xz")
             if (dataTarXz == null) {
                 Log.e(TAG, "ar 解析失败: data.tar.xz 未找到")
                 return false
             }
+            Log.i(TAG, "ar 解析成功: data.tar.xz ${dataTarXz.size} bytes")
 
-            // 提取 .so 文件
-            val extractDir = File(tmpDir, "extract")
-            extractDir.mkdirs()
-            val ok = extractTarXz(dataTarXz, extractDir)
-            if (!ok) {
-                Log.e(TAG, "tar.xz 提取失败")
+            // Step 2: xzcat 解压 data.tar.xz → data.tar
+            val tarFile = File(cacheDir, "data.tar")
+            if (!xzcatToFile(dataTarXz, tarFile)) {
+                Log.e(TAG, "xzcat 解压失败")
                 return false
             }
+            Log.i(TAG, "xzcat 解压成功: data.tar ${tarFile.length()} bytes")
 
-            // 查找并复制 .so 文件
-            val count = findAndCopySoFiles(extractDir, libDir)
-            val pkgName = debUrl.substringAfterLast('/').substringBeforeLast('_')
-            Log.i(TAG, "自愈: 从 $pkgName 的 deb 提取了 $count 个 .so 文件")
+            // Step 3: 纯 Kotlin tar 解析 → 提取 .so 文件到 libDir
+            val count = extractSoFromTar(tarFile, libDir)
+            Log.i(TAG, "tar 解析提取了 $count 个 .so 文件到 libDir")
             return count > 0
 
         } catch (e: Exception) {
             Log.e(TAG, "自愈: 下载/提取失败: ${e.message}")
             return false
         } finally {
-            tmpDir.deleteRecursively()
+            cacheDir.deleteRecursively()
         }
     }
 
     /**
-     * 纯 Kotlin 解析 ar 归档。
+     * 用系统 xzcat 命令解压 data.tar.xz → data.tar。
+     *
+     * 多种方法尝试：xzcat、toybox xzcat、busybox xzcat。
+     * Android 10+ 的 toybox 内置 xzcat。
+     */
+    private fun xzcatToFile(xzData: ByteArray, destFile: File): Boolean {
+        val xzTmp = File(destFile.parentFile, "data.tar.xz.tmp")
+        try {
+            xzTmp.writeBytes(xzData)
+
+            // 多种 xzcat 路径尝试
+            val xzcmds = listOf("xzcat", "toybox xzcat", "busybox xzcat")
+            for (xzcmd in xzcmds) {
+                val cmd = "$xzcmd '${xzTmp.absolutePath}' > '${destFile.absolutePath}'"
+                val shPb = ProcessBuilder("sh", "-c", cmd)
+                shPb.redirectErrorStream(true)
+                val proc = shPb.start()
+                BufferedReader(InputStreamReader(proc.inputStream)).readText()
+                val exitCode = proc.waitFor()
+                if (exitCode == 0 && destFile.exists() && destFile.length() > 0) {
+                    Log.i(TAG, "$xzcmd 解压成功")
+                    return true
+                }
+            }
+
+            Log.e(TAG, "所有 xzcat 方法均失败")
+            return false
+        } catch (e: Exception) {
+            Log.e(TAG, "xzcat 执行异常: ${e.message}")
+            return false
+        } finally {
+            xzTmp.delete()
+        }
+    }
+
+    /**
+     * 纯 Kotlin 解析 tar 格式，提取 .so 文件到目标目录。
+     *
+     * tar 每个条目：512 字节头 + 文件数据（向上取整到 512 字节边界）。
+     * 头部结构（字段偏移和大小）：
+     *   name:     0-99   (100 字节)
+     *   mode:     100-107 (8 字节)
+     *   uid:      108-115 (8 字节)
+     *   gid:      116-123 (8 字节)
+     *   size:     124-135 (12 字节，八进制)
+     *   mtime:    136-147 (12 字节)
+     *   chksum:   148-155 (8 字节)
+     *   typeflag: 156     (1 字节: '0'=普通文件, '2'=符号链接, '5'=目录)
+     *   linkname: 157-256 (100 字节)
+     *
+     * 对于符号链接，后续用文件副本替代（Android SELinux 阻止创建符号链接）。
+     */
+    private fun extractSoFromTar(tarFile: File, targetDir: File): Int {
+        var count = 0
+        val symlinks = mutableMapOf<String, String>()  // linkName → targetName
+
+        try {
+            val bytes = tarFile.readBytes()
+            var offset = 0
+
+            while (offset + 512 <= bytes.size) {
+                val header = bytes.copyOfRange(offset, offset + 512)
+
+                // 全零块 = tar 档结束
+                if (header.all { it == 0.toByte() }) break
+
+                val typeFlag = header[156].toInt().toChar()
+                val name = header.copyOfRange(0, 100)
+                    .toString(Charsets.US_ASCII)
+                    .trimEnd(' ', ' ')
+                val linkName = header.copyOfRange(157, 257)
+                    .toString(Charsets.US_ASCII)
+                    .trimEnd(' ', ' ')
+                val sizeStr = header.copyOfRange(124, 136)
+                    .toString(Charsets.US_ASCII)
+                    .trimEnd(' ', ' ')
+                val size = sizeStr.toLongOrNull(radix = 8) ?: 0L
+
+                val fileName = name.substringAfterLast('/')
+                offset += 512
+
+                if (fileName.contains(".so") || fileName.startsWith("lib") && fileName.contains(".so")) {
+                    when (typeFlag) {
+                        '0', ' ' -> {
+                            // 普通文件
+                            if (size > 0 && offset + size <= bytes.size) {
+                                val dest = File(targetDir, fileName)
+                                if (!dest.exists()) {
+                                    dest.writeBytes(bytes.copyOfRange(offset, offset + size.toInt()))
+                                    count++
+                                }
+                            }
+                        }
+                        '2' -> {
+                            // 符号链接 → 记录映射，后续处理
+                            val linkTarget = linkName.substringAfterLast('/')
+                            symlinks[fileName] = linkTarget
+                        }
+                    }
+                }
+
+                // 跳过数据块（向上取整到 512）
+                val dataBlocks = if (size > 0) ((size + 511) / 512).toInt() else 0
+                offset += dataBlocks * 512
+            }
+
+            // 处理符号链接：为 TERMUX_DEB_URLS 中需要的 soname 创建文件副本
+            for (soname in TERMUX_DEB_URLS.keys) {
+                val sonameFile = File(targetDir, soname)
+                if (sonameFile.exists()) continue
+
+                val target = symlinks[soname]
+                if (target != null) {
+                    val targetFile = File(targetDir, target)
+                    if (targetFile.exists()) {
+                        // 复制目标文件内容 → soname 名称
+                        targetFile.copyTo(sonameFile)
+                        count++
+                    }
+                } else {
+                    // 符号链接映射中没有 soname，检查是否有版本化变体
+                    val versioned = File(targetDir, "$soname.")
+                    val match = targetDir.listFiles()
+                        ?.filter { it.name.startsWith("$soname.") }
+                        ?.firstOrNull()
+                    if (match != null) {
+                        match.copyTo(sonameFile)
+                        count++
+                    }
+                }
+            }
+
+            // 为 symlinks 中的其他条目也创建副本（soname 之外的）
+            for ((linkName, target) in symlinks) {
+                val linkFile = File(targetDir, linkName)
+                if (linkFile.exists()) continue
+                val targetFile = File(targetDir, target)
+                if (targetFile.exists()) {
+                    targetFile.copyTo(linkFile)
+                    count++
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "tar 解析异常: ${e.message}")
+        }
+
+        return count
+    }
+
+    /**
+     * 纯 Kotlin 解析 ar 归档，提取指定条目。
      *
      * .deb 文件是 ar 归档，包含 debian-binary、control.tar.xz、data.tar.xz。
-     * 格式简单：!<arch>\n 头部后接多个 "60 字节头 + 文件数据" 条目。
+     * 头部："!<arch>\n" 后接 60 字节头 + 数据（偶数对齐）的条目序列。
+     * 60 字节头：[name(16) mtime(12) uid(6) gid(6) mode(8) size(10) magic(2)]
      */
     private fun extractArEntry(data: ByteArray, targetName: String): ByteArray? {
         if (data.size < 8) return null
@@ -467,10 +619,11 @@ sys.stdout.write("pip bootstrap done\n")
         var offset = 8
         while (offset + 60 <= data.size) {
             val header = data.copyOfRange(offset, offset + 60)
+            // GNU ar 文件名：16 字节，以 '/' 结尾，或 "//" 为长名表，"/" 为符号表
             val name = header.copyOfRange(0, 16)
                 .toString(Charsets.US_ASCII).trimEnd(' ')
-            // GNU ar: 以 / 结尾表示文件名，// 为长文件名表
             val cleanName = name.trimEnd('/')
+            // 文件大小：offset 48-57，10 字节十进制
             val sizeStr = header.copyOfRange(48, 58)
                 .toString(Charsets.US_ASCII).trim()
             val size = sizeStr.toIntOrNull() ?: break
@@ -480,120 +633,10 @@ sys.stdout.write("pip bootstrap done\n")
                 return data.copyOfRange(offset, offset + size)
             }
 
-            // 跳过符号表、长名表等特殊条目
             offset += size
-            if (offset % 2 != 0) offset++ // ar 对齐到偶数
+            if (offset % 2 != 0) offset++ // ar 对齐到偶数边界
         }
         return null
-    }
-
-    /**
-     * 提取 .tar.xz 中的 .so 文件。
-     *
-     * 使用系统 tar 命令（Android 10+ toybox 内置 xzcat）。
-     * 若系统不支持 xz 解压，返回 false 由上游处理。
-     */
-    private fun extractTarXz(data: ByteArray, destDir: File): Boolean {
-        val tmpFile = File(destDir.parentFile, ".tmp_data.tar.xz")
-
-        try {
-            tmpFile.writeBytes(data)
-
-            // 方法 1: tar -xJf（toybox 内置 xzcat, Android 10+）
-            if (execTar(listOf("-xJf", tmpFile.absolutePath, "-C", destDir.absolutePath))) {
-                return true
-            }
-
-            // 方法 2: xzcat | tar xf -（兼容某些旧版 toybox）
-            val pipeCmd = "xzcat '${tmpFile.absolutePath}' | tar xf - -C '${destDir.absolutePath}'"
-            val shPb = ProcessBuilder("sh", "-c", pipeCmd)
-            shPb.redirectErrorStream(true)
-            val shProc = shPb.start()
-            shProc.waitFor()
-            if (shProc.exitValue() == 0 && destDir.listFiles()?.isNotEmpty() == true) {
-                return true
-            }
-
-            Log.w(TAG, "系统不支持 xz 解压（需 Android 10+），无法自愈下载")
-            return false
-
-        } catch (e: Exception) {
-            Log.e(TAG, "tar.xz 提取失败: ${e.message}")
-            return false
-        } finally {
-            tmpFile.delete()
-        }
-    }
-
-    /** 执行 tar 命令 */
-    private fun execTar(args: List<String>): Boolean {
-        return try {
-            val pb = ProcessBuilder(listOf("tar") + args)
-            pb.redirectErrorStream(true)
-            val proc = pb.start()
-            val out = BufferedReader(InputStreamReader(proc.inputStream)).readText()
-            val ec = proc.waitFor()
-            if (ec == 0) return true
-            Log.w(TAG, "tar 返回 $ec: $out".take(200))
-            false
-        } catch (e: Exception) {
-            Log.w(TAG, "tar 不可用: ${e.message}")
-            false
-        }
-    }
-
-    /**
-     * 递归查找目录中的 .so 文件并复制到目标目录。
-     *
-     * Termux deb 包中的共享库以版本化名称 + 符号链接形式存在：
-     *   libz.so.1.3.2（实际文件）+ libz.so.1 → libz.so.1.3.2（符号链接）
-     *
-     * tar 提取后符号链接可能丢失（SELinux 阻止创建/读取），
-     * 因此需要为每个版本化 .so 创建 TERMUX_DEB_URLS 中需要的短名副本。
-     *
-     * 例：复制 libz.so.1.3.2 后，额外创建 libz.so.1 → libz.so.1.3.2 的硬链接。
-     */
-    private fun findAndCopySoFiles(sourceDir: File, targetLibDir: File): Int {
-        var count = 0
-
-        // 先复制所有实际 .so 文件（包括版本化名称和符号链接指向的目标）
-        sourceDir.walk().forEach { file ->
-            if (file.isFile && file.name.contains(".so")) {
-                val dest = File(targetLibDir, file.name)
-                if (!dest.exists()) {
-                    file.copyTo(dest)
-                    count++
-                }
-            }
-        }
-
-        // 为 TERMUX_DEB_URLS 中的每个需要的 soname，确保文件存在
-        // 若 soname 不存在但有其版本化变体（如 libz.so.1.3.2），创建硬链接
-        for (soname in TERMUX_DEB_URLS.keys) {
-            val sonameFile = File(targetLibDir, soname)
-            if (sonameFile.exists()) continue
-
-            // 查找匹配版本化名称的文件：soname 前缀 + 附加版本号
-            // 如 "libz.so.1" 匹配 "libz.so.1.3.2"
-            val prefix = soname
-            val versioned = targetLibDir.listFiles()
-                ?.filter { it.name.startsWith(prefix) && it.name != soname && it.name.contains(".so") }
-                ?.firstOrNull()
-
-            if (versioned != null) {
-                // 创建硬链接（同一文件系统），失败则复制
-                val linkResult = Runtime.getRuntime().exec(
-                    arrayOf("ln", versioned.absolutePath, sonameFile.absolutePath)
-                ).waitFor()
-                if (linkResult != 0) {
-                    versioned.copyTo(sonameFile)
-                }
-                count++
-                Log.i(TAG, "自愈: 为 $soname 创建链接 → ${versioned.name}")
-            }
-        }
-
-        return count
     }
 
     // ─── 内部 ──────────────────────────────────────
