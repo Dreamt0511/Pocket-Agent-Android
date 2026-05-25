@@ -18,7 +18,7 @@ import java.io.FileOutputStream
  *   assets/python/
  *       bin/python3.13           — Python 解释器二进制
  *       lib/libpython3.13.so     — Python 共享库
- *       lib/python3.13/          — Python 标准库（模块 + lib-dynload/*.so）
+ *       lib/python3.13/          — Python 标准库（含 lib-dynload .so 模块）
  *
  * 执行时需要设置 LD_LIBRARY_PATH 指向 python/lib/，
  * 以便动态链接器找到 libpython3.13.so。
