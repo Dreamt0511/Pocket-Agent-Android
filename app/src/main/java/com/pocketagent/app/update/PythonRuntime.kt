@@ -169,50 +169,37 @@ class PythonRuntime(
      * 记录发现方式 (pythonDiscoveryMethod)，用于后续验证时使用相同的方式。
      */
     private suspend fun discoverPython(): String? {
-        val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/python3"
-        val bashShell = "${TermuxBootstrap.termuxRoot}/usr/bin/bash"
+        val pyNames = listOf("python3", "python")
+        for (pyName in pyNames) {
+            val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
 
-        // 1. Direct ProcessBuilder — 直接执行 python3 二进制（绕过 shell SELinux 限制）
-        //    不依赖 TermuxBootstrap.isReady，因为 python3 二进制可能可执行即使 bash 不可用
-        try {
-            val result = runPythonDirect(termuxPy)
-            if (result.success) {
-                isFallbackMode = false
-                pythonDiscoveryMethod = "direct"
-                Log.i(TAG, "Found Termux Python (direct): $termuxPy")
-                return termuxPy
-            }
-        } catch (_: Exception) {}
-
-        // 2. 通过系统 shell 执行 Termux 的 python3
-        try {
-            val r = termuxBridge.execute("$termuxPy --version")
-            if (r.success) {
-                isFallbackMode = false
-                pythonDiscoveryMethod = "shell"
-                Log.i(TAG, "Found Termux Python (sh): $termuxPy")
-                return termuxPy
-            }
-        } catch (_: Exception) {}
-
-        // 3. Termux bash 已就绪时，尝试通过 bash 执行
-        if (TermuxBootstrap.isReady) {
+            // 1. ProcessBuilder 直接执行（绕过 SELinux），带完整环境变量
             try {
-                val r = termuxBridge.execute("$bashShell -c 'python3 --version'")
+                val result = runPythonDirect(termuxPy)
+                if (result.success) {
+                    isFallbackMode = false
+                    pythonDiscoveryMethod = "direct"
+                    Log.i(TAG, "Found Termux Python (direct): $termuxPy")
+                    return termuxPy
+                }
+            } catch (_: Exception) {}
+
+            // 2. 系统 shell 执行 Termux python
+            try {
+                val r = termuxBridge.execute("$termuxPy --version")
                 if (r.success) {
                     isFallbackMode = false
                     pythonDiscoveryMethod = "shell"
-                    Log.i(TAG, "Found Termux Python (bash): $termuxPy")
+                    Log.i(TAG, "Found Termux Python (sh): $termuxPy")
                     return termuxPy
                 }
             } catch (_: Exception) {}
         }
 
-        // 4. 搜索系统路径
+        // 3. 搜索系统路径
         isFallbackMode = true
         pythonDiscoveryMethod = "shell"
-        Log.i(TAG, "Termux methods exhausted, searching system python3...")
-
+        Log.i(TAG, "Termux Python not found, searching system PATH...")
         for (path in SYSTEM_PYTHON_PATHS) {
             try {
                 val result = termuxBridge.execute("$path --version")
@@ -237,6 +224,19 @@ class PythonRuntime(
     }
 
     /**
+     * 为 ProcessBuilder 设置完整的 Termux 环境变量
+     */
+    private fun setTermuxEnv(pb: ProcessBuilder) {
+        val env = pb.environment()
+        env["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+        env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
+                TermuxBootstrap.termuxUsr + "/bin/applets:" +
+                "/system/bin:/system/xbin"
+        env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+        env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
+    }
+
+    /**
      * 执行 Python 命令，使用与发现时相同的方式（直接 vs shell）
      */
     private suspend fun executePythonCommand(shellCmd: String): CommandResult {
@@ -256,8 +256,7 @@ class PythonRuntime(
             if (parts.isEmpty()) return CommandResult(-1, "Empty command", false)
             val pb = ProcessBuilder(parts)
             if (workingDir != null) pb.directory(workingDir)
-            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
-            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            setTermuxEnv(pb)
             val process = pb.start()
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val stderr = BufferedReader(InputStreamReader(process.errorStream))
@@ -281,8 +280,7 @@ class PythonRuntime(
         try {
             val pb = ProcessBuilder(pythonBin, "stable_entry.py", "--mode=task")
             pb.directory(workingDir)
-            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
-            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            setTermuxEnv(pb)
             val process = pb.start().also { directProcess = it }
 
             // 写入 stdin 后关闭
@@ -328,19 +326,26 @@ class PythonRuntime(
     private fun runPythonDirect(pythonPath: String): CommandResult {
         return try {
             val pb = ProcessBuilder(pythonPath, "--version")
-            pb.environment()["HOME"] = TermuxBootstrap.termuxRoot + "/home"
-            pb.environment()["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            val env = pb.environment()
+            env["HOME"] = TermuxBootstrap.termuxRoot + "/home"
+            env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
+                    TermuxBootstrap.termuxUsr + "/bin/applets:" +
+                    "/system/bin:/system/xbin"
+            env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
+            env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
             val process = pb.start()
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val stderr = BufferedReader(InputStreamReader(process.errorStream))
             val output = (stdout.readText() + stderr.readText()).trim()
             val exitCode = process.waitFor()
+            if (exitCode != 0) Log.w(TAG, "runPythonDirect failed ($exitCode): $output")
             CommandResult(
                 exitCode = exitCode,
                 output = output,
                 success = exitCode == 0
             )
         } catch (e: Exception) {
+            Log.w(TAG, "runPythonDirect exception: ${e.message}")
             CommandResult(
                 exitCode = -1,
                 output = e.message ?: "",

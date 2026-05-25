@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.core.widget.NestedScrollView
+import kotlin.math.roundToInt
 
 /**
  * 展开的悬浮窗视图 — 半透明终端风格，支持拖拽缩放
@@ -50,41 +51,58 @@ class ExpandedOverlayView(
     private var dragStartRawX = 0f
     private var dragStartRawY = 0f
 
-    // 双指缩放手势检测 — 缩小到临界值自动关闭
-    private val closeThreshold: Int get() = dp(80)
+    // ── 字体大小（双指缩放） ──
+    private var fontSizeSp = 11f
+    private val minFontSize = 8f
+    private val maxFontSize = 30f
+
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true
+
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            val scaleFactor = detector.scaleFactor
-            val newW = (width * scaleFactor).toInt()
-            val newH = (height * scaleFactor).toInt()
-
-            if (newW < closeThreshold) {
-                onClose()
-                return true
-            }
-
-            onResize(
-                newW.coerceIn(dp(200), screenWidth),
-                newH.coerceIn(dp(150), screenHeight)
-            )
+            val factor = detector.scaleFactor
+            fontSizeSp = (fontSizeSp * factor).coerceIn(minFontSize, maxFontSize)
+            terminalText.textSize = fontSizeSp
             return true
         }
     })
 
-    // 拦截多点触控：让双指缩放事件到达 ScaleGestureDetector
-    // 单指事件照常传递给子视图（滚动、按钮点击）
-    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.pointerCount >= 2) {
-            return true
-        }
-        return super.onInterceptTouchEvent(ev)
-    }
-
-    // 缩放状态（右下角手柄拖拽）
+    // 缩放手柄拖拽状态
     private var resizeInitialW = 0
     private var resizeInitialH = 0
     private var resizeInitialRawX = 0f
     private var resizeInitialRawY = 0f
+
+    // 双指时拦截子视图的事件
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.pointerCount >= 2) return true
+        return super.onInterceptTouchEvent(ev)
+    }
+
+    // 处理所有触控事件
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (event.pointerCount == 1) {
+                    dragStartRawX = event.rawX
+                    dragStartRawY = event.rawY
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount == 1) {
+                    val dx = (event.rawX - dragStartRawX).roundToInt()
+                    val dy = (event.rawY - dragStartRawY).roundToInt()
+                    if (dx != 0 || dy != 0) {
+                        onDrag(dx, dy)
+                        dragStartRawX = event.rawX
+                        dragStartRawY = event.rawY
+                    }
+                }
+            }
+        }
+        return true
+    }
 
     init {
         orientation = VERTICAL
@@ -226,34 +244,6 @@ class ExpandedOverlayView(
         addView(statusRow)
 
         elevation = dp(16).toFloat()
-
-        // 统一触控：单指拖拽标题栏 + 双指缩放 + 缩放手柄
-        setOnTouchListener { _, event ->
-            scaleDetector.onTouchEvent(event)
-
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    if (event.pointerCount == 1) {
-                        dragStartRawX = event.rawX
-                        dragStartRawY = event.rawY
-                    }
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (event.pointerCount == 1) {
-                        val dx = (event.rawX - dragStartRawX).toInt()
-                        val dy = (event.rawY - dragStartRawY).toInt()
-                        if (dx != 0 || dy != 0) {
-                            onDrag(dx, dy)
-                            dragStartRawX = event.rawX
-                            dragStartRawY = event.rawY
-                        }
-                    }
-                    true
-                }
-                else -> true
-            }
-        }
     }
 
     // ─── 公开方法 ─────────────────────────────────
