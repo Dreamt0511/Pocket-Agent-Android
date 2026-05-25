@@ -43,7 +43,8 @@ fun AppNavGraph(navController: NavHostController) {
                 } ?: false
             HomeScreen(
                 navController = navController,
-                modelConfigured = modelConfigured
+                modelConfigured = modelConfigured,
+                settingsRepo = settingsRepo
             )
         }
         composable(Screen.Execute.route) {

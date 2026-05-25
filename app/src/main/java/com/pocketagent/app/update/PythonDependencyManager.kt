@@ -108,10 +108,12 @@ object PythonDependencyManager {
      *
      * 内部使用 [installScope] 启动协程，不绑定 UI 生命周期。
      * 用户离开页面后安装继续执行，返回后通过 [setupState] 获取状态。
+     *
+     * @param mirrorUrl PyPI 镜像源 URL，为空则使用默认源
      */
-    fun launchInstall(context: Context, pythonBin: String) {
+    fun launchInstall(context: Context, pythonBin: String, mirrorUrl: String = "") {
         installScope.launch {
-            installDependencies(context, pythonBin)
+            installDependencies(context, pythonBin, mirrorUrl)
         }
     }
 
@@ -129,7 +131,8 @@ object PythonDependencyManager {
      */
     suspend fun installDependencies(
         context: Context,
-        pythonBin: String
+        pythonBin: String,
+        mirrorUrl: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         _setupState.value = SetupState.EnsuringPip
         Log.i(TAG, "开始安装依赖")
@@ -159,6 +162,10 @@ object PythonDependencyManager {
                 put("TMPDIR", context.cacheDir.absolutePath)
                 // 指向 Android 系统 CA 证书，否则 Termux Python 的 SSL 找不到证书
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
+                // 自定义 PyPI 镜像源（非空时 pip 从镜像下载，而非默认的 pypi.org）
+                if (mirrorUrl.isNotBlank()) {
+                    put("PIP_INDEX_URL", mirrorUrl)
+                }
             }
 
             // Step 0: 自愈 — 确保 Termux 依赖共享库就绪

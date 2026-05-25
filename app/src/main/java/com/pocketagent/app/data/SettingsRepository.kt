@@ -18,7 +18,8 @@ data class Settings(
     val llmMaxTokens: Int = 8000,
     val mcpServerUrl: String = "http://127.0.0.1:7474/mcp",
     val autoUpdate: Boolean = true,
-    val showStatus: Boolean = true
+    val showStatus: Boolean = true,
+    val pypiMirrorUrl: String = ""
 )
 
 class SettingsRepository(
@@ -33,6 +34,7 @@ class SettingsRepository(
         private val MCP_SERVER_URL = stringPreferencesKey("mcp_server_url")
         private val AUTO_UPDATE = booleanPreferencesKey("auto_update")
         private val SHOW_STATUS = booleanPreferencesKey("show_status")
+        private val PYPI_MIRROR_URL = stringPreferencesKey("pypi_mirror_url")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -45,7 +47,8 @@ class SettingsRepository(
                 llmMaxTokens = preferences[LLM_MAX_TOKENS] ?: 8000,
                 mcpServerUrl = preferences[MCP_SERVER_URL] ?: "http://127.0.0.1:7474/mcp",
                 autoUpdate = preferences[AUTO_UPDATE] ?: true,
-                showStatus = preferences[SHOW_STATUS] ?: true
+                showStatus = preferences[SHOW_STATUS] ?: true,
+                pypiMirrorUrl = preferences[PYPI_MIRROR_URL] ?: ""
             )
         }
 
@@ -63,6 +66,7 @@ class SettingsRepository(
             preferences[MCP_SERVER_URL] = settings.mcpServerUrl
             preferences[AUTO_UPDATE] = settings.autoUpdate
             preferences[SHOW_STATUS] = settings.showStatus
+            preferences[PYPI_MIRROR_URL] = settings.pypiMirrorUrl
         }
     }
 }
