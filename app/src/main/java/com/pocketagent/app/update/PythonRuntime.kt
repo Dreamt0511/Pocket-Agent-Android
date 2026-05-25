@@ -477,25 +477,31 @@ class PythonRuntime(
                     if (deferred.isCompleted) return
                     // Termux v0.109+ 通过子 bundle 传递结果
                     val resultBundle = intent?.getBundleExtra("result")
-                    val (exitCode, stdout, stderr) = if (resultBundle != null) {
-                        Triple(
-                            resultBundle.getInt("exitCode", -1),
-                            resultBundle.getString("stdout") ?: "",
-                            resultBundle.getString("stderr") ?: ""
-                        )
+                    val exitCode: Int
+                    val stdout: String
+                    val stderr: String
+                    val errmsg: String?
+                    if (resultBundle != null) {
+                        exitCode = resultBundle.getInt("exitCode", -1)
+                        stdout = resultBundle.getString("stdout") ?: ""
+                        stderr = resultBundle.getString("stderr") ?: ""
+                        errmsg = resultBundle.getString("errmsg")
                     } else {
                         // 旧版 Termux — 从 intent 顶层读取
-                        Triple(
-                            intent?.getIntExtra("com.termux.RUN_COMMAND_EXIT_CODE", -1) ?: -1,
-                            intent?.getStringExtra("com.termux.RUN_COMMAND_STDOUT") ?: "",
-                            intent?.getStringExtra("com.termux.RUN_COMMAND_STDERR") ?: ""
-                        )
+                        exitCode = intent?.getIntExtra("com.termux.RUN_COMMAND_EXIT_CODE", -1) ?: -1
+                        stdout = intent?.getStringExtra("com.termux.RUN_COMMAND_STDOUT") ?: ""
+                        stderr = intent?.getStringExtra("com.termux.RUN_COMMAND_STDERR") ?: ""
+                        errmsg = null
                     }
                     val output = buildString {
                         if (stdout.isNotBlank()) append(stdout.trim())
                         if (stderr.isNotBlank()) {
                             if (isNotEmpty()) append("\n")
                             append("[ERR] ").append(stderr.trim())
+                        }
+                        if (errmsg != null) {
+                            if (isNotEmpty()) append("\n")
+                            append("[TERMUX_INTERNAL] ").append(errmsg)
                         }
                     }
                     deferred.complete(
