@@ -171,28 +171,43 @@ object BundledPythonManager {
                 input.copyTo(output)
             }
         }
-        // 为 Python 二进制设置可执行权限
-        if (destFile.name == "python3.13") {
-            destFile.setExecutable(true)
-            // File.setExecutable() 在某些 Android 版本/ROM 可能失效
-            if (!destFile.canExecute()) {
-                Log.w(TAG, "setExecutable 无效，尝试 chmod...")
-                try {
-                    Runtime.getRuntime().exec(arrayOf("chmod", "700", destFile.absolutePath)).waitFor()
-                } catch (e: Exception) {
-                    Log.e(TAG, "chmod 也失败: ${e.message}")
+        // 设置权限 + SELinux 上下文
+        when {
+            // Python 解释器二进制 → 可执行 + restorecon
+            destFile.name == "python3.13" -> {
+                destFile.setExecutable(true)
+                if (!destFile.canExecute()) {
+                    Log.w(TAG, "setExecutable 无效，尝试 chmod...")
+                    try {
+                        Runtime.getRuntime().exec(arrayOf("chmod", "700", destFile.absolutePath)).waitFor()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "chmod 也失败: ${e.message}")
+                    }
                 }
+                restoreconSelinux(destFile)
+                Log.i(TAG, "python3.13 可执行: ${destFile.canExecute()} (${destFile.absolutePath})")
             }
-            // SELinux 可能阻止执行 app_data_file 上下文的二进制
-            // restorecon 将上下文重置为策略默认值（app_exec_data_file → 允许执行）
-            try {
-                Runtime.getRuntime().exec(arrayOf("restorecon", destFile.absolutePath)).waitFor()
-                Log.i(TAG, "restorecon 成功")
-            } catch (e: Exception) {
-                Log.w(TAG, "restorecon 失败（可能无此命令）: ${e.message}")
+            // 共享库 (.so) → restorecon，确保 linker 可 mmap 为可执行页
+            destFile.name.endsWith(".so") -> {
+                restoreconSelinux(destFile)
+                Log.d(TAG, "${destFile.name} restorecon 完成")
             }
-            Log.i(TAG, "python3.13 可执行: ${destFile.canExecute()} (${destFile.absolutePath})")
         }
+    }
+
+    /**
+     * 调用 restorecon 将文件的 SELinux 上下文重置为策略默认值。
+     *
+     * app_data_file → app_exec_data_file，允许执行和可执行 mmap。
+     * 某些国产 ROM 会阻止 app_data_file 上下文的二进制执行和 .so 加载。
+     */
+    private fun restoreconSelinux(file: File) {
+        try {
+            Runtime.getRuntime().exec(arrayOf("restorecon", file.absolutePath)).waitFor()
+        } catch (e: Exception) {
+            Log.w(TAG, "restorecon 失败（${file.name}）: ${e.message}")
+        }
+    }
     }
 
     /**
