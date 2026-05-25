@@ -58,13 +58,13 @@ jobs:
           mkdir -p python3.13/site-packages
           cd python3.13/site-packages
 
-          # 下载 pip wheel (pure Python)
-          curl -sL -o pip.whl "https://files.pythonhosted.org/packages/pip-24.0-py3-none-any.whl"
+          # 下载 pip wheel (pure Python) - 使用官方镜像 URL
+          curl -sL -o pip.whl "https://pypi.org/packages/py3/p/pip/pip-24.0-py3-none-any.whl"
           unzip -q -o pip.whl -d pip
           rm pip.whl
 
-          # 下载 setuptools wheel (pure Python)
-          curl -sL -o setuptools.whl "https://files.pythonhosted.org/packages/setuptools-68.0.0-py3-none-any.whl"
+          # 下载 setuptools wheel (pure Python) - 使用官方镜像 URL
+          curl -sL -o setuptools.whl "https://pypi.org/packages/py3/s/setuptools/setuptools-68.0.0-py3-none-any.whl"
           unzip -q -o setuptools.whl -d setuptools
           rm setuptools.whl
 
