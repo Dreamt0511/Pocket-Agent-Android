@@ -80,6 +80,8 @@ class PythonRuntime(
     private var cancelled = false
     /** direct 模式下运行的进程，用于 cancel() */
     private var directProcess: Process? = null
+    /** 发现诊断日志 */
+    private val diagLog = mutableListOf<String>()
 
     // ─── 公开接口 ─────────────────────────────────
 
@@ -110,9 +112,11 @@ class PythonRuntime(
             // 2. 发现 python3 路径
             val discovered = discoverPython()
             if (discovered == null) {
+                val diagInfo = diagLog.joinToString("\n")
                 val msg = "Python 3 未找到\n" +
                         "请安装 Termux 并在其中执行: pkg install python\n" +
-                        "或者将 python3 放入系统 PATH"
+                        "或者将 python3 放入系统 PATH" +
+                        if (diagInfo.isNotBlank()) "\n\n诊断信息:\n$diagInfo" else ""
                 _state.value = RuntimeState.Error(msg)
                 onStatus?.invoke("Python 未安装")
                 return@withContext false
@@ -169,20 +173,32 @@ class PythonRuntime(
      * 记录发现方式 (pythonDiscoveryMethod)，用于后续验证时使用相同的方式。
      */
     private suspend fun discoverPython(): String? {
+        diagLog.clear()
         val pyNames = listOf("python3", "python")
         for (pyName in pyNames) {
             val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
 
-            // 1. ProcessBuilder 直接执行（绕过 SELinux），带完整环境变量
+            // ── 检查文件是否存在 ──
+            val pyFile = java.io.File(termuxPy)
+            diagLog.add("检查 $termuxPy: ${if (pyFile.exists()) "存在" else "不存在"}")
+            if (pyFile.exists()) {
+                diagLog.add("  可执行: ${pyFile.canExecute()}, 大小: ${pyFile.length()}")
+            }
+
+            // 1. ProcessBuilder 直接执行
             try {
                 val result = runPythonDirect(termuxPy)
                 if (result.success) {
                     isFallbackMode = false
                     pythonDiscoveryMethod = "direct"
+                    diagLog.add("✅ 方式1(direct)成功: $termuxPy")
                     Log.i(TAG, "Found Termux Python (direct): $termuxPy")
                     return termuxPy
                 }
-            } catch (_: Exception) {}
+                diagLog.add("  方式1(direct)失败: exit=${result.exitCode}, out=${result.output.take(100)}")
+            } catch (e: Exception) {
+                diagLog.add("  方式1(direct)异常: ${e.javaClass.simpleName}: ${e.message?.take(80)}")
+            }
 
             // 2. 系统 shell 执行 Termux python
             try {
@@ -190,24 +206,32 @@ class PythonRuntime(
                 if (r.success) {
                     isFallbackMode = false
                     pythonDiscoveryMethod = "shell"
+                    diagLog.add("✅ 方式2(shell)成功: $termuxPy")
                     Log.i(TAG, "Found Termux Python (sh): $termuxPy")
                     return termuxPy
                 }
-            } catch (_: Exception) {}
+                diagLog.add("  方式2(shell)失败: exit=${r.exitCode}, out=${r.output.take(100)}")
+            } catch (e: Exception) {
+                diagLog.add("  方式2(shell)异常: ${e.javaClass.simpleName}: ${e.message?.take(80)}")
+            }
         }
 
         // 3. 搜索系统路径
         isFallbackMode = true
         pythonDiscoveryMethod = "shell"
-        Log.i(TAG, "Termux Python not found, searching system PATH...")
+        diagLog.add("Termux Python 未找到，搜索系统 PATH...")
         for (path in SYSTEM_PYTHON_PATHS) {
             try {
                 val result = termuxBridge.execute("$path --version")
                 if (result.success) {
+                    diagLog.add("✅ 系统路径成功: $path")
                     Log.i(TAG, "Found python3 via: $path")
                     return path
                 }
-            } catch (_: Exception) {}
+                diagLog.add("  系统路径 $path: exit=${result.exitCode}")
+            } catch (e: Exception) {
+                diagLog.add("  系统路径 $path 异常: ${e.message?.take(80)}")
+            }
         }
 
         return null
