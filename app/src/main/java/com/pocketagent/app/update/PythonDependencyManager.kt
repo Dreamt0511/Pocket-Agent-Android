@@ -111,35 +111,38 @@ object PythonDependencyManager {
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
             }
 
-            // Step 1: 自举 pip + setuptools
-            // bootstrap(root=...) 将 pip 安装到 PYTHONHOME 下的标准 site-packages
-            // 这样后续 -m pip 能找到，但实际包用 --target 装到外部 site-packages
-            Log.i(TAG, "Step 1: bootstrap pip")
-            val bootstrapCode = """
-import ensurepip, sys
-sys.stdout.write("ensurepip version: " + ensurepip.version() + "\n")
-ensurepip.bootstrap(root="${pythonDir.absolutePath}")
-sys.stdout.write("pip bootstrap done\n")
-            """.trimIndent()
-            val pipBootstrapResult = runPython(context, pythonBin, baseEnv,
-                listOf("-c", bootstrapCode)
-            )
-            Log.i(TAG, "pip bootstrap exit=${pipBootstrapResult.success}: ${pipBootstrapResult.output.take(500)}")
-            if (!pipBootstrapResult.success) {
-                Log.e(TAG, "pip bootstrap 失败: ${pipBootstrapResult.output}")
-            }
-
-            // 验证 pip 现在可用
-            val pipCheck = runPython(context, pythonBin, baseEnv,
+            // Step 1: 检查 pip 是否可用（CI 已预装）
+            // assets 的 site-packages 已经通过 sitecustomize.py 加入 sys.path
+            // 如果 pip 还不可用，说明预装失败，尝试用 ensurepip 兜底
+            Log.i(TAG, "Step 1: 检查 pip 可用性")
+            val pipVersion = runPython(context, pythonBin, baseEnv,
                 listOf("-m", "pip", "--version")
             )
-            if (!pipCheck.success) {
-                val msg = "pip 安装失败: ${pipCheck.output.take(200)}"
-                Log.e(TAG, msg)
-                _setupState.value = SetupState.Failed(msg)
-                return@withContext false
+            if (!pipVersion.success) {
+                Log.w(TAG, "pip 不可用，尝试 bootstrap 兜底")
+                val bootstrapCode = """
+import ensurepip, sys
+ensurepip.bootstrap()
+sys.stdout.write("pip bootstrap done\n")
+                """.trimIndent()
+                val pipBootstrapResult = runPython(context, pythonBin, baseEnv,
+                    listOf("-c", bootstrapCode)
+                )
+                Log.i(TAG, "pip bootstrap: ${pipBootstrapResult.output.take(200)}")
+                // 再次检查
+                val pipCheck = runPython(context, pythonBin, baseEnv,
+                    listOf("-m", "pip", "--version")
+                )
+                if (!pipCheck.success) {
+                    val msg = "pip 安装失败: ${pipCheck.output.take(200)}"
+                    Log.e(TAG, msg)
+                    _setupState.value = SetupState.Failed(msg)
+                    return@withContext false
+                }
+                Log.i(TAG, "pip 就绪: ${pipCheck.output.take(200)}")
+            } else {
+                Log.i(TAG, "pip 已预装: ${pipVersion.output.take(200)}")
             }
-            Log.i(TAG, "pip 就绪: ${pipCheck.output.take(200)}")
 
             // Step 2: 检查 requirements.txt
             if (!reqFile.exists()) {

@@ -51,6 +51,27 @@ jobs:
           ln -sf python3.13 python
           ln -sf ../lib/libpython3.13.so ../lib/libpython3.so
 
+          # --- 安装 pip 到 assets 的 site-packages ---
+          # 从 GitHub 下载 pip 和 setuptools 的 pure Python wheel
+          # 这样运行时不需要 ensurepip，直接有 pip 可用
+          cd $GITHUB_WORKSPACE/app/src/main/assets/python/lib
+          mkdir -p python3.13/site-packages
+          cd python3.13/site-packages
+
+          # 下载 pip wheel (pure Python)
+          curl -sL -o pip.whl "https://files.pythonhosted.org/packages/pip-24.0-py3-none-any.whl"
+          unzip -q -o pip.whl -d pip
+          rm pip.whl
+
+          # 下载 setuptools wheel (pure Python)
+          curl -sL -o setuptools.whl "https://files.pythonhosted.org/packages/setuptools-68.0.0-py3-none-any.whl"
+          unzip -q -o setuptools.whl -d setuptools
+          rm setuptools.whl
+
+          # 创建 .pth 文件以便 site-packages 被自动加入 sys.path
+          cd $GITHUB_WORKSPACE/app/src/main/assets/python/lib/python3.13
+          echo "./site-packages" > sitecustomize.py
+
           # --- 修改 RPATH（关键修复）---
           # Termux 编译的 python3.13 和 libpython3.13.so 硬编码了
           # RUNPATH=/data/data/com.termux/files/usr/lib，导致 linker 在
