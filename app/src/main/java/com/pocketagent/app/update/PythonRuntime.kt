@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.app.PendingIntent
+import android.os.Build
 import android.util.Log
 import com.pocketagent.app.termux.CommandResult
 import com.pocketagent.app.termux.TermuxBridge
@@ -489,7 +490,12 @@ class PythonRuntime(
         }
 
         val filter = IntentFilter(resultAction)
-        context.applicationContext.registerReceiver(receiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ 需要显式声明 RECEIVER_EXPORTED（允许 Termux 跨应用发广播回来）
+            context.applicationContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            context.applicationContext.registerReceiver(receiver, filter)
+        }
 
         try {
             val intent = Intent()
