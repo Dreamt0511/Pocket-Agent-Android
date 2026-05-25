@@ -340,6 +340,55 @@ fun ConfigScreen(navController: NavController) {
                         }
                         else -> {}
                     }
+
+                    // ── Termux RUN_COMMAND 权限 ──
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+                    val termuxPermGranted = remember {
+                        try {
+                            context.packageManager.checkPermission(
+                                "com.termux.permission.RUN_COMMAND",
+                                context.packageName
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        } catch (_: Exception) { false }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Termux RUN_COMMAND", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            when {
+                                getTermuxVersion(context) == null -> "Termux 未安装"
+                                termuxPermGranted -> "✔ 已授权"
+                                else -> "未授权"
+                            },
+                            fontSize = 12.sp,
+                            color = when {
+                                getTermuxVersion(context) == null -> Color(0xFF9CA3AF)
+                                termuxPermGranted -> Color(0xFF16A34A)
+                                else -> Color(0xFFDC2626)
+                            }
+                        )
+                    }
+                    if (getTermuxVersion(context) != null && !termuxPermGranted) {
+                        Spacer(Modifier.height(6.dp))
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = android.net.Uri.parse("package:${context.packageName}")
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth().height(36.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("去系统设置 → 权限 → 开启 RUN_COMMAND", fontSize = 13.sp)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "提示：部分 ROM 需要手动授权。如果授权后仍失败，请卸载重装 Pocket Agent。",
+                            fontSize = 11.sp, color = Color(0xFF9CA3AF)
+                        )
+                    }
                 }
 
                 // ===== 高级设置（折叠）=====
@@ -643,4 +692,12 @@ private fun ConfigScreenDarkPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
         ConfigScreen(navController = rememberNavController())
     }
+}
+
+/** 检查 Termux 版本（用于 ConfigScreen 权限状态显示） */
+private fun getTermuxVersion(context: android.content.Context): String? {
+    return try {
+        val pkgInfo = context.packageManager.getPackageInfo("com.termux", 0)
+        pkgInfo.versionName
+    } catch (_: Exception) { null }
 }
