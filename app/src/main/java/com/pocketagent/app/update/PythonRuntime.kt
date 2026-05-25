@@ -273,23 +273,26 @@ class PythonRuntime(
 
     /**
      * 运行内置 Python（设置 LD_LIBRARY_PATH 指向 bundled lib 目录）
+     *
+     * 直接 exec 失败时尝试 linker64 兜底（处理 SELinux 阻止 + linker 找不到库）。
      */
     private fun runBundledPython(pythonBin: String, args: List<String>, workDir: File? = null): CommandResult {
         // Try 1: 直接执行
         val directResult = execBundled(pythonBin, args, workDir)
-        if (directResult.success || !isPermissionError(directResult)) {
+        if (directResult.success || !isExecError(directResult)) {
             return directResult
         }
-        // Try 2: SELinux 阻止直接 exec，通过 system linker64 间接加载
-        Log.w(TAG, "Permission denied, retrying via linker64...")
+        // Try 2: SELinux 阻止 或 linker 找不到库，通过 system linker64 间接加载
+        Log.w(TAG, "Direct exec failed, retrying via linker64...")
         return execBundledViaLinker(pythonBin, args, workDir)
     }
 
-    /** 判断 CommandResult 是否为 Permission denied 错误 */
-    private fun isPermissionError(result: CommandResult): Boolean {
+    /** 判断 CommandResult 是否为可兜底的执行错误 */
+    private fun isExecError(result: CommandResult): Boolean {
         return result.output.contains("error=13") ||
                result.output.contains("Permission denied") ||
-               result.output.contains("EACCES")
+               result.output.contains("EACCES") ||
+               result.output.contains("CANNOT LINK EXECUTABLE")
     }
 
     /** 直接通过 ProcessBuilder 执行 bundled Python */
@@ -421,7 +424,7 @@ class PythonRuntime(
             return pb.start()
         } catch (e: IOException) {
             if (pythonDiscoveryMethod != "bundled" ||
-                !isPermissionError(CommandResult(-1, e.message ?: "", false))) {
+                !isExecError(CommandResult(-1, e.message ?: "", false))) {
                 throw e
             }
         }
