@@ -50,6 +50,7 @@ class ExpandedOverlayView(
 
     private var dragStartRawX = 0f
     private var dragStartRawY = 0f
+    private val dragThreshold = 10f
 
     // ── 字体大小（双指缩放） ──
     private var fontSizeSp = 11f
@@ -73,35 +74,16 @@ class ExpandedOverlayView(
     private var resizeInitialRawX = 0f
     private var resizeInitialRawY = 0f
 
-    // 双指时拦截子视图的事件
+    // 双指缩放时拦截子视图的事件，让 ScaleGestureDetector 能收到多点触控
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         if (ev.pointerCount >= 2) return true
         return super.onInterceptTouchEvent(ev)
     }
 
-    // 处理所有触控事件
+    // 只处理双指缩放，单指事件放行让子视图正常处理（滚动、按钮点击）
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaleDetector.onTouchEvent(event)
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                if (event.pointerCount == 1) {
-                    dragStartRawX = event.rawX
-                    dragStartRawY = event.rawY
-                }
-            }
-            MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount == 1) {
-                    val dx = (event.rawX - dragStartRawX).roundToInt()
-                    val dy = (event.rawY - dragStartRawY).roundToInt()
-                    if (dx != 0 || dy != 0) {
-                        onDrag(dx, dy)
-                        dragStartRawX = event.rawX
-                        dragStartRawY = event.rawY
-                    }
-                }
-            }
-        }
-        return true
+        return scaleDetector.isInProgress
     }
 
     init {
@@ -143,6 +125,28 @@ class ExpandedOverlayView(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
                     1f
                 )
+            }.also { tv ->
+                // 拖拽窗口：仅在标题文字区域拖动，不干扰按钮点击
+                tv.setOnTouchListener { _, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            dragStartRawX = event.rawX
+                            dragStartRawY = event.rawY
+                            true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = (event.rawX - dragStartRawX).roundToInt()
+                            val dy = (event.rawY - dragStartRawY).roundToInt()
+                            if (dx != 0 || dy != 0) {
+                                onDrag(dx, dy)
+                                dragStartRawX = event.rawX
+                                dragStartRawY = event.rawY
+                            }
+                            true
+                        }
+                        else -> true
+                    }
+                }
             }
             addView(titleText)
 
