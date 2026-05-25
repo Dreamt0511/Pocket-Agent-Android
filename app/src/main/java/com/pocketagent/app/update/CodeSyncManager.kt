@@ -171,17 +171,30 @@ class CodeSyncManager(private val context: Context) {
         } ?: throw Exception("下载失败: 空响应体")
     }
 
-    // ─── Zip 解压（提取 agent/ 目录）───────────────
+    // ─── Zip 解压（提取仓库根目录）───────────────
 
     /**
-     * 从 GitHub 仓库 ZIP 中提取 agent/ 目录到 destDir
+     * 从 GitHub 仓库 ZIP 中提取全部代码到 destDir
      *
-     * ZIP 结构: Dreamt0511-Pocket-Agent-<sha>/agent/...
-     * 我们只需要 agent/ 及其子目录
+     * ZIP 结构: Dreamt0511-Pocket-Agent-<sha>/
+     *   ├── main.py
+     *   ├── pyproject.toml
+     *   ├── requirements.txt
+     *   ├── .env.example
+     *   ├── agent/
+     *   ├── docs/            ← 跳过
+     *   ├── .github/         ← 跳过
+     *   └── ...
+     *
+     * 跳过 docs/、.github/、.gitattributes、.gitignore、README.md。
+     * 保留 .env（用户配置），同步后恢复 skills/ 和 config.py 自定义值。
      */
     private fun extractAgentDir(zipFile: File, destDir: File) {
-        // 备份旧 skills 目录（防止用户自建技能被清除）
         val oldAgentDir = File(destDir, "agent")
+
+        // ── 备份 ─────────────────────────────────
+
+        // 备份 skills（防止用户自建技能被清除）
         val skillsBackup = File(destDir.parentFile, "skills_backup")
         val oldSkillsDir = File(oldAgentDir, "skills")
         if (oldSkillsDir.exists()) {
@@ -189,33 +202,49 @@ class CodeSyncManager(private val context: Context) {
             Log.i(TAG, "Backed up skills to ${skillsBackup.absolutePath}")
         }
 
-        // 清空旧 agent 目录
-        if (oldAgentDir.exists()) {
-            oldAgentDir.deleteRecursively()
+        // 备份 config.py（防止用户自定义配置被清除）
+        val configBackup = File(destDir.parentFile, "config_py_backup")
+        val oldConfigPy = File(oldAgentDir, "config.py")
+        if (oldConfigPy.exists()) {
+            oldConfigPy.copyTo(configBackup, overwrite = true)
+            Log.i(TAG, "Backed up config.py to ${configBackup.absolutePath}")
         }
 
-        var foundAgent = false
+        // ── 清理旧文件（保留 .env） ──────────────
+        destDir.listFiles()?.forEach { file ->
+            if (file.name != ".env") {
+                file.deleteRecursively()
+            }
+        }
+
+        // ── 需要跳过的文件/目录 ─────────────────
+        val skipPrefixes = setOf(
+            "docs/", ".github/", ".gitattributes", ".gitignore",
+            "README.md", ".git/",
+        )
+
+        // ── 解压 ─────────────────────────────────
+        var extractedCount = 0
 
         ZipInputStream(zipFile.inputStream()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 val name = entry.name
 
-                // GitHub ZIP 格式: <repo>-<sha>/agent/...
-                // 找到 "agent/" 在路径中的位置
-                val agentIndex = name.indexOf("/agent/")
-                val isAgentEntry = agentIndex >= 0
-                val isAgentDir = name.endsWith("/agent") && name.count { it == '/' } == 1
+                // GitHub ZIP 格式: <repo>-<sha>/<relative-path>
+                val slashIndex = name.indexOf('/')
+                val relativePath = if (slashIndex >= 0) {
+                    name.substring(slashIndex + 1) // 去掉顶层目录
+                } else {
+                    name // 顶层目录自身（跳过）
+                }
 
-                if (isAgentEntry || isAgentDir) {
-                    foundAgent = true
-                    val relativePath = if (isAgentEntry) {
-                        name.substring(agentIndex + 1) // "agent/..."
-                    } else {
-                        "agent"
-                    }
+                // 跳过非仓库内容
+                val skip = relativePath.isEmpty() ||
+                        skipPrefixes.any { relativePath == it || relativePath.startsWith(it) }
+
+                if (!skip) {
                     val targetFile = File(destDir, relativePath)
-
                     if (entry.isDirectory) {
                         targetFile.mkdirs()
                     } else {
@@ -223,6 +252,7 @@ class CodeSyncManager(private val context: Context) {
                         FileOutputStream(targetFile).use { fos ->
                             zis.copyTo(fos)
                         }
+                        extractedCount++
                     }
                 }
 
@@ -231,7 +261,9 @@ class CodeSyncManager(private val context: Context) {
             }
         }
 
-        // 恢复备份的技能目录
+        // ── 恢复 ─────────────────────────────────
+
+        // 恢复 skills
         if (skillsBackup.exists()) {
             val newSkillsDir = File(File(destDir, "agent"), "skills")
             skillsBackup.copyRecursively(newSkillsDir, overwrite = true)
@@ -239,9 +271,41 @@ class CodeSyncManager(private val context: Context) {
             Log.i(TAG, "Restored skills backup to ${newSkillsDir.absolutePath}")
         }
 
-        if (!foundAgent) {
-            Log.w(TAG, "No agent/ directory found in ZIP")
+        // 恢复 config.py 用户自定义值
+        if (configBackup.exists()) {
+            val newConfigPy = File(File(destDir, "agent"), "config.py")
+            if (newConfigPy.exists()) {
+                val oldValues = readConfigPyValues(configBackup)
+                var content = newConfigPy.readText()
+                var changed = false
+                for ((key, value) in oldValues) {
+                    val pattern = """^($key)\s*=\s*\d+""".toRegex(RegexOption.MULTILINE)
+                    if (pattern.containsMatchIn(content)) {
+                        content = content.replace(pattern, "$1 = $value")
+                        changed = true
+                    }
+                }
+                if (changed) {
+                    newConfigPy.writeText(content)
+                    Log.i(TAG, "Restored user config.py values from backup")
+                }
+            }
+            configBackup.delete()
         }
+
+        Log.i(TAG, "Extracted $extractedCount files from repo (skipped: docs, .github, etc.)")
+    }
+
+    /**
+     * 从备份的 config.py 中读取用户自定义的数值键值对
+     */
+    private fun readConfigPyValues(file: File): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        val pattern = """^(MAX_ITERATIONS|RECURSION_LIMIT|MAX_CONTEXT_TOKENS)\s*=\s*(\d+)""".toRegex(RegexOption.MULTILINE)
+        for (match in pattern.findAll(file.readText())) {
+            result[match.groupValues[1]] = match.groupValues[2]
+        }
+        return result
     }
 
     /** 获取入口脚本路径 */
