@@ -430,10 +430,8 @@ private fun SkillCard(
                     IconButton(onClick = onViewDetail) {
                         Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(18.dp))
                     }
-                    if (canDelete) {
-                        IconButton(onClick = onEdit) {
-                            Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp))
-                        }
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     IconButton(onClick = onExport) {
                         Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
