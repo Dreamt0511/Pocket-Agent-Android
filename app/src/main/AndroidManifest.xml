@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- 查询 Termux 包（Android 11+ 必需） -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
     <!-- 特性 -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
