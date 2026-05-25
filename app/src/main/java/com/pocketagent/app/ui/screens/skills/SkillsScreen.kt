@@ -216,12 +216,12 @@ fun SkillsScreen(navController: NavController) {
 
                 // 技能列表
                 if (isLoading) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
                 } else if (skills.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -246,7 +246,7 @@ fun SkillsScreen(navController: NavController) {
                     }
                 } else {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -268,6 +268,10 @@ fun SkillsScreen(navController: NavController) {
                                 },
                                 onViewDetail = {
                                     selectedSkill = skill
+                                },
+                                onEdit = {
+                                    editSkill = skill
+                                    showSkillDialog = true
                                 },
                                 onDelete = {
                                     showDeleteConfirm = skill
@@ -359,6 +363,7 @@ private fun SkillCard(
     onToggleSelect: () -> Unit,
     onClick: () -> Unit,
     onViewDetail: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit
 ) {
@@ -404,7 +409,7 @@ private fun SkillCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = skill.name,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -412,7 +417,7 @@ private fun SkillCard(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = skill.description,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         maxLines = 2
                     )
@@ -420,20 +425,25 @@ private fun SkillCard(
             }
 
             // 操作按钮
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!isSelectionMode) {
                     IconButton(onClick = onViewDetail) {
-                        Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(18.dp))
+                    }
+                    if (canDelete) {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp))
+                        }
                     }
                     IconButton(onClick = onExport) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(20.dp))
+                        Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
                     }
                     if (canDelete) {
                         IconButton(onClick = onDelete) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "删除",
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
