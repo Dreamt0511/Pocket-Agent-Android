@@ -188,6 +188,7 @@ fun SkillsScreen(navController: NavController) {
             // ─── 详情视图 ───
             SkillDetailView(
                 skill = selectedSkill!!,
+                modifier = Modifier.padding(padding),
                 onBack = { selectedSkill = null },
                 onEdit = {
                     editSkill = selectedSkill
@@ -458,6 +459,7 @@ private fun SkillCard(
 @Composable
 private fun SkillDetailView(
     skill: SkillManager.Skill,
+    modifier: Modifier = Modifier,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -478,7 +480,7 @@ private fun SkillDetailView(
         }.let { reduceHeadings(it) }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         // 紧凑操作栏
         Row(
             modifier = Modifier
