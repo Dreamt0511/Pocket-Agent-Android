@@ -164,9 +164,7 @@ object PythonDependencyManager {
             // Step 0: 自愈 — 确保 Termux 依赖共享库就绪
             // 若 assets 解压遗漏或本地构建缺少 .so 文件，自动从 Termux 仓库下载
             if (!ensureTermuxLibraries(context, pythonBin, baseEnv)) {
-                val msg = "依赖库自愈失败，缺少必要共享库"
-                Log.e(TAG, msg)
-                _setupState.value = SetupState.Failed(msg)
+                // ensureTermuxLibraries 内部已设置 Failed 状态（含详细诊断信息）
                 return@withContext false
             }
 
@@ -315,7 +313,7 @@ sys.stdout.write("pip bootstrap done\n")
         val libDir = File(BundledPythonManager.getPythonDir(context), "lib")
 
         // Step 1: canary 测试（先快速检查，已安装则跳过）
-        if (runCanaryTest(pythonBin, baseEnv, 2)) {
+        if (runCanaryTest(context, pythonBin, baseEnv, 2)) {
             Log.i(TAG, "自愈: 依赖库完整")
             return@withContext true
         }
@@ -327,7 +325,14 @@ sys.stdout.write("pip bootstrap done\n")
             .distinct()
 
         if (missingUrls.isEmpty()) {
-            Log.w(TAG, "自愈: 文件都存在但 canary 失败，可能另有原因")
+            val existingSoFiles = libDir.listFiles()
+                ?.filter { it.name.contains(".so") }
+                ?.map { it.name }
+                ?.sorted()
+                ?: emptyList()
+            val msg = "所有 .so 文件都存在但 canary(import zlib)失败\nlibDir .so 文件: $existingSoFiles\n可能是 linker namespace 或 SELinux 问题"
+            Log.e(TAG, msg)
+            _setupState.value = SetupState.Failed(msg)
             return@withContext false
         }
 
@@ -361,26 +366,35 @@ sys.stdout.write("pip bootstrap done\n")
 
         // Step 4: 最终验证（等待文件系统同步，多次重试）
         delay(500)
-        if (runCanaryTest(pythonBin, baseEnv, 5)) {
+        if (runCanaryTest(context, pythonBin, baseEnv, 5)) {
             Log.i(TAG, "自愈: 验证通过")
             true
         } else {
             val remaining = TERMUX_DEB_URLS.keys.filter { !File(libDir, it).exists() }
-            Log.w(TAG, "自愈: 验证失败，仍有缺失: $remaining")
+            val existingSoFiles = libDir.listFiles()
+                ?.filter { it.name.contains(".so") }
+                ?.map { it.name }
+                ?.sorted()
+                ?: emptyList()
+            val msg = "依赖库验证失败\n缺失: $remaining\nlibDir 中 .so 文件: $existingSoFiles"
+            Log.e(TAG, msg)
+            _setupState.value = SetupState.Failed(msg)
             false
         }
     }
 
     /** canary 测试：import zlib（最基础的 C 扩展模块） */
-    private fun runCanaryTest(
+    private suspend fun runCanaryTest(
+        context: Context,
         pythonBin: String,
         baseEnv: Map<String, String>,
         retries: Int = 1
     ): Boolean {
         for (i in 0 until retries) {
-            val result = tryExec(pythonBin, listOf("-c", "import zlib; print('ok')"), baseEnv)
+            val result = runPython(context, pythonBin, baseEnv,
+                listOf("-c", "import zlib; print('ok')"))
             if (result.success) return true
-            if (i < retries - 1) Thread.sleep(500)
+            if (i < retries - 1) delay(500)
         }
         return false
     }
