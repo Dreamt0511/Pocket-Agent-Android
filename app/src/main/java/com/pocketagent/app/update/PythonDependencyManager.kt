@@ -164,7 +164,10 @@ object PythonDependencyManager {
             // Step 0: 自愈 — 确保 Termux 依赖共享库就绪
             // 若 assets 解压遗漏或本地构建缺少 .so 文件，自动从 Termux 仓库下载
             if (!ensureTermuxLibraries(context, pythonBin, baseEnv)) {
-                Log.w(TAG, "依赖库自愈不完整，pip 阶段可能失败")
+                val msg = "依赖库自愈失败，缺少必要共享库"
+                Log.e(TAG, msg)
+                _setupState.value = SetupState.Failed(msg)
+                return@withContext false
             }
 
             // Step 1: 检查 pip 是否可用（CI 已预装）
@@ -525,9 +528,21 @@ sys.stdout.write("pip bootstrap done\n")
         }
     }
 
-    /** 递归查找目录中的 .so 文件并复制到目标目录 */
+    /**
+     * 递归查找目录中的 .so 文件并复制到目标目录。
+     *
+     * Termux deb 包中的共享库以版本化名称 + 符号链接形式存在：
+     *   libz.so.1.3.2（实际文件）+ libz.so.1 → libz.so.1.3.2（符号链接）
+     *
+     * tar 提取后符号链接可能丢失（SELinux 阻止创建/读取），
+     * 因此需要为每个版本化 .so 创建 TERMUX_DEB_URLS 中需要的短名副本。
+     *
+     * 例：复制 libz.so.1.3.2 后，额外创建 libz.so.1 → libz.so.1.3.2 的硬链接。
+     */
     private fun findAndCopySoFiles(sourceDir: File, targetLibDir: File): Int {
         var count = 0
+
+        // 先复制所有实际 .so 文件（包括版本化名称和符号链接指向的目标）
         sourceDir.walk().forEach { file ->
             if (file.isFile && file.name.contains(".so")) {
                 val dest = File(targetLibDir, file.name)
@@ -537,6 +552,33 @@ sys.stdout.write("pip bootstrap done\n")
                 }
             }
         }
+
+        // 为 TERMUX_DEB_URLS 中的每个需要的 soname，确保文件存在
+        // 若 soname 不存在但有其版本化变体（如 libz.so.1.3.2），创建硬链接
+        for (soname in TERMUX_DEB_URLS.keys) {
+            val sonameFile = File(targetLibDir, soname)
+            if (sonameFile.exists()) continue
+
+            // 查找匹配版本化名称的文件：soname 前缀 + 附加版本号
+            // 如 "libz.so.1" 匹配 "libz.so.1.3.2"
+            val prefix = soname
+            val versioned = targetLibDir.listFiles()
+                ?.filter { it.name.startsWith(prefix) && it.name != soname && it.name.contains(".so") }
+                ?.firstOrNull()
+
+            if (versioned != null) {
+                // 创建硬链接（同一文件系统），失败则复制
+                val linkResult = Runtime.getRuntime().exec(
+                    arrayOf("ln", versioned.absolutePath, sonameFile.absolutePath)
+                ).waitFor()
+                if (linkResult != 0) {
+                    versioned.copyTo(sonameFile)
+                }
+                count++
+                Log.i(TAG, "自愈: 为 $soname 创建链接 → ${versioned.name}")
+            }
+        }
+
         return count
     }
 
