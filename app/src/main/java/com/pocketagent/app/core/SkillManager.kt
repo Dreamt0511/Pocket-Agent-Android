@@ -254,8 +254,6 @@ object SkillManager {
     suspend fun updateSkill(path: String, name: String, description: String, content: String): Boolean =
         withContext(Dispatchers.IO) {
             if (!isPathSafe(path)) return@withContext false
-            val category = Category.fromDirName(path.substringBefore("/")) ?: return@withContext false
-            if (category.isSystem) return@withContext false
 
             val skillDir = File(getSkillsRoot(), path)
             if (!skillDir.isDirectory) return@withContext false
@@ -309,8 +307,6 @@ object SkillManager {
 
     suspend fun deleteSkill(path: String): Boolean = withContext(Dispatchers.IO) {
         if (!isPathSafe(path)) return@withContext false
-        val category = Category.fromDirName(path.substringBefore("/")) ?: return@withContext false
-        if (category.isSystem) return@withContext false
 
         val skillDir = File(getSkillsRoot(), path)
         if (!skillDir.isDirectory) return@withContext false

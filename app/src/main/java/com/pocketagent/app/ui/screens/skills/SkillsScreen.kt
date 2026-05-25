@@ -253,7 +253,6 @@ fun SkillsScreen(navController: NavController) {
                         items(skills, key = { it.path }) { skill ->
                             SkillCard(
                                 skill = skill,
-                                canDelete = !skill.category.isSystem,
                                 isSelectionMode = isSelectionMode,
                                 isSelected = selectedPaths.contains(skill.path),
                                 onToggleSelect = {
@@ -357,7 +356,6 @@ fun SkillsScreen(navController: NavController) {
 @Composable
 private fun SkillCard(
     skill: SkillManager.Skill,
-    canDelete: Boolean,
     isSelectionMode: Boolean,
     isSelected: Boolean,
     onToggleSelect: () -> Unit,
@@ -436,15 +434,13 @@ private fun SkillCard(
                     IconButton(onClick = onExport) {
                         Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
                     }
-                    if (canDelete) {
-                        IconButton(onClick = onDelete) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "删除",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -497,33 +493,18 @@ private fun SkillDetailView(
             }
 
             Row {
-                if (skill.category.isSystem) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = "系统技能 · 只读",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
                 IconButton(onClick = onExport) {
                     Icon(Icons.Default.FileDownload, contentDescription = "导出")
                 }
-                if (!skill.category.isSystem) {
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "编辑")
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "删除",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Default.Edit, contentDescription = "编辑")
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "删除",
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
