@@ -237,6 +237,14 @@ class PythonRuntime(
         }
 
         // 2.5. Termux RUN_COMMAND intent（绕过 Android 10+ 跨 UID SELinux 限制）
+        // 先测试 intent 机制本身是否能正常工作
+        try {
+            val diagResult = runViaTermuxIntent("/system/bin/echo", listOf("TERMUX_OK"))
+            diagLog.add("  [intent诊断] echo TERMUX_OK: exit=${diagResult.exitCode}, out=${diagResult.output.take(80)}")
+        } catch (e: Exception) {
+            diagLog.add("  [intent诊断] echo 异常: ${e.message?.take(60)}")
+        }
+
         for (pyName in pyNames) {
             val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
             try {
