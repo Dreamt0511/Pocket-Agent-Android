@@ -71,10 +71,10 @@ jobs:
           # sitecustomize.py: Python 启动时将 site-packages 加入 sys.path
           # 注意：不能使用 .pth 文件，因为 site-packages 此时尚未在 sys.path 上
           cd $GITHUB_WORKSPACE/app/src/main/assets/python/lib/python3.13
-          cat > sitecustomize.py << 'PYEOF'
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'site-packages'))
-PYEOF
+          printf '%s\n' \
+            'import sys, os' \
+            'sys.path.insert(0, os.path.join(os.path.dirname(__file__), "site-packages"))' \
+            > sitecustomize.py
 
           # --- 修改 RPATH（关键修复）---
           # Termux 编译的 python3.13 和 libpython3.13.so 硬编码了
