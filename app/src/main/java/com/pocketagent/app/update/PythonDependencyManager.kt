@@ -48,6 +48,13 @@ object PythonDependencyManager {
         "libreadline.so.8" to "https://packages.termux.dev/apt/termux-main/pool/main/r/readline/readline_8.3.3_aarch64.deb",
     )
 
+    // 共享 HTTP 客户端（复用连接，避免每次 new）
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
     // ─── 状态 ──────────────────────────────────────
 
     sealed class SetupState {
@@ -296,24 +303,37 @@ sys.stdout.write("pip bootstrap done\n")
             return@withContext false
         }
 
-        // Step 3: 分批下载并提取
+        Log.i(TAG, "自愈: 需下载 ${missingUrls.size} 个 deb 包（APK 升级后首次会额外下载）")
+
+        // Step 3: 分批下载并提取（每个 deb 最多重试 2 次）
         var successCount = 0
         for ((index, url) in missingUrls.withIndex()) {
             val libName = url.substringAfterLast('/').substringBeforeLast('_')
             _setupState.value = SetupState.Installing("下载依赖库 (${index + 1}/${missingUrls.size}) $libName...")
             Log.i(TAG, "自愈: 下载 (${index + 1}/${missingUrls.size}) $url")
 
-            if (downloadAndExtractDeb(url, libDir)) {
+            var downloaded = false
+            for (attempt in 1..3) {
+                if (downloadAndExtractDeb(url, libDir)) {
+                    downloaded = true
+                    break
+                }
+                Log.w(TAG, "自愈: 第 $attempt 次失败，重试...")
+                delay(1000L * attempt)
+            }
+
+            if (downloaded) {
                 successCount++
             } else {
-                Log.w(TAG, "自愈: 下载失败 $url")
+                Log.w(TAG, "自愈: 下载失败（重试耗尽）$url")
             }
         }
 
         Log.i(TAG, "自愈: 下载 $successCount/${missingUrls.size} 个 deb 包")
 
-        // Step 4: 最终验证
-        if (runCanaryTest(pythonBin, baseEnv, 1)) {
+        // Step 4: 最终验证（等待文件系统同步，多次重试）
+        delay(500)
+        if (runCanaryTest(pythonBin, baseEnv, 5)) {
             Log.i(TAG, "自愈: 验证通过")
             true
         } else {
@@ -353,13 +373,8 @@ sys.stdout.write("pip bootstrap done\n")
         try {
             // 下载 .deb
             Log.i(TAG, "下载 $debUrl")
-            val client = OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .build()
             val request = Request.Builder().url(debUrl).build()
-            val response = client.newCall(request).execute()
+            val response = httpClient.newCall(request).execute()
             if (!response.isSuccessful) {
                 Log.e(TAG, "下载失败: HTTP ${response.code}")
                 return false
