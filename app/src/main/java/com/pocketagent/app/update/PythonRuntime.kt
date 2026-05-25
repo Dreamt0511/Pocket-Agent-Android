@@ -130,6 +130,7 @@ class PythonRuntime(
                         "请安装 Termux 并在其中执行: pkg install python\n" +
                         "然后打开 Termux 设置 → 启用「允许来自外部应用的外壳命令」\n" +
                         "最后重启应用" +
+                        "\n\n当前状态: ${if (getTermuxVersion() != null) "Termux ${getTermuxVersion()}" else "Termux 未安装"}" +
                         if (diagInfo.isNotBlank()) "\n\n诊断信息:\n$diagInfo" else ""
                 _state.value = RuntimeState.Error(msg)
                 onStatus?.invoke("Python 未安装")
@@ -188,6 +189,8 @@ class PythonRuntime(
      */
     private suspend fun discoverPython(): String? {
         diagLog.clear()
+        val termuxVer = getTermuxVersion()
+        diagLog.add("Termux 版本: ${termuxVer ?: "未安装"}")
         val pyNames = listOf("python3", "python")
         for (pyName in pyNames) {
             val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
@@ -498,12 +501,14 @@ class PythonRuntime(
         }
 
         try {
-            val intent = Intent()
-            // ★★★ 关键：必须设置 action，否则 Termux RunCommandService 不会处理 ★★★
-            intent.action = "com.termux.RUN_COMMAND"
-            intent.setClassName("com.termux", "com.termux.app.RunCommandService")
+            val intent = Intent("com.termux.RUN_COMMAND")
+            // 先用 action 解析，不行再试 setClassName
+            try {
+                intent.setClassName("com.termux", "com.termux.app.RunCommandService")
+            } catch (_: Exception) {}
 
-            intent.putExtra("com.termux.RUN_COMMAND_PATH", pythonPath)
+            val cmdName = pythonPath.substringAfterLast("/")
+            intent.putExtra("com.termux.RUN_COMMAND_PATH", cmdName)
             intent.putExtra(
                 "com.termux.RUN_COMMAND_ARGUMENTS",
                 args.toTypedArray()
@@ -515,6 +520,7 @@ class PythonRuntime(
             if (stdin != null) {
                 intent.putExtra("com.termux.RUN_COMMAND_STDIN", stdin)
             }
+            intent.putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
             intent.putExtra(
                 "com.termux.RUN_COMMAND_EXECUTION_ENVIRONMENT",
                 "termux"
@@ -528,26 +534,40 @@ class PythonRuntime(
                 },
                 PendingIntent.FLAG_IMMUTABLE
             )
+            // ★★★ 必须使用正确的 extra key ★★★
+            // Termux 实际检查: "com.termux.RUN_COMMAND_PENDING_INTENT"
             intent.putExtra(
-                "com.termux.RUN_COMMAND_RESULT_PENDING_INTENT",
+                "com.termux.RUN_COMMAND_PENDING_INTENT",
                 resultPI
             )
 
             try {
-                context.startService(intent)
+                val started = context.startService(intent)
+                if (started == null) {
+                    // startService 失败（可能是 Android 14 后台限制）
+                    // 尝试用 startForegroundService 并先调起 Termux Activity 唤醒进程
+                    Log.w(TAG, "startService returned null, trying foreground+wake")
+                    wakeTermuxAndRetry(intent, resultPI)
+                }
             } catch (_: IllegalStateException) {
                 // Android 8+：如果 Target SDK 26+ 且服务未在前台声明，需用 startForegroundService
                 @Suppress("DEPRECATION")
                 context.startForegroundService(intent)
             }
 
+            // 给 Termux 5 秒启动时间（如果是冷启动），然后等待结果
             withTimeout(TIMEOUT_TERMUX_INTENT_MS) {
                 deferred.await()
             }
         } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            val termuxVer = getTermuxVersion()
             CommandResult(
                 -1,
-                "Termux intent 超时 (${TIMEOUT_TERMUX_INTENT_MS}ms) — 请确认 Termux 已启用「允许来自外部应用的外壳命令」",
+                "Termux intent 超时 (${TIMEOUT_TERMUX_INTENT_MS}ms)\n" +
+                        "可能原因与解决:\n" +
+                        "1. Termux 版本(${termuxVer ?: "未知"})过旧 → 从 F-Droid 安装最新版\n" +
+                        "2. 未启用「允许来自外部应用的外壳命令」→ Termux 设置中开启\n" +
+                        "3. Termux 后台被系统杀死 → 打开 Termux 一次再试",
                 false
             )
         } catch (e: SecurityException) {
@@ -558,6 +578,57 @@ class PythonRuntime(
             try {
                 context.applicationContext.unregisterReceiver(receiver)
             } catch (_: Exception) {}
+        }
+    }
+
+    /** 获取 Termux 版本号（用于诊断） */
+    private fun getTermuxVersion(): String? {
+        return try {
+            val pkgInfo = context.packageManager.getPackageInfo("com.termux", 0)
+            pkgInfo.versionName
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 唤醒 Termux + 重试发送 intent
+     *
+     * startService() 返回 null 时，可能是：
+     * 1. Android 14 后台执行限制（Termux 进程不存在）
+     * 2. 系统延迟绑定服务
+     *
+     * 策略：先尝试 startForegroundService + 调起 Termux Activity 唤醒进程，
+     * 然后再次尝试 startService。
+     */
+    private suspend fun wakeTermuxAndRetry(
+        intent: Intent,
+        resultPI: PendingIntent
+    ) {
+        try {
+            // 尝试 startForegroundService
+            @Suppress("DEPRECATION")
+            context.startForegroundService(intent)
+            Log.i(TAG, "wakeTermuxAndRetry: startForegroundService sent")
+            return
+        } catch (e1: Exception) {
+            Log.w(TAG, "startForegroundService failed: ${e1.message}")
+        }
+
+        try {
+            // 最后手段：打开 Termux Activity 唤醒进程（用户会看到 Termux 界面闪一下）
+            val wakeIntent = context.packageManager.getLaunchIntentForPackage("com.termux")
+            if (wakeIntent != null) {
+                wakeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(wakeIntent)
+                Log.i(TAG, "wakeTermuxAndRetry: launched Termux activity")
+                // 等待 Activity 启动，再试一次
+                kotlinx.coroutines.delay(1000)
+                context.startService(intent)
+                return
+            }
+        } catch (e2: Exception) {
+            Log.w(TAG, "wakeTermuxAndRetry all failed: ${e2.message}")
         }
     }
 
