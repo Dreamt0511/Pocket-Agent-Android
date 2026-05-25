@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 
 /**
@@ -297,13 +298,7 @@ class PythonRuntime(
             val pb = ProcessBuilder(listOf(pythonBin) + args)
             if (workDir != null) pb.directory(workDir)
             val pythonDir = BundledPythonManager.getPythonDir(context)
-            val libDir = File(pythonDir, "lib").absolutePath
-            val env = pb.environment()
-            env["LD_LIBRARY_PATH"] = libDir
-            env["PYTHONHOME"] = pythonDir.absolutePath
-            env["HOME"] = pythonDir.absolutePath
-            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
-            env["TMPDIR"] = "/data/local/tmp"
+            setBundledEnv(pb.environment(), pythonDir)
             val process = pb.start()
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val stderr = BufferedReader(InputStreamReader(process.errorStream))
@@ -331,15 +326,7 @@ class PythonRuntime(
             val pb = ProcessBuilder(cmd)
             if (workDir != null) pb.directory(workDir)
             val pythonDir = BundledPythonManager.getPythonDir(context)
-            val libDir = File(pythonDir, "lib").absolutePath
-            val env = pb.environment()
-            env["LD_LIBRARY_PATH"] = libDir
-            // linker64 执行时 argv[0] 指向 linker 而非 python，
-            // Python 无法自动计算 stdlib 路径，必须靠 PYTHONHOME 指定
-            env["PYTHONHOME"] = pythonDir.absolutePath
-            env["HOME"] = pythonDir.absolutePath
-            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
-            env["TMPDIR"] = "/data/local/tmp"
+            setBundledEnv(pb.environment(), pythonDir)
             val process = pb.start()
             val stdout = BufferedReader(InputStreamReader(process.inputStream))
             val stderr = BufferedReader(InputStreamReader(process.errorStream))
@@ -357,13 +344,7 @@ class PythonRuntime(
     private fun setTermuxEnv(pb: ProcessBuilder) {
         val env = pb.environment()
         if (pythonDiscoveryMethod == "bundled") {
-            val pythonDir = BundledPythonManager.getPythonDir(context)
-            val libDir = File(pythonDir, "lib").absolutePath
-            env["LD_LIBRARY_PATH"] = libDir
-            env["PYTHONHOME"] = pythonDir.absolutePath
-            env["HOME"] = pythonDir.absolutePath
-            env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
-            env["TMPDIR"] = "/data/local/tmp"
+            setBundledEnv(env, BundledPythonManager.getPythonDir(context))
         } else {
             env["HOME"] = TermuxBootstrap.termuxRoot + "/home"
             env["PATH"] = TermuxBootstrap.termuxUsr + "/bin:" +
@@ -423,7 +404,52 @@ class PythonRuntime(
     }
 
     /**
+     * 为 bundled Python 创建进程，自动处理 SELinux 兜底。
+     *
+     * 直接 exec 被 SELinux 阻止时（国产 ROM 常见），自动通过
+     * system linker64 重试（linker64 可执行，加载二进制只需 read 权限）。
+     */
+    private fun startBundledProcess(workingDir: java.io.File): Process {
+        val cmd = listOf(pythonBin, "stable_entry.py", "--mode=task")
+        val pythonDir = BundledPythonManager.getPythonDir(context)
+
+        // Try 1: 直接 exec
+        try {
+            val pb = ProcessBuilder(cmd)
+            pb.directory(workingDir)
+            setBundledEnv(pb.environment(), pythonDir)
+            return pb.start()
+        } catch (e: IOException) {
+            if (pythonDiscoveryMethod != "bundled" ||
+                !isPermissionError(CommandResult(-1, e.message ?: "", false))) {
+                throw e
+            }
+        }
+
+        // Try 2: 通过 linker64 间接加载
+        Log.w(TAG, "executePythonWithInput: 直接 exec 失败，通过 linker64 重试...")
+        val linker = if (File("/system/bin/linker64").exists()) "/system/bin/linker64" else "/system/bin/linker"
+        val linkerCmd = listOf(linker) + cmd
+        val pb2 = ProcessBuilder(linkerCmd)
+        pb2.directory(workingDir)
+        setBundledEnv(pb2.environment(), pythonDir)
+        return pb2.start()
+    }
+
+    /** 设置 bundled Python 的环境变量 */
+    private fun setBundledEnv(env: MutableMap<String, String>, pythonDir: File) {
+        val libDir = File(pythonDir, "lib").absolutePath
+        env["LD_LIBRARY_PATH"] = libDir
+        env["PYTHONHOME"] = pythonDir.absolutePath
+        env["HOME"] = pythonDir.absolutePath
+        env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
+        env["TMPDIR"] = "/data/local/tmp"
+    }
+
+    /**
      * 直接模式下的 Python 进程执行（带 stdin 写入 + stdout 流式回调）
+     *
+     * 如果直接 exec 被 SELinux 阻止（国产 ROM 常见），自动通过 linker64 重试。
      */
     private suspend fun executePythonWithInput(
         workingDir: java.io.File,
@@ -432,10 +458,7 @@ class PythonRuntime(
         onError: (String) -> Unit
     ): CommandResult = withContext(Dispatchers.IO) {
         try {
-            val pb = ProcessBuilder(pythonBin, "stable_entry.py", "--mode=task")
-            pb.directory(workingDir)
-            setTermuxEnv(pb)
-            val process = pb.start().also { directProcess = it }
+            val process = startBundledProcess(workingDir).also { directProcess = it }
 
             // 写入 stdin 后关闭
             process.outputStream.write(input.toByteArray(Charsets.UTF_8))

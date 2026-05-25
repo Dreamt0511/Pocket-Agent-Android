@@ -111,6 +111,11 @@ object BundledPythonManager {
             if (!pythonBin.canExecute()) {
                 pythonBin.setExecutable(true)
             }
+            val libas = File(pythonDir, "lib/libandroid-support.so")
+            if (!libas.exists()) {
+                Log.e(TAG, "解压失败: lib/libandroid-support.so 不存在")
+                return@withContext false
+            }
 
             Log.i(TAG, "内置 Python 解压完成: ${pythonBin.absolutePath}")
             true
