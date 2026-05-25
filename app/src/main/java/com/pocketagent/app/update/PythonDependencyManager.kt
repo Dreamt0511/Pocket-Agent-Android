@@ -130,7 +130,7 @@ object PythonDependencyManager {
                 put("PYTHONHOME", pythonDir.absolutePath)
                 put("HOME", pythonDir.absolutePath)
                 put("PATH", "${File(pythonDir, "bin")}:/system/bin:/system/xbin")
-                put("TMPDIR", "/data/local/tmp")
+                put("TMPDIR", context.cacheDir.absolutePath)
                 // 指向 Android 系统 CA 证书，否则 Termux Python 的 SSL 找不到证书
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
             }
