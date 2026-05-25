@@ -45,6 +45,41 @@ jobs:
           cp -a data/data/com.termux/files/usr/lib/libandroid-support.so \
                 $GITHUB_WORKSPACE/app/src/main/assets/python/lib/
 
+          # --- Termux 依赖库（Python C 扩展需要）---
+          # Python 的 .so 扩展模块链接了 Termux 的系统库，运行时通过
+          # LD_LIBRARY_PATH 查找。这些库不在 Android 系统目录中，必须打包。
+          cd /tmp
+
+          download_lib() {
+            local url="$1" name="$2"
+            local deb="/tmp/${name}.deb"
+            local dir="/tmp/${name}-extract"
+            curl -sSL -o "$deb" "$url"
+            mkdir -p "$dir" && cd "$dir"
+            ar x "$deb" 2>/dev/null
+            tar xf data.tar.xz 2>/dev/null
+            find data/data/com.termux/files/usr/lib -name 'lib*.so*' \( -type f -o -type l \) \
+              -exec cp -an {} $GITHUB_WORKSPACE/app/src/main/assets/python/lib/ \;
+            cd /tmp && rm -rf "$deb" "$dir"
+          }
+
+          # zlib — libz.so.1 (zlib, binascii 等模块依赖)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/z/zlib/zlib_1.3.2_aarch64.deb" "zlib"
+          # OpenSSL — libssl.so.3, libcrypto.so.3 (_ssl, hashlib HTTPS)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/o/openssl/openssl_1%3A3.6.2_aarch64.deb" "openssl"
+          # libffi — libffi.so (ctypes)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libf/libffi/libffi_3.5.2_aarch64.deb" "libffi"
+          # libsqlite — libsqlite3.so (_sqlite3)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsqlite/libsqlite_3.53.1_aarch64.deb" "libsqlite"
+          # libexpat — libexpat.so.1 (pyexpat XML 解析)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.8.1_aarch64.deb" "libexpat"
+          # libbz2 — libbz2.so.1.0 (_bz2 压缩)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb" "libbz2"
+          # liblzma — liblzma.so.5 (_lzma XZ 压缩)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libl/liblzma/liblzma_5.8.3_aarch64.deb" "liblzma"
+          # libandroid-posix-semaphore — (_multiprocessing)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb" "android-posix-semaphore"
+
           # --- 符号链接 ---
           cd $GITHUB_WORKSPACE/app/src/main/assets/python/bin
           ln -sf python3.13 python3

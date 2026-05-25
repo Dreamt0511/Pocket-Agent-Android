@@ -128,7 +128,7 @@ sys.stdout.write("pip bootstrap done\n")
                 val pipBootstrapResult = runPython(context, pythonBin, baseEnv,
                     listOf("-c", bootstrapCode)
                 )
-                Log.i(TAG, "pip bootstrap: ${pipBootstrapResult.output.take(200)}")
+                Log.i(TAG, "pip bootstrap: ${pipBootstrapResult.output}")
                 // 再次检查
                 val pipCheck = runPython(context, pythonBin, baseEnv,
                     listOf("-m", "pip", "--version")
@@ -139,9 +139,9 @@ sys.stdout.write("pip bootstrap done\n")
                     _setupState.value = SetupState.Failed(msg)
                     return@withContext false
                 }
-                Log.i(TAG, "pip 就绪: ${pipCheck.output.take(200)}")
+                Log.i(TAG, "pip 就绪: ${pipCheck.output}")
             } else {
-                Log.i(TAG, "pip 已预装: ${pipVersion.output.take(200)}")
+                Log.i(TAG, "pip 已预装: ${pipVersion.output}")
             }
 
             // Step 2: 检查 requirements.txt
@@ -179,7 +179,7 @@ sys.stdout.write("pip bootstrap done\n")
                 )
                 val result = runPython(context, pythonBin, baseEnv, pipArgs)
                 if (!result.success) {
-                    Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output.take(200)}")
+                    Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output}")
                     val fallbackArgs = listOf(
                         "-m", "pip", "install",
                         "--target", sitePackages.absolutePath,
@@ -193,7 +193,7 @@ sys.stdout.write("pip bootstrap done\n")
                         if (firstError == null) {
                             firstError = "${pkg}: ${fallbackResult.output}"
                         }
-                        Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output.take(200)}")
+                        Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output}")
                     }
                 }
             }
