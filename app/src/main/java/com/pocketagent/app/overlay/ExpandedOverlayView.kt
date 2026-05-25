@@ -71,6 +71,15 @@ class ExpandedOverlayView(
         }
     })
 
+    // 拦截多点触控：让双指缩放事件到达 ScaleGestureDetector
+    // 单指事件照常传递给子视图（滚动、按钮点击）
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.pointerCount >= 2) {
+            return true
+        }
+        return super.onInterceptTouchEvent(ev)
+    }
+
     // 缩放状态（右下角手柄拖拽）
     private var resizeInitialW = 0
     private var resizeInitialH = 0
