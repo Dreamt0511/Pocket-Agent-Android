@@ -142,6 +142,13 @@ object BundledPythonManager {
                 return@withContext false
             }
 
+            // 验证 _ 前缀目录已正确解压（旧版 AAPT2 的 <dir>_* 规则会过滤此类目录）
+            val pipInternal = File(pythonDir, "lib/python3.13/site-packages/pip/_internal/__init__.py")
+            if (!pipInternal.exists()) {
+                Log.e(TAG, "解压失败: pip/_internal/__init__.py 不存在（可能被 AAPT2 过滤）")
+                return@withContext false
+            }
+
             Log.i(TAG, "内置 Python 解压完成: ${pythonBin.absolutePath}")
             true
         } catch (e: Exception) {
@@ -187,15 +194,19 @@ object BundledPythonManager {
      * 就绪条件：
      * - python3.13 二进制文件存在且可执行
      * - libandroid-support.so 存在（Termux Python 的必需依赖）
+     * - pip/_internal/__init__.py 存在（验证 _ 前缀目录未被 AAPT2 过滤，
+     *   旧版 APK 因 <dir>_* 默认规则导致 pip/_internal/ 目录丢失）
      *
-     * 缺少 libandroid-support.so 声明未就绪，触发重新解压。
+     * 任何条件不满足都触发重新解压。
      */
     fun isReady(context: Context): Boolean {
         val pythonBin = File(getPythonDir(context), "bin/python3.13")
         if (!pythonBin.exists() || !pythonBin.canExecute()) return false
-        // libandroid-support.so 是 Python 二进制链接时必需的依赖库
         val libas = File(getPythonDir(context), "lib/libandroid-support.so")
-        return libas.exists()
+        if (!libas.exists()) return false
+        // 验证 _ 前缀目录未被过滤：pip/_internal/ 是 AAPT2 <dir>_* 规则的受害者
+        val pipInternal = File(getPythonDir(context), "lib/python3.13/site-packages/pip/_internal/__init__.py")
+        return pipInternal.exists()
     }
 
     // ─── 版本管理 ─────────────────────────────────
