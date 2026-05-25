@@ -79,6 +79,14 @@ jobs:
           download_lib "https://packages.termux.dev/apt/termux-main/pool/main/libl/liblzma/liblzma_5.8.3_aarch64.deb" "liblzma"
           # libandroid-posix-semaphore — (_multiprocessing)
           download_lib "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb" "android-posix-semaphore"
+          # ncurses — libncursesw.so.6 (_curses)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses/ncurses_6.6.20260307%2Breally6.5.20250830_aarch64.deb" "ncurses"
+          # ncurses-ui-libs — libpanelw.so.6 (_curses_panel, 依赖 libncursesw.so.6)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307%2Breally6.5.20250830_aarch64.deb" "ncurses-ui-libs"
+          # gdbm — libgdbm.so, libgdbm_compat.so (_gdbm, _dbm)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/g/gdbm/gdbm_1.26-1_aarch64.deb" "gdbm"
+          # readline — libreadline.so.8 (readline, 依赖 libncursesw.so.6)
+          download_lib "https://packages.termux.dev/apt/termux-main/pool/main/r/readline/readline_8.3.3_aarch64.deb" "readline"
 
           # --- 符号链接 ---
           cd $GITHUB_WORKSPACE/app/src/main/assets/python/bin
