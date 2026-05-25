@@ -28,7 +28,10 @@ object SkillManager {
         val category: Category,
         val path: String,
         val content: String = ""
-    )
+    ) {
+        /** true=系统预装技能（不可修改/删除），false=用户新增/自动生成的技能 */
+        val isSystem: Boolean get() = category.isSystem && !path.contains("/user/")
+    }
 
     // ─── 初始化 ─────────────────────────────────────
 
@@ -185,6 +188,7 @@ object SkillManager {
     ): Skill? = withContext(Dispatchers.IO) {
         val skillDir = when (category) {
             Category.AUTO_SKILLS -> File(File(getSkillsRoot(), category.dirName), "executor/$name")
+            Category.MAIN_SKILLS, Category.EXECUTOR_SKILLS -> File(File(getSkillsRoot(), category.dirName), "user/$name")
             else -> File(File(getSkillsRoot(), category.dirName), name)
         }
         if (skillDir.exists()) {
@@ -233,19 +237,7 @@ object SkillManager {
         if (description.isBlank()) warnings += "技能描述不能为空"
         else if (description.length < 5) warnings += "技能描述过短，建议至少 5 个字"
         if (content.isBlank()) warnings += "SKILL.md 正文不能为空"
-        else {
-            val trimmed = content.trimStart()
-            if (!trimmed.startsWith("---")) {
-                warnings += "建议添加 YAML frontmatter 格式（--- 开头），便于解析元数据"
-            } else {
-                val endIndex = trimmed.indexOf("---", 3)
-                if (endIndex < 0) warnings += "YAML frontmatter 未闭合，缺少结尾 ---"
-                else {
-                    val body = trimmed.substring(endIndex + 3).trim()
-                    if (body.length < 10) warnings += "SKILL.md 正文内容过少，建议至少包含步骤描述"
-                }
-            }
-        }
+        else if (content.trim().length < 5) warnings += "SKILL.md 正文内容过少，建议至少包含步骤描述"
         return SkillValidation(warnings.isEmpty(), warnings)
     }
 
@@ -254,6 +246,7 @@ object SkillManager {
     suspend fun updateSkill(path: String, name: String, description: String, content: String): Boolean =
         withContext(Dispatchers.IO) {
             if (!isPathSafe(path)) return@withContext false
+            if (isSystemSkill(path)) return@withContext false
 
             val skillDir = File(getSkillsRoot(), path)
             if (!skillDir.isDirectory) return@withContext false
@@ -307,6 +300,7 @@ object SkillManager {
 
     suspend fun deleteSkill(path: String): Boolean = withContext(Dispatchers.IO) {
         if (!isPathSafe(path)) return@withContext false
+        if (isSystemSkill(path)) return@withContext false
 
         val skillDir = File(getSkillsRoot(), path)
         if (!skillDir.isDirectory) return@withContext false
@@ -315,6 +309,13 @@ object SkillManager {
     }
 
     // ─── 内部工具 ─────────────────────────────────
+
+    /** 通过路径判断是否为系统预装技能（不可修改/删除） */
+    private fun isSystemSkill(path: String): Boolean {
+        val catName = path.substringBefore("/")
+        val category = Category.fromDirName(catName)
+        return category?.isSystem == true && !path.contains("/user/")
+    }
 
     private fun findSkillFile(dir: File): File? {
         for (name in listOf("SKILL.md", "skill.md", "Skill.md")) {

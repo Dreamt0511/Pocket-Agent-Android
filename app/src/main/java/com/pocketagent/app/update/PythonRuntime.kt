@@ -1,6 +1,10 @@
 package com.pocketagent.app.update
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.app.PendingIntent
 import android.util.Log
 import com.pocketagent.app.termux.CommandResult
 import com.pocketagent.app.termux.TermuxBridge
@@ -27,7 +31,8 @@ import java.io.InputStreamReader
  * Python 发现顺序：
  *   1. Termux 环境: python/python3 (ProcessBuilder 直接执行)
  *   2. Termux 环境: python/python3 (系统 shell)
- *   3. 系统 PATH:   python → python3 → 各常见系统路径
+ *   3. Termux 环境: python/python3 (RUN_COMMAND intent，绕过跨 UID SELinux 限制)
+ *   4. 系统 PATH:   python → python3 → 各常见系统路径
  *
  * 依赖：
  *   - Termux app + Python (推荐) 或系统 Python 3
@@ -41,6 +46,8 @@ class PythonRuntime(
     companion object {
         private const val TAG = "PythonRuntime"
         private const val SEED_ASSET_DIR = "agent-seed"
+        /** Termux RUN_COMMAND intent 超时（毫秒） */
+        private const val TIMEOUT_TERMUX_INTENT_MS = 15000L
         /** 系统 python3 搜索路径（按优先级） */
         private val SYSTEM_PYTHON_PATHS = listOf(
             "python",                   // Termux pkg install python 安装为 python
@@ -120,7 +127,8 @@ class PythonRuntime(
                 val diagInfo = diagLog.joinToString("\n")
                 val msg = "Python 3 未找到\n" +
                         "请安装 Termux 并在其中执行: pkg install python\n" +
-                        "或者将 python3 放入系统 PATH" +
+                        "然后打开 Termux 设置 → 启用「允许来自外部应用的外壳命令」\n" +
+                        "最后重启应用" +
                         if (diagInfo.isNotBlank()) "\n\n诊断信息:\n$diagInfo" else ""
                 _state.value = RuntimeState.Error(msg)
                 onStatus?.invoke("Python 未安装")
@@ -172,7 +180,8 @@ class PythonRuntime(
      * 搜索顺序：
      *  1. Termux 路径: python → python3 (ProcessBuilder 直接执行)
      *  2. Termux 路径: python → python3 (系统 shell)
-     *  3. 系统 PATH 搜索: python → python3 → 各常见系统路径
+     *  3. Termux 路径: python → python3 (RUN_COMMAND intent)
+     *  4. 系统 PATH 搜索: python → python3 → 各常见系统路径
      *
      * 记录发现方式 (pythonDiscoveryMethod)，用于后续验证时使用相同的方式。
      */
@@ -213,6 +222,38 @@ class PythonRuntime(
             }
         }
 
+        // 2.5. Termux RUN_COMMAND intent（绕过 Android 10+ 跨 UID SELinux 限制）
+        for (pyName in pyNames) {
+            val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
+            try {
+                val result = runViaTermuxIntent(termuxPy, listOf("--version"))
+                if (result.success) {
+                    isFallbackMode = false
+                    pythonDiscoveryMethod = "termux_intent"
+                    diagLog.add("✅ 方式3(intent)成功: $termuxPy")
+                    Log.i(TAG, "Found Termux Python (intent): $termuxPy")
+                    return termuxPy
+                }
+                diagLog.add("  方式3(intent)失败: exit=${result.exitCode}, out=${result.output.take(100)}")
+            } catch (e: Exception) {
+                diagLog.add("  方式3(intent)异常: ${e.javaClass.simpleName}: ${e.message?.take(80)}")
+            }
+        }
+
+        // 2.6. 通过 shell 发送 am startservice intent（诊断用，不出现在发现链中，
+        // 因为 am startservice 是 fire-and-forget，无法同步获取执行结果）
+        // 实际运行时如果 runViaTermuxIntent 也不可用，fallback 到系统 PATH
+        diagLog.add("  [诊断] 尝试通过 am startservice 发送 intent...")
+        for (pyName in pyNames) {
+            val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
+            try {
+                val result = runViaShellIntent(termuxPy, listOf("--version"))
+                diagLog.add("    am $termuxPy: exit=${result.exitCode}, out=${result.output.take(80)}")
+            } catch (e: Exception) {
+                diagLog.add("    am $termuxPy 异常: ${e.message?.take(60)}")
+            }
+        }
+
         // 3. 搜索系统路径
         isFallbackMode = true
         pythonDiscoveryMethod = "shell"
@@ -240,6 +281,7 @@ class PythonRuntime(
     private suspend fun verifyPython(pythonBin: String): CommandResult {
         return when (pythonDiscoveryMethod) {
             "direct" -> runPythonDirect(pythonBin)
+            "termux_intent" -> runViaTermuxIntent(pythonBin, listOf("--version"))
             else -> termuxBridge.execute("$pythonBin --version")
         }
     }
@@ -261,6 +303,21 @@ class PythonRuntime(
      * 执行 Python 命令，使用与发现时相同的方式（直接 vs shell）
      */
     private suspend fun executePythonCommand(shellCmd: String): CommandResult {
+        if (pythonDiscoveryMethod == "termux_intent") {
+            // intent 方式不支持流式输出，批处理返回
+            var wd: java.io.File? = null
+            var actual = shellCmd
+            val cdMatch = Regex("^cd (\\S+) && ").find(shellCmd)
+            if (cdMatch != null) {
+                wd = java.io.File(cdMatch.groupValues[1])
+                actual = shellCmd.removeRange(cdMatch.range)
+            }
+            val parts = actual.split(" ").filter { it.isNotBlank() }
+            if (parts.isEmpty()) return CommandResult(-1, "Empty command", false)
+            val pyPath = parts.first()
+            val pyArgs = parts.drop(1)
+            return runViaTermuxIntent(pyPath, pyArgs, workDir = wd)
+        }
         if (pythonDiscoveryMethod != "direct") {
             return termuxBridge.execute(shellCmd)
         }
@@ -376,6 +433,185 @@ class PythonRuntime(
     }
 
     /**
+     * 通过 Termux RUN_COMMAND intent API 执行 Python 命令
+     *
+     * 使用 Termux 的 RUN_COMMAND intent 让命令在 Termux 进程内执行，
+     * 绕过 Android 10+ 跨 UID SELinux 限制。
+     * 通过 PendingIntent + BroadcastReceiver 同步等待执行结果（15 秒超时）。
+     *
+     * 注意：此方式不支持流式输出，只返回批量结果。
+     *
+     * 关键要求：
+     * - Termux v0.95+
+     * - Termux 设置中启用「允许来自外部应用的外壳命令」
+     * - intent action 必须设为 "com.termux.RUN_COMMAND"
+     *   （RunCommandService.onStartCommand() 会检查 action）
+     */
+    private suspend fun runViaTermuxIntent(
+        pythonPath: String,
+        args: List<String>,
+        stdin: String? = null,
+        workDir: java.io.File? = null
+    ): CommandResult = withContext(Dispatchers.IO) {
+        val deferred = CompletableDeferred<CommandResult>()
+        val requestCode = System.currentTimeMillis().toInt()
+        val resultAction = "com.pocketagent.app.TERMUX_RESULT_$requestCode"
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                try {
+                    if (deferred.isCompleted) return
+                    val exitCode = intent?.getIntExtra(
+                        "com.termux.RUN_COMMAND_EXIT_CODE", -1
+                    ) ?: -1
+                    val stdout = intent?.getStringExtra(
+                        "com.termux.RUN_COMMAND_STDOUT"
+                    ) ?: ""
+                    val stderr = intent?.getStringExtra(
+                        "com.termux.RUN_COMMAND_STDERR"
+                    ) ?: ""
+                    val output = buildString {
+                        if (stdout.isNotBlank()) append(stdout.trim())
+                        if (stderr.isNotBlank()) {
+                            if (isNotEmpty()) append("\n")
+                            append("[ERR] ").append(stderr.trim())
+                        }
+                    }
+                    deferred.complete(
+                        CommandResult(exitCode, output, exitCode == 0)
+                    )
+                } catch (e: Exception) {
+                    deferred.complete(
+                        CommandResult(-1, "Receiver error: ${e.message}", false)
+                    )
+                }
+            }
+        }
+
+        val filter = IntentFilter(resultAction)
+        context.applicationContext.registerReceiver(receiver, filter)
+
+        try {
+            val intent = Intent()
+            // ★★★ 关键：必须设置 action，否则 Termux RunCommandService 不会处理 ★★★
+            intent.action = "com.termux.RUN_COMMAND"
+            intent.setClassName("com.termux", "com.termux.app.RunCommandService")
+
+            intent.putExtra("com.termux.RUN_COMMAND_PATH", pythonPath)
+            intent.putExtra(
+                "com.termux.RUN_COMMAND_ARGUMENTS",
+                args.toTypedArray()
+            )
+            intent.putExtra(
+                "com.termux.RUN_COMMAND_WORKDIR",
+                (workDir ?: getRuntimeDir()).absolutePath
+            )
+            if (stdin != null) {
+                intent.putExtra("com.termux.RUN_COMMAND_STDIN", stdin)
+            }
+            intent.putExtra(
+                "com.termux.RUN_COMMAND_EXECUTION_ENVIRONMENT",
+                "termux"
+            )
+
+            val resultPI = PendingIntent.getBroadcast(
+                context.applicationContext,
+                requestCode,
+                Intent(resultAction).apply {
+                    setPackage(context.packageName)
+                },
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            intent.putExtra(
+                "com.termux.RUN_COMMAND_RESULT_PENDING_INTENT",
+                resultPI
+            )
+
+            try {
+                context.startService(intent)
+            } catch (_: IllegalStateException) {
+                // Android 8+：如果 Target SDK 26+ 且服务未在前台声明，需用 startForegroundService
+                @Suppress("DEPRECATION")
+                context.startForegroundService(intent)
+            }
+
+            withTimeout(TIMEOUT_TERMUX_INTENT_MS) {
+                deferred.await()
+            }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+            CommandResult(
+                -1,
+                "Termux intent 超时 (${TIMEOUT_TERMUX_INTENT_MS}ms) — 请确认 Termux 已启用「允许来自外部应用的外壳命令」",
+                false
+            )
+        } catch (e: SecurityException) {
+            CommandResult(-1, "Termux intent 权限不足: ${e.message}", false)
+        } catch (e: Exception) {
+            CommandResult(-1, "Termux intent 错误: ${e.message}", false)
+        } finally {
+            try {
+                context.applicationContext.unregisterReceiver(receiver)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * 通过 am startservice shell 命令发送 Termux RUN_COMMAND intent
+     *
+     * 如果 Kotlin 层的 startService() 因各种兼容性问题失败，
+     * 可尝试用 shell 进程发送 intent。am 命令会通过 Android 系统服务
+     * 转发 intent，不受调用者 UID 限制。
+     */
+    private suspend fun runViaShellIntent(
+        pythonPath: String,
+        args: List<String>,
+        stdin: String? = null,
+        workDir: java.io.File? = null
+    ): CommandResult = withContext(Dispatchers.IO) {
+        try {
+            val wd = (workDir ?: getRuntimeDir()).absolutePath
+            val argsStr = args.joinToString(" ") { "'$it'" }
+
+            // 将 stdin 写入临时文件，通过 shell 重定向
+            val stdinFile = if (stdin != null) {
+                val f = java.io.File(wd, ".termux_stdin_${System.currentTimeMillis()}.txt")
+                f.writeText(stdin)
+                f.absolutePath
+            } else null
+
+            val amCmd = buildString {
+                append("/system/bin/am startservice")
+                append(" -n com.termux/com.termux.app.RunCommandService")
+                append(" --es com.termux.RUN_COMMAND_PATH '$pythonPath'")
+                append(" --esa com.termux.RUN_COMMAND_ARGUMENTS '$argsStr'")
+                append(" --es com.termux.RUN_COMMAND_WORKDIR '$wd'")
+                append(" --es com.termux.RUN_COMMAND_BACKGROUND 'true'")
+                if (stdinFile != null) {
+                    append(" --es com.termux.RUN_COMMAND_STDIN \"\$(cat '$stdinFile')\"")
+                }
+            }
+
+            val result = termuxBridge.execute(amCmd)
+
+            // 清理临时文件
+            if (stdinFile != null) {
+                java.io.File(stdinFile).delete()
+            }
+
+            // am startservice 返回 0 仅表示 intent 已送达，不表示命令执行成功
+            // 我们需要额外的轮询或文件机制来获取结果
+            // 这里只用作诊断，不适合实际生产
+            CommandResult(
+                exitCode = if (result.success) 0 else -1,
+                output = result.output,
+                success = result.success
+            )
+        } catch (e: Exception) {
+            CommandResult(-1, "Shell intent error: ${e.message}", false)
+        }
+    }
+
+    /**
      * 执行用户指令
      *
      * 通过 stable_entry.py 的 stdin/stdout JSONL 协议通信：
@@ -396,15 +632,31 @@ class PythonRuntime(
             val runtimeDir = getRuntimeDir()
             val shellCmd = "cd ${runtimeDir.absolutePath} && $pythonBin stable_entry.py --mode=task"
 
-            val result = if (pythonDiscoveryMethod == "direct") {
-                executePythonWithInput(runtimeDir, command, ::handleOutputLine, { line -> onOutput?.invoke("[err] $line") })
-            } else {
-                termuxBridge.executeWithInput(
-                    command = shellCmd,
-                    input = command,
-                    onLine = { line -> handleOutputLine(line) },
-                    onError = { line -> onOutput?.invoke("[err] $line") }
-                )
+            val result = when (pythonDiscoveryMethod) {
+                "direct" -> {
+                    executePythonWithInput(runtimeDir, command, ::handleOutputLine, { line -> onOutput?.invoke("[err] $line") })
+                }
+                "termux_intent" -> {
+                    // intent 不支持流式输出，批处理：执行后按行解析输出
+                    val intentResult = runViaTermuxIntent(
+                        pythonPath = pythonBin,
+                        args = listOf("stable_entry.py", "--mode=task"),
+                        stdin = command,
+                        workDir = runtimeDir
+                    )
+                    intentResult.output.lines().forEach { line ->
+                        if (line.isNotBlank()) handleOutputLine(line)
+                    }
+                    intentResult
+                }
+                else -> {
+                    termuxBridge.executeWithInput(
+                        command = shellCmd,
+                        input = command,
+                        onLine = { line -> handleOutputLine(line) },
+                        onError = { line -> onOutput?.invoke("[err] $line") }
+                    )
+                }
             }
 
             if (cancelled) {

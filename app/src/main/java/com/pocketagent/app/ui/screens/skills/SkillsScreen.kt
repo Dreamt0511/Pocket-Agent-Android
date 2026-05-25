@@ -16,8 +16,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
@@ -428,19 +430,23 @@ private fun SkillCard(
                     IconButton(onClick = onViewDetail) {
                         Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    if (!skill.isSystem) {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     IconButton(onClick = onExport) {
                         Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onDelete) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "删除",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                    if (!skill.isSystem) {
+                        IconButton(onClick = onDelete) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
@@ -458,12 +464,12 @@ private fun SkillDetailView(
     onDelete: () -> Unit,
     onExport: () -> Unit
 ) {
-    val body = remember(skill) { SkillManager.getContentBody(skill.content) }
+    val body = remember(skill) { reduceHeadings(SkillManager.getContentBody(skill.content)) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(12.dp)
     ) {
         // 顶部栏
         Row(
@@ -476,17 +482,21 @@ private fun SkillDetailView(
                     Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                 }
                 Spacer(Modifier.width(8.dp))
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(
                         text = skill.name,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                     if (skill.description.isNotBlank()) {
                         Text(
                             text = skill.description,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -496,34 +506,36 @@ private fun SkillDetailView(
                 IconButton(onClick = onExport) {
                     Icon(Icons.Default.FileDownload, contentDescription = "导出")
                 }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Default.Edit, contentDescription = "编辑")
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "删除",
-                        tint = MaterialTheme.colorScheme.error
-                    )
+                if (!skill.isSystem) {
+                    IconButton(onClick = onEdit) {
+                        Icon(Icons.Default.Edit, contentDescription = "编辑")
+                    }
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "删除",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
         // 标签
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(
                 onClick = {},
-                label = { Text(skill.category.displayName, fontSize = 11.sp) }
+                label = { Text(skill.category.displayName, fontSize = 10.sp) }
             )
             AssistChip(
                 onClick = {},
-                label = { Text(skill.path, fontSize = 11.sp) }
+                label = { Text(skill.path, fontSize = 10.sp) }
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
         // 内容（Markdown 渲染）
         Surface(
@@ -536,13 +548,14 @@ private fun SkillDetailView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(12.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 if (body.isNotBlank()) {
                     MarkdownText(
                         markdown = body,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        style = TextStyle(fontSize = 13.sp)
                     )
                 } else {
                     Text(
@@ -554,6 +567,18 @@ private fun SkillDetailView(
             }
         }
     }
+}
+
+// ─── 辅助函数 ───────────────────────────────────
+
+/** 将所有 Markdown 标题降级一级（H1→H2, H2→H3…），使渲染尺寸更紧凑 */
+private fun reduceHeadings(markdown: String): String {
+    return markdown
+        .replace(Regex("^##### ", RegexOption.MULTILINE), "  - ")
+        .replace(Regex("^#### ", RegexOption.MULTILINE), "##### ")
+        .replace(Regex("^### ", RegexOption.MULTILINE), "#### ")
+        .replace(Regex("^## ", RegexOption.MULTILINE), "### ")
+        .replace(Regex("^# ", RegexOption.MULTILINE), "## ")
 }
 
 // ─── 新建/编辑对话框 ───────────────────────────
@@ -607,7 +632,7 @@ private fun SkillEditDialog(
                     onValueChange = { content = it; warnings = emptyList() },
                     label = { Text("SKILL.md 内容") },
                     placeholder = {
-                        Text("---\nname: ${if (name.isNotBlank()) name else "技能名称"}\ndescription: 技能描述\n---\n\n## 任务目标\n...\n\n## 执行步骤\n...")
+                        Text("在此输入你希望 AI 执行的指令内容…\n支持 Markdown 格式")
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -616,6 +641,11 @@ private fun SkillEditDialog(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp
                     )
+                )
+                Text(
+                    text = "系统会自动将名称和描述填入 SKILL.md 的 frontmatter，你只需编写正文内容即可",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 )
 
                 // 格式校验警告

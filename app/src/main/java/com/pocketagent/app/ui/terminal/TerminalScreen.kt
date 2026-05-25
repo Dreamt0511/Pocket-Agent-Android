@@ -1,8 +1,7 @@
 package com.pocketagent.app.ui.terminal
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -197,11 +197,7 @@ fun TerminalScreen(navController: NavController) {
     var currentDir by remember { mutableStateOf("~") }
     val session = remember { ShellSession() }
 
-    // 双指缩放状态
     var terminalFontSize by remember { mutableFloatStateOf(13f) }
-    val transformableState = rememberTransformableState { zoomChange, _, _ ->
-        terminalFontSize = (terminalFontSize * zoomChange).coerceIn(8f, 32f)
-    }
     val context = androidx.compose.ui.platform.LocalContext.current
     // 启动 Shell 会话
     LaunchedEffect(Unit) {
@@ -257,85 +253,97 @@ fun TerminalScreen(navController: NavController) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text("终端")
-                        if (sessionReady) {
-                            Text(
-                                text = currentDir,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF1A1D23),
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Text("←")
-                    }
-                },
-                actions = {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(
-                                color = when {
-                                    isExecuting -> Color(0xFFFFD700)
-                                    sessionReady -> Color(0xFF4CAF50)
-                                    else -> Color(0xFFF44336)
-                                },
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = when {
-                            !sessionReady -> "启动中..."
-                            isExecuting -> "执行中"
-                            else -> "sh"
-                        },
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                    Spacer(Modifier.width(12.dp))
-
-                    TextButton(onClick = {
-                        terminalLines = listOf(
-                            TerminalLine("Pocket Agent · 终端", TerminalLineType.INFO),
-                            TerminalLine("  $currentDir", TerminalLineType.INFO),
-                            TerminalLine("", TerminalLineType.EMPTY),
-                        )
-                    }) {
-                        Text("清屏", fontSize = 12.sp)
-                    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, _, zoom, _ ->
+                    terminalFontSize = (terminalFontSize * zoom).coerceIn(8f, 32f)
                 }
-            )
-        },
-        bottomBar = {
-            TerminalInputBar(
-                inputText = inputText,
-                onInputChange = { inputText = it },
-                onExecute = { executeCommand(inputText) },
-                enabled = sessionReady && !isExecuting
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
+            }
+    ) {
+        Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .background(terminalBg)
-                .padding(paddingValues)
-                .transformable(state = transformableState),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            items(terminalLines) { line ->
-                TerminalLineView(line, fontSize = terminalFontSize)
+                .imePadding(),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("终端")
+                            if (sessionReady) {
+                                Text(
+                                    text = currentDir,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF1A1D23),
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Text("←")
+                        }
+                    },
+                    actions = {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    color = when {
+                                        isExecuting -> Color(0xFFFFD700)
+                                        sessionReady -> Color(0xFF4CAF50)
+                                        else -> Color(0xFFF44336)
+                                    },
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                !sessionReady -> "启动中..."
+                                isExecuting -> "执行中"
+                                else -> "sh"
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                        Spacer(Modifier.width(12.dp))
+
+                        TextButton(onClick = {
+                            terminalLines = listOf(
+                                TerminalLine("Pocket Agent · 终端", TerminalLineType.INFO),
+                                TerminalLine("  $currentDir", TerminalLineType.INFO),
+                                TerminalLine("", TerminalLineType.EMPTY),
+                            )
+                        }) {
+                            Text("清屏", fontSize = 12.sp)
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                TerminalInputBar(
+                    inputText = inputText,
+                    onInputChange = { inputText = it },
+                    onExecute = { executeCommand(inputText) },
+                    enabled = sessionReady && !isExecuting
+                )
+            }
+        ) { paddingValues ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(terminalBg)
+                    .padding(paddingValues),
+                state = listState,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                items(terminalLines) { line ->
+                    TerminalLineView(line, fontSize = terminalFontSize)
+                }
             }
         }
     }
