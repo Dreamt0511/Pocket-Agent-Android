@@ -27,8 +27,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.pocketagent.app.data.SettingsRepository
+import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
+import com.pocketagent.app.update.BundledPythonManager
+import com.pocketagent.app.update.PythonDependencyManager
+import kotlinx.coroutines.launch
 
 private data class NavEntry(
     val title: String,
@@ -49,6 +54,24 @@ private val navEntries = listOf(
 @Composable
 fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
+    val settings by settingsRepo.settingsFlow.collectAsState(null)
+    val depsReady = remember { mutableStateOf(false) }
+    val setupState by PythonDependencyManager.setupState.collectAsState()
+    val isPythonReady = remember { mutableStateOf(false) }
+
+    // 初始检查依赖状态
+    LaunchedEffect(Unit) {
+        isPythonReady.value = BundledPythonManager.isReady(context)
+        if (isPythonReady.value) {
+            val pyBin = BundledPythonManager.findPythonBinary(context)
+            if (pyBin != null) {
+                depsReady.value = PythonDependencyManager.checkReady(context, pyBin)
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // ─── 液态玻璃动态背景 ───
         AnimatedBackground(
@@ -128,7 +151,31 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(24.dp))
+
+            // ─── 环境配置卡片（依赖未安装时显示） ───
+            val showSetupCard = isPythonReady.value && !depsReady.value
+            if (showSetupCard) {
+                AnimatedStaggeredItem(delayMs = 80) {
+                    SetupDependenciesCard(
+                        setupState = setupState,
+                        onStartSetup = {
+                            val pyBin = BundledPythonManager.findPythonBinary(context)
+                            val repoPath = settings?.repoPath
+                            if (pyBin != null && repoPath != null) {
+                                scope.launch {
+                                    PythonDependencyManager.installDependencies(
+                                        context, pyBin, repoPath
+                                    )
+                                    depsReady.value = PythonDependencyManager.checkReady(context, pyBin)
+                                }
+                            }
+                        },
+                        onRetry = { PythonDependencyManager.resetState() }
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            }
 
             // ─── 导航项列表（错峰入场） ───
             navEntries.forEachIndexed { index, entry ->
@@ -289,5 +336,111 @@ private fun perimeterPosToPoint(pos: Float, w: Float, h: Float): Offset {
         pos < right -> Offset(w, pos - top)                   // 右边 ↓
         pos < bottom -> Offset(w - (pos - right), h)          // 下边 ←
         else -> Offset(0f, h - (pos - bottom))                // 左边 ↑
+    }
+}
+
+// ─── 环境配置卡片 ────────────────────────────────
+
+@Composable
+private fun SetupDependenciesCard(
+    setupState: PythonDependencyManager.SetupState,
+    onStartSetup: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val isInstalling = setupState !is PythonDependencyManager.SetupState.Idle &&
+            setupState !is PythonDependencyManager.SetupState.Completed &&
+            setupState !is PythonDependencyManager.SetupState.Failed
+
+    GlassCard(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (setupState) {
+                        is PythonDependencyManager.SetupState.Completed -> {
+                            Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                        }
+                        is PythonDependencyManager.SetupState.Failed -> {
+                            Text("✗", color = Color(0xFFE53935), fontWeight = FontWeight.Bold)
+                        }
+                        else -> {
+                            if (isInstalling) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = when (setupState) {
+                            is PythonDependencyManager.SetupState.Idle -> "环境配置"
+                            is PythonDependencyManager.SetupState.EnsuringPip -> "准备 pip..."
+                            is PythonDependencyManager.SetupState.Installing -> "安装 ${setupState.package}"
+                            is PythonDependencyManager.SetupState.Completed -> "环境就绪"
+                            is PythonDependencyManager.SetupState.Failed -> "配置失败"
+                        },
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = when (setupState) {
+                            is PythonDependencyManager.SetupState.Idle -> "安装 Python 依赖包后才能使用 Agent"
+                            is PythonDependencyManager.SetupState.EnsuringPip -> "正在自举 pip..."
+                            is PythonDependencyManager.SetupState.Installing -> "正在从 PyPI 下载并安装..."
+                            is PythonDependencyManager.SetupState.Completed -> "所有依赖已就绪，可以开始使用"
+                            is PythonDependencyManager.SetupState.Failed -> setupState.error
+                        },
+                        fontSize = 11.5.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            // 操作按钮
+            when (setupState) {
+                is PythonDependencyManager.SetupState.Idle -> {
+                    Button(
+                        onClick = onStartSetup,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("开始配置")
+                    }
+                }
+                is PythonDependencyManager.SetupState.Failed -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onRetry,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("重试")
+                        }
+                    }
+                }
+                else -> {} // 安装中或已完成，不显示按钮
+            }
+        }
     }
 }

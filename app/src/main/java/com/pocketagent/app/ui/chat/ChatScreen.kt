@@ -58,6 +58,7 @@ fun ChatScreen(navController: NavController) {
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
                 title = { Text("执行任务") },

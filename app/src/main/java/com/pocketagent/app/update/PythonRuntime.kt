@@ -447,6 +447,13 @@ class PythonRuntime(
         env["HOME"] = pythonDir.absolutePath
         env["PATH"] = "$libDir:$pythonDir/bin:/system/bin:/system/xbin"
         env["TMPDIR"] = "/data/local/tmp"
+        // 添加 site-packages（pip 安装的第三方包）
+        val sitePackages = PythonDependencyManager.getSitePackagesDir(context)
+        if (sitePackages.exists()) {
+            val existing = env["PYTHONPATH"]
+            env["PYTHONPATH"] = if (existing != null) "$existing:${sitePackages.absolutePath}"
+                                 else sitePackages.absolutePath
+        }
     }
 
     /**
