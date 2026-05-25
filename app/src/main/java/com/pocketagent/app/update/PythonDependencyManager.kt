@@ -111,19 +111,35 @@ object PythonDependencyManager {
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
             }
 
-            // Step 1: 通过 bootstrap() API 安装 pip/setuptools
-            // ensurepip 标准模块自带 pip 和 setuptools wheel，bootstrap() 方法更可靠
+            // Step 1: 自举 pip + setuptools
+            // bootstrap(root=...) 将 pip 安装到 PYTHONHOME 下的标准 site-packages
+            // 这样后续 -m pip 能找到，但实际包用 --target 装到外部 site-packages
             Log.i(TAG, "Step 1: bootstrap pip")
+            val bootstrapCode = """
+import ensurepip, sys
+sys.stdout.write("ensurepip version: " + ensurepip.version() + "\n")
+ensurepip.bootstrap(root="${pythonDir.absolutePath}")
+sys.stdout.write("pip bootstrap done\n")
+            """.trimIndent()
             val pipBootstrapResult = runPython(context, pythonBin, baseEnv,
-                listOf("-c", "import ensurepip; ensurepip.bootstrap()")
+                listOf("-c", bootstrapCode)
             )
-            if (pipBootstrapResult.success) {
-                Log.i(TAG, "pip bootstrap 成功")
-            } else if (pipBootstrapResult.output.contains("No module named ensurepip")) {
-                Log.w(TAG, "ensurepip 模块不可用: ${pipBootstrapResult.output.take(200)}")
-            } else {
-                Log.w(TAG, "pip bootstrap 返回值异常: ${pipBootstrapResult.output.take(200)}")
+            Log.i(TAG, "pip bootstrap exit=${pipBootstrapResult.success}: ${pipBootstrapResult.output.take(500)}")
+            if (!pipBootstrapResult.success) {
+                Log.e(TAG, "pip bootstrap 失败: ${pipBootstrapResult.output}")
             }
+
+            // 验证 pip 现在可用
+            val pipCheck = runPython(context, pythonBin, baseEnv,
+                listOf("-m", "pip", "--version")
+            )
+            if (!pipCheck.success) {
+                val msg = "pip 安装失败: ${pipCheck.output.take(200)}"
+                Log.e(TAG, msg)
+                _setupState.value = SetupState.Failed(msg)
+                return@withContext false
+            }
+            Log.i(TAG, "pip 就绪: ${pipCheck.output.take(200)}")
 
             // Step 2: 检查 requirements.txt
             if (!reqFile.exists()) {
