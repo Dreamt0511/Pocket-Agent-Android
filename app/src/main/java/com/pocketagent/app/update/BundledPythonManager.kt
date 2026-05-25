@@ -6,6 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileWriter
+import java.io.BufferedReader
+import java.io.FileReader
 
 /**
  * 内置 Python 管理器 — 从 APK assets 解压 Python 运行时到应用私有目录
@@ -28,6 +31,7 @@ object BundledPythonManager {
     private const val TAG = "BundledPython"
     private const val ASSET_ROOT = "python"
     private const val PYTHON_DIR_NAME = "python"
+    private const val EXTRACTED_VERSION_FILE = ".extracted_version"
 
     // ─── 公开方法 ─────────────────────────────────
 
@@ -39,17 +43,38 @@ object BundledPythonManager {
     }
 
     /**
-     * 确保 Python 已解压就绪。
+     * 确保 Python 已解压就绪，版本变化时自动重新解压。
      *
-     * 已解压则直接返回 true；否则执行解压流程。
+     * 策略：
+     * - 首次安装：直接解压
+     * - 已解压且版本一致：跳过
+     * - APK 升级（versionCode 增加）：删除旧文件，重新解压
+     *
      * 必须在 IO 线程调用（内部已切到 Dispatchers.IO）。
      */
     suspend fun ensureExtracted(context: Context): Boolean = withContext(Dispatchers.IO) {
-        if (isReady(context)) {
-            Log.i(TAG, "Python 已在 ${getPythonDir(context).absolutePath} 就绪")
+        val pythonDir = getPythonDir(context)
+        val currentVersion = getAppVersionCode(context)
+        val extractedVersion = getExtractedVersion(pythonDir)
+
+        if (isReady(context) && currentVersion == extractedVersion) {
+            Log.i(TAG, "Python 就绪 (version=$currentVersion)")
             return@withContext true
         }
-        extract(context)
+
+        // APK 升级或文件不完整 → 清理旧数据并重新解压
+        if (pythonDir.exists()) {
+            Log.i(TAG, "APK 版本变化 ($extractedVersion → $currentVersion) 或文件不完整，重新解压")
+            pythonDir.deleteRecursively()
+        }
+
+        val ok = extract(context)
+        if (ok) {
+            // 记录解压版本
+            pythonDir.mkdirs()
+            File(pythonDir, EXTRACTED_VERSION_FILE).writeText(currentVersion.toString())
+        }
+        ok
     }
 
     /**
@@ -171,6 +196,34 @@ object BundledPythonManager {
         // libandroid-support.so 是 Python 二进制链接时必需的依赖库
         val libas = File(getPythonDir(context), "lib/libandroid-support.so")
         return libas.exists()
+    }
+
+    // ─── 版本管理 ─────────────────────────────────
+
+    /**
+     * 获取当前 APK 的 versionCode。
+     */
+    private fun getAppVersionCode(context: Context): Int {
+        return try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+        } catch (e: Exception) {
+            Log.w(TAG, "获取 versionCode 失败: ${e.message}")
+            0
+        }
+    }
+
+    /**
+     * 读取上次成功解压时记录的 APK 版本号。
+     * 返回 null 表示从未解压过或记录文件丢失。
+     */
+    private fun getExtractedVersion(pythonDir: File): Int? {
+        val versionFile = File(pythonDir, EXTRACTED_VERSION_FILE)
+        if (!versionFile.exists()) return null
+        return try {
+            versionFile.readText().trim().toIntOrNull()
+        } catch (e: Exception) {
+            null
+        }
     }
 
     // ─── 内部方法 ─────────────────────────────────

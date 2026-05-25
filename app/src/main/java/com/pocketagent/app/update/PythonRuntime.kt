@@ -178,25 +178,14 @@ class PythonRuntime(
     private suspend fun discoverPython(): String? {
         diagLog.clear()
 
-        // 0. 内置 Python（优先使用）
-        if (BundledPythonManager.isReady(context)) {
+        // 0. 内置 Python（优先使用，ensureExtracted 会自动处理版本更新重新解压）
+        if (BundledPythonManager.ensureExtracted(context)) {
             val bundledPy = BundledPythonManager.findPythonBinary(context)
             if (bundledPy != null) {
                 isFallbackMode = false
                 pythonDiscoveryMethod = "bundled"
                 diagLog.add("✅ 内置 Python: $bundledPy")
                 Log.i(TAG, "Using bundled Python: $bundledPy")
-                return bundledPy
-            }
-        }
-        // 没有内置 Python 时，尝试解压（安装后首次运行）
-        if (BundledPythonManager.ensureExtracted(context)) {
-            val bundledPy = BundledPythonManager.findPythonBinary(context)
-            if (bundledPy != null) {
-                isFallbackMode = false
-                pythonDiscoveryMethod = "bundled"
-                diagLog.add("✅ 内置 Python（首次解压）: $bundledPy")
-                Log.i(TAG, "Using bundled Python (extracted): $bundledPy")
                 return bundledPy
             }
         }
