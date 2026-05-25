@@ -16,8 +16,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AppBootstrapper
@@ -343,52 +341,6 @@ fun ConfigScreen(navController: NavController) {
                         else -> {}
                     }
 
-                    // ── Termux RUN_COMMAND 权限 ──
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-                    var termuxPermGranted by remember { mutableStateOf(false) }
-                    fun checkTermuxPerm() {
-                        termuxPermGranted = try {
-                            context.packageManager.checkPermission(
-                                "com.termux.permission.RUN_COMMAND",
-                                context.packageName
-                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        } catch (_: Exception) { false }
-                    }
-                    LaunchedEffect(Unit) { checkTermuxPerm() }
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Termux RUN_COMMAND", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        Text(
-                            when {
-                                getTermuxVersion(context) == null -> "Termux 未安装"
-                                termuxPermGranted -> "✔ 已授权"
-                                else -> "未授权"
-                            },
-                            fontSize = 12.sp,
-                            color = when {
-                                getTermuxVersion(context) == null -> Color(0xFF9CA3AF)
-                                termuxPermGranted -> Color(0xFF16A34A)
-                                else -> Color(0xFFDC2626)
-                            }
-                        )
-                    }
-                    if (getTermuxVersion(context) != null && !termuxPermGranted) {
-                        Spacer(Modifier.height(6.dp))
-                        val permLauncher = rememberLauncherForActivityResult(
-                            contract = ActivityResultContracts.RequestPermission()
-                        ) { _ -> checkTermuxPerm() }
-                        Button(
-                            onClick = { permLauncher.launch("com.termux.permission.RUN_COMMAND") },
-                            modifier = Modifier.fillMaxWidth().height(36.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("授权 Termux 命令执行权限", fontSize = 13.sp)
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "提示：部分 ROM 需要手动授权。如果授权后仍失败，请卸载重装 Pocket Agent。",
-                            fontSize = 11.sp, color = Color(0xFF9CA3AF)
-                        )
-                    }
                 }
 
                 // ===== 高级设置（折叠）=====
@@ -694,10 +646,3 @@ private fun ConfigScreenDarkPreview() {
     }
 }
 
-/** 检查 Termux 版本（用于 ConfigScreen 权限状态显示） */
-private fun getTermuxVersion(context: android.content.Context): String? {
-    return try {
-        val pkgInfo = context.packageManager.getPackageInfo("com.termux", 0)
-        pkgInfo.versionName
-    } catch (_: Exception) { null }
-}
