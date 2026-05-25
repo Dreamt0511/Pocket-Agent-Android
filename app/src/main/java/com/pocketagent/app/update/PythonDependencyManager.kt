@@ -107,6 +107,8 @@ object PythonDependencyManager {
                 put("HOME", pythonDir.absolutePath)
                 put("PATH", "${File(pythonDir, "bin")}:/system/bin:/system/xbin")
                 put("TMPDIR", "/data/local/tmp")
+                // 指向 Android 系统 CA 证书，否则 Termux Python 的 SSL 找不到证书
+                put("SSL_CERT_DIR", "/system/etc/security/cacerts")
             }
 
             // Step 1: ensurepip（如果已安装会报错，忽略）
@@ -136,6 +138,8 @@ object PythonDependencyManager {
                 .map { it.split(Regex("[>=<\\[;]")).first().trim() }
                 .filter { it.isNotBlank() }
 
+            var firstError: String? = null
+
             for (pkg in packages) {
                 _setupState.value = SetupState.Installing(pkg)
                 Log.i(TAG, "安装: $pkg")
@@ -143,25 +147,29 @@ object PythonDependencyManager {
                 val pipArgs = listOf(
                     "-m", "pip", "install",
                     "--target", sitePackages.absolutePath,
+                    "--trusted-host", "pypi.org",
+                    "--trusted-host", "files.pythonhosted.org",
                     "--only-binary", ":all:",
                     "--no-input",
                     pkg
                 )
                 val result = runPython(context, pythonBin, baseEnv, pipArgs)
                 if (!result.success) {
-                    // 有些包可能没有 wheel（二进制），尝试不带 --only-binary
                     Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output.take(200)}")
                     val fallbackArgs = listOf(
                         "-m", "pip", "install",
                         "--target", sitePackages.absolutePath,
+                        "--trusted-host", "pypi.org",
+                        "--trusted-host", "files.pythonhosted.org",
                         "--no-input",
                         pkg
                     )
                     val fallbackResult = runPython(context, pythonBin, baseEnv, fallbackArgs)
                     if (!fallbackResult.success) {
-                        val msg = "安装 $pkg 失败: ${fallbackResult.output.take(200)}"
-                        Log.e(TAG, msg)
-                        // 不中断，继续安装其他包
+                        if (firstError == null) {
+                            firstError = "${pkg}: ${fallbackResult.output.take(200)}"
+                        }
+                        Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output.take(200)}")
                     }
                 }
             }
@@ -170,7 +178,11 @@ object PythonDependencyManager {
             _setupState.value = SetupState.Installing("验证中...")
             val ready = checkReady(context)
             if (!ready) {
-                val msg = "依赖验证失败：site-packages 中没有已安装的包"
+                val msg = if (firstError != null) {
+                    "安装失败: $firstError"
+                } else {
+                    "依赖验证失败: site-packages 中没有已安装的包"
+                }
                 Log.e(TAG, msg)
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false
