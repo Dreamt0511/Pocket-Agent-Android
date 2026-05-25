@@ -11,7 +11,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.BufferedReader
 import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
@@ -264,14 +263,13 @@ sys.stdout.write("pip bootstrap done\n")
     /**
      * 确保所有 Termux 依赖共享库就绪。
      *
-     * 流程：
-     * 1. 运行 canary 测试（import zlib — 基础 C 扩展）
-     * 2. 若失败，先尝试从 APK assets 复制缺失的 .so
-     * 3. 若仍然失败，从错误信息解析缺失的库名，从 Termux 仓库下载对应 .deb 并提取
-     * 4. 最终验证
+     * Termux 依赖库不打包在 APK 中（减小体积），首次环境配置时
+     * 自动从 Termux 仓库批量下载缺失的 .so 文件。
      *
-     * 这是 CI 打包之外的第二层保障。即使 assets 中没有对应 .so 文件
-     * （如本地调试构建），也能自动修复。
+     * 流程：
+     * 1. 扫描 libDir 找出缺失的 soname
+     * 2. 按 deb URL 去重，批量下载并提取
+     * 3. canary 测试（import zlib）验证
      */
     private suspend fun ensureTermuxLibraries(
         context: Context,
@@ -281,41 +279,48 @@ sys.stdout.write("pip bootstrap done\n")
         Log.i(TAG, "自愈检查: Termux 依赖库...")
         val libDir = File(BundledPythonManager.getPythonDir(context), "lib")
 
-        // Step 1: canary 测试
+        // Step 1: canary 测试（先快速检查，已安装则跳过）
         if (runCanaryTest(pythonBin, baseEnv, 2)) {
             Log.i(TAG, "自愈: 依赖库完整")
             return@withContext true
         }
 
-        // Step 2: 先尝试从 APK assets 同步 .so 文件（覆盖 extract() 遗漏的情况）
-        Log.w(TAG, "自愈: canary 失败，尝试从 assets 同步...")
-        var synced = syncSoFromAssets(context, libDir)
-        if (synced && runCanaryTest(pythonBin, baseEnv, 1)) {
-            Log.i(TAG, "自愈: 从 assets 同步后恢复正常")
-            return@withContext true
+        // Step 2: 找出缺失的 soname，按 deb URL 去重
+        val missingUrls = TERMUX_DEB_URLS
+            .filter { (soname, _) -> !File(libDir, soname).exists() }
+            .map { (_, url) -> url }
+            .distinct()
+
+        if (missingUrls.isEmpty()) {
+            Log.w(TAG, "自愈: 文件都存在但 canary 失败，可能另有原因")
+            return@withContext false
         }
 
-        // Step 3: 从 dlopen 错误中解析缺失的库名，下载对应的 Termux .deb
-        val errorOutput = collectCanaryError(pythonBin, baseEnv)
-        val missingLib = parseMissingLibrary(errorOutput)
+        // Step 3: 分批下载并提取
+        var successCount = 0
+        for ((index, url) in missingUrls.withIndex()) {
+            val libName = url.substringAfterLast('/').substringBeforeLast('_')
+            _setupState.value = SetupState.Installing("下载依赖库 (${index + 1}/${missingUrls.size}) $libName...")
+            Log.i(TAG, "自愈: 下载 (${index + 1}/${missingUrls.size}) $url")
 
-        if (missingLib != null) {
-            Log.w(TAG, "自愈: 检测到缺失库 [$missingLib]，从 Termux 仓库下载...")
-            _setupState.value = SetupState.Installing("下载依赖库 $missingLib...")
-            val downloaded = downloadAndExtractDeb(context, missingLib, libDir)
-            if (downloaded) {
-                // 可能一个 deb 包含多个 .so（如 openssl → libssl.so.3+libcrypto.so.3）
-                // 重新同步 assets（覆盖其他可能缺失的库）
-                syncSoFromAssets(context, libDir)
-                if (runCanaryTest(pythonBin, baseEnv, 1)) {
-                    Log.i(TAG, "自愈: 下载 $missingLib 后恢复正常")
-                    return@withContext true
-                }
+            if (downloadAndExtractDeb(url, libDir)) {
+                successCount++
+            } else {
+                Log.w(TAG, "自愈: 下载失败 $url")
             }
         }
 
-        Log.w(TAG, "自愈: 未完全修复，pip 安装可能失败")
-        false
+        Log.i(TAG, "自愈: 下载 $successCount/${missingUrls.size} 个 deb 包")
+
+        // Step 4: 最终验证
+        if (runCanaryTest(pythonBin, baseEnv, 1)) {
+            Log.i(TAG, "自愈: 验证通过")
+            true
+        } else {
+            val remaining = TERMUX_DEB_URLS.keys.filter { !File(libDir, it).exists() }
+            Log.w(TAG, "自愈: 验证失败，仍有缺失: $remaining")
+            false
+        }
     }
 
     /** canary 测试：import zlib（最基础的 C 扩展模块） */
@@ -332,63 +337,17 @@ sys.stdout.write("pip bootstrap done\n")
         return false
     }
 
-    /** 获取 canary 失败的完整错误输出 */
-    private fun collectCanaryError(
-        pythonBin: String,
-        baseEnv: Map<String, String>
-    ): String {
-        val result = tryExec(pythonBin, listOf("-c", "import zlib"), baseEnv)
-        return result.output
-    }
-
-    /** 从 dlopen 错误中解析缺失的共享库名 */
-    private fun parseMissingLibrary(error: String): String? {
-        val regex = Regex("""library "([^"]+)" not found""")
-        return regex.find(error)?.groupValues?.get(1)
-    }
-
     /**
-     * 从 APK assets 中复制缺失的 .so 文件到 lib 目录。
-     * 这是 BundledPythonManager.extract() 的补充保障。
-     */
-    private fun syncSoFromAssets(context: Context, libDir: File): Boolean {
-        return try {
-            val assetPath = "python/lib"
-            val entries = context.assets.list(assetPath) ?: return false
-            var copied = false
-            for (entry in entries) {
-                if (entry == "python3.13") continue
-                if (!entry.contains(".so")) continue
-                val destFile = File(libDir, entry)
-                if (destFile.exists()) continue
-                // 从 assets 复制到 libDir
-                context.assets.open("$assetPath/$entry").use { input ->
-                    FileOutputStream(destFile).use { output -> input.copyTo(output) }
-                }
-                copied = true
-                Log.i(TAG, "自愈: 从 assets 复制 $entry")
-            }
-            copied
-        } catch (e: Exception) {
-            Log.e(TAG, "自愈: 从 assets 同步失败: ${e.message}")
-            false
-        }
-    }
-
-    /**
-     * 从 Termux 仓库下载 .deb 并提取 .so 文件。
+     * 从 Termux 仓库下载 .deb 并提取 .so 文件到 libDir。
      *
      * 使用纯 Kotlin 解析 ar 归档，通过系统 tar 命令提取 .tar.xz。
      * Android 10+ (API 29) 的 toybox 内置 xzcat，可直接处理。
      */
     private fun downloadAndExtractDeb(
-        context: Context,
-        soname: String,
+        debUrl: String,
         libDir: File
     ): Boolean {
-        val debUrl = TERMUX_DEB_URLS[soname] ?: return false
-
-        val tmpDir = File(context.cacheDir, "termux_deb_${System.nanoTime()}")
+        val tmpDir = File(libDir, ".termux_deb_${System.nanoTime()}")
         tmpDir.mkdirs()
 
         try {

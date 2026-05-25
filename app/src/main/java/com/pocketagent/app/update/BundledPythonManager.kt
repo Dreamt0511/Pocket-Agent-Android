@@ -84,8 +84,10 @@ object BundledPythonManager {
      * 1. bin/python3.13              — Python 解释器
      * 2. lib/libpython3.13.so        — Python 共享库
      * 3. lib/libandroid-support.so   — Python 的 Termux 依赖库
-     * 4. lib/libz.so.1 等 .so 文件   — Termux 依赖共享库（Python C 扩展链接需要）
-     * 5. lib/python3.13/             — Python 标准库（递归）
+     * 4. lib/python3.13/             — Python 标准库（递归）
+     *
+     * 注：Termux 依赖共享库（libz.so.1 等）首次环境配置时自动下载，
+     * 不在 APK assets 中，因此不在本方法中复制。
      *
      * assets 中的符号链接无法通过 APK 打包保留，因此只复制实际文件。
      * 标记文件 (bin/python, bin/python3) 会被跳过。
@@ -119,22 +121,6 @@ object BundledPythonManager {
                 File(pythonDir, "lib/libandroid-support.so")
             )
             Log.i(TAG, "lib/libandroid-support.so 已复制")
-
-            // 复制 Termux 依赖共享库（libz.so.1, libssl.so.3 等，Python C 扩展链接需要）
-            val libEntries = context.assets.list("$ASSET_ROOT/lib") ?: emptyArray()
-            for (entry in libEntries) {
-                // python3.13/ 是标准库目录，由下面的 copyAssetDir 递归处理
-                if (entry == "python3.13") continue
-                // 只复制 .so 文件（含版本后缀如 libz.so.1、libssl.so.3）
-                if (entry.contains(".so")) {
-                    copyAssetToFile(
-                        context,
-                        "$ASSET_ROOT/lib/$entry",
-                        File(pythonDir, "lib/$entry")
-                    )
-                }
-            }
-            Log.i(TAG, "Termux 依赖共享库已复制")
 
             // 递归复制 Python 标准库
             copyAssetDir(
@@ -213,8 +199,9 @@ object BundledPythonManager {
      * - libandroid-support.so 存在（Termux Python 的必需依赖）
      * - pip/_internal/__init__.py 存在（验证 _ 前缀目录未被 AAPT2 过滤，
      *   旧版 APK 因 <dir>_* 默认规则导致 pip/_internal/ 目录丢失）
-     * - libz.so.1 存在（验证 Termux 依赖共享库已解压，
-     *   否则 Python C 扩展 import zlib 会 dlopen 失败）
+     *
+     * 注：Termux 依赖共享库（libz.so.1 等）在首次环境配置时自动下载，
+     * 不在 APK assets 中，不予检查。
      *
      * 任何条件不满足都触发重新解压。
      */
@@ -226,9 +213,6 @@ object BundledPythonManager {
         // 验证 _ 前缀目录未被过滤：pip/_internal/ 是 AAPT2 <dir>_* 规则的受害者
         val pipInternal = File(getPythonDir(context), "lib/python3.13/site-packages/pip/_internal/__init__.py")
         if (!pipInternal.exists()) return false
-        // 验证 Termux 依赖共享库已解压（任选一个代表性文件）
-        val libz = File(getPythonDir(context), "lib/libz.so.1")
-        if (!libz.exists()) return false
         return true
     }
 
