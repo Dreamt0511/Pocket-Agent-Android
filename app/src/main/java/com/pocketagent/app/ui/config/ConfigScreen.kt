@@ -425,7 +425,7 @@ fun ConfigScreen(navController: NavController) {
                 // ===== 主仓库路径 =====
                 SectionCard(title = "主仓库路径") {
                     Text(
-                        "用于"环境配置"安装 Python 依赖，会读取该目录下的 requirements.txt",
+                        "用于[环境配置]安装 Python 依赖，会读取该目录下的 requirements.txt",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         modifier = Modifier.padding(bottom = 8.dp)

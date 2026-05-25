@@ -32,11 +32,11 @@ object PythonDependencyManager {
         /** 正在自举 pip */
         object EnsuringPip : SetupState()
         /** 正在安装依赖（显示当前包名） */
-        data class Installing(val package: String) : SetupState()
+        class Installing(val package: String) : SetupState()
         /** 全部完成 */
-        data class Completed(val timestamp: Long) : SetupState()
+        class Completed(val timestamp: Long) : SetupState()
         /** 失败 */
-        data class Failed(val error: String) : SetupState()
+        class Failed(val error: String) : SetupState()
     }
 
     private val _setupState = MutableStateFlow<SetupState>(SetupState.Idle)
