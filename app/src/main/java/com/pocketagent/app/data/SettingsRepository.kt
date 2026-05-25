@@ -18,8 +18,7 @@ data class Settings(
     val llmMaxTokens: Int = 8000,
     val mcpServerUrl: String = "http://127.0.0.1:7474/mcp",
     val autoUpdate: Boolean = true,
-    val showStatus: Boolean = true,
-    val repoPath: String = "/storage/emulated/0/手机agent开发/Pocket-Agent"
+    val showStatus: Boolean = true
 )
 
 class SettingsRepository(
@@ -34,7 +33,6 @@ class SettingsRepository(
         private val MCP_SERVER_URL = stringPreferencesKey("mcp_server_url")
         private val AUTO_UPDATE = booleanPreferencesKey("auto_update")
         private val SHOW_STATUS = booleanPreferencesKey("show_status")
-        private val REPO_PATH = stringPreferencesKey("repo_path")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -47,8 +45,7 @@ class SettingsRepository(
                 llmMaxTokens = preferences[LLM_MAX_TOKENS] ?: 8000,
                 mcpServerUrl = preferences[MCP_SERVER_URL] ?: "http://127.0.0.1:7474/mcp",
                 autoUpdate = preferences[AUTO_UPDATE] ?: true,
-                showStatus = preferences[SHOW_STATUS] ?: true,
-                repoPath = preferences[REPO_PATH] ?: "/storage/emulated/0/手机agent开发/Pocket-Agent"
+                showStatus = preferences[SHOW_STATUS] ?: true
             )
         }
 
@@ -66,7 +63,6 @@ class SettingsRepository(
             preferences[MCP_SERVER_URL] = settings.mcpServerUrl
             preferences[AUTO_UPDATE] = settings.autoUpdate
             preferences[SHOW_STATUS] = settings.showStatus
-            preferences[REPO_PATH] = settings.repoPath
         }
     }
 }

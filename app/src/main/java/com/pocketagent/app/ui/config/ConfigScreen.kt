@@ -86,8 +86,7 @@ fun ConfigScreen(navController: NavController) {
                                 llmModel = map["LLM_MODEL"] ?: "",
                                 llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
                                 llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
-                                mcpServerUrl = map["MCP_SERVER_URL"] ?: "",
-                                repoPath = map["REPO_PATH"] ?: "/storage/emulated/0/手机agent开发/Pocket-Agent"
+                                mcpServerUrl = map["MCP_SERVER_URL"] ?: ""
                             )
                         )
                     } catch (_: Exception) {}
@@ -420,22 +419,6 @@ fun ConfigScreen(navController: NavController) {
                         Text(it, fontSize = 12.sp,
                             modifier = Modifier.padding(top = 4.dp))
                     }
-                }
-
-                // ===== 主仓库路径 =====
-                SectionCard(title = "主仓库路径") {
-                    Text(
-                        "用于[环境配置]安装 Python 依赖，会读取该目录下的 requirements.txt",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    ConfigField(
-                        label = "本地路径",
-                        value = configMap["REPO_PATH"] ?: "/storage/emulated/0/手机agent开发/Pocket-Agent",
-                        placeholder = "/storage/emulated/0/...",
-                        onValueChange = { configMap = configMap + ("REPO_PATH" to it) }
-                    )
                 }
 
                 // ===== 安全卸载 =====

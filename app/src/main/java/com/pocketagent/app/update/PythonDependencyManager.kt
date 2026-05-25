@@ -2,6 +2,7 @@ package com.pocketagent.app.update
 
 import android.content.Context
 import android.util.Log
+import com.pocketagent.app.update.CodeSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -87,22 +88,35 @@ object PythonDependencyManager {
      *
      * 流程：
      * 1. 自举 pip（python3 -m ensurepip）
-     * 2. 从主仓库读取 requirements.txt
+     * 2. 从已同步的代码仓库读取 requirements.txt
      * 3. pip install --target site-packages
      * 4. 验证 import dotenv 可用
+     *
+     * 注意：依赖安装前必须先通过 CodeSyncManager 完成代码同步，
+     * 否则运行时目录下没有 requirements.txt 会失败。
      */
     suspend fun installDependencies(
         context: Context,
-        pythonBin: String,
-        repoPath: String
+        pythonBin: String
     ): Boolean = withContext(Dispatchers.IO) {
         _setupState.value = SetupState.EnsuringPip
-        Log.i(TAG, "开始安装依赖，repoPath=$repoPath")
+        Log.i(TAG, "开始安装依赖")
 
         try {
             val pythonDir = BundledPythonManager.getPythonDir(context)
             val sitePackages = getSitePackagesDir(context)
             sitePackages.mkdirs()
+
+            // 获取已同步的代码目录（需要先完成代码同步）
+            val runtimeDir = try {
+                CodeSyncManager.getInstance().getRuntimeDir()
+            } catch (_: IllegalStateException) {
+                val msg = "代码同步引擎未初始化，请先返回首页等待同步完成"
+                Log.e(TAG, msg)
+                _setupState.value = SetupState.Failed(msg)
+                return@withContext false
+            }
+            val reqFile = File(runtimeDir, "requirements.txt")
 
             // 构建基础环境变量
             val baseEnv = mutableMapOf<String, String>().apply {
@@ -119,14 +133,12 @@ object PythonDependencyManager {
                 listOf("-m", "ensurepip", "--upgrade", "--default-pip")
             )
             if (!ensurepipResult.success && !ensurepipResult.output.contains("already satisfied")) {
-                // 有些 ROM 上 ensurepip 可能不可用，尝试 get-pip.py
                 Log.w(TAG, "ensurepip 失败，尝试备用方法: ${ensurepipResult.output}")
             }
 
-            // Step 2: 准备 pip 安装参数
-            val reqFile = File(repoPath, "requirements.txt")
+            // Step 2: 检查 requirements.txt
             if (!reqFile.exists()) {
-                val msg = "requirements.txt 不存在: ${reqFile.absolutePath}"
+                val msg = "requirements.txt 不存在（请先同步代码）: ${reqFile.absolutePath}"
                 Log.e(TAG, msg)
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false

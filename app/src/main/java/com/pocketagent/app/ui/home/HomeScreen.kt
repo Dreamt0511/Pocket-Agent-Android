@@ -27,8 +27,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.pocketagent.app.data.SettingsRepository
-import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
 import com.pocketagent.app.update.BundledPythonManager
@@ -55,8 +53,6 @@ private val navEntries = listOf(
 fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
-    val settings by settingsRepo.settingsFlow.collectAsState(null)
     val depsReady = remember { mutableStateOf(false) }
     val setupState by PythonDependencyManager.setupState.collectAsState()
     val isPythonReady = remember { mutableStateOf(false) }
@@ -161,11 +157,10 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean) {
                         setupState = setupState,
                         onStartSetup = {
                             val pyBin = BundledPythonManager.findPythonBinary(context)
-                            val repoPath = settings?.repoPath
-                            if (pyBin != null && repoPath != null) {
+                            if (pyBin != null) {
                                 scope.launch {
                                     PythonDependencyManager.installDependencies(
-                                        context, pyBin, repoPath
+                                        context, pyBin
                                     )
                                     depsReady.value = PythonDependencyManager.checkReady(context, pyBin)
                                 }
