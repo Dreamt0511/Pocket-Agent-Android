@@ -129,7 +129,8 @@ class PythonRuntime(
                 val msg = "Python 3 未找到\n" +
                         "请安装 Termux 并在其中执行: pkg install python\n" +
                         "然后打开 Termux 设置 → 启用「允许来自外部应用的外壳命令」\n" +
-                        "最后重启应用" +
+                        "如果仍失败，请「重新安装 Pocket Agent」（先卸载再装，确保在 Termux 已安装之后）\n" +
+                        "或前往 系统设置 → 应用 → Pocket Agent → 权限 → 开启 RUN_COMMAND" +
                         "\n\n当前状态: ${if (getTermuxVersion() != null) "Termux ${getTermuxVersion()}" else "Termux 未安装"}" +
                         if (diagInfo.isNotBlank()) "\n\n诊断信息:\n$diagInfo" else ""
                 _state.value = RuntimeState.Error(msg)
@@ -191,7 +192,16 @@ class PythonRuntime(
         diagLog.clear()
         val termuxVer = getTermuxVersion()
         diagLog.add("Termux 版本: ${termuxVer ?: "未安装"}")
-        val pyNames = listOf("python3", "python")
+        // 检查 RUN_COMMAND 权限是否已被授予
+        val permGranted = try {
+            context.packageManager.checkPermission(
+                "com.termux.permission.RUN_COMMAND",
+                context.packageName
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } catch (_: Exception) { false }
+        diagLog.add("RUN_COMMAND 权限: ${if (permGranted) "已授予" else "未授予 — 需重装 Pocket Agent 或去应用设置手动授权"}")
+        // pkg install python 装的是 python 不是 python3
+        val pyNames = listOf("python", "python3")
         for (pyName in pyNames) {
             val termuxPy = "${TermuxBootstrap.termuxUsr}/bin/$pyName"
 
