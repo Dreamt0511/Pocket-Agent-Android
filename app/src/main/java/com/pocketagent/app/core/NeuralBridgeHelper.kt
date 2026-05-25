@@ -19,7 +19,7 @@ object NeuralBridgeHelper {
     private const val TAG = "NeuralBridge"
 
     /** NeuralBridge 包名（后续可配置） */
-    var packageName: String = "com.neuralbridge.app"
+    var packageName: String = "com.neuralbridge.companion"
 
     /** NeuralBridge 无障碍服务组件全名 */
     var accessibilityService: String = "com.neuralbridge.app/.accessibility.NeuralBridgeService"
