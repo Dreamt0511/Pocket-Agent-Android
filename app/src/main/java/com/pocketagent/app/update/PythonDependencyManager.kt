@@ -111,13 +111,18 @@ object PythonDependencyManager {
                 put("SSL_CERT_DIR", "/system/etc/security/cacerts")
             }
 
-            // Step 1: ensurepip（如果已安装会报错，忽略）
-            Log.i(TAG, "Step 1: ensurepip")
-            val ensurepipResult = runPython(context, pythonBin, baseEnv,
-                listOf("-m", "ensurepip", "--upgrade", "--default-pip")
+            // Step 1: 通过 bootstrap() API 安装 pip/setuptools
+            // ensurepip 标准模块自带 pip 和 setuptools wheel，bootstrap() 方法更可靠
+            Log.i(TAG, "Step 1: bootstrap pip")
+            val pipBootstrapResult = runPython(context, pythonBin, baseEnv,
+                listOf("-c", "import ensurepip; ensurepip.bootstrap()")
             )
-            if (!ensurepipResult.success && !ensurepipResult.output.contains("already satisfied")) {
-                Log.w(TAG, "ensurepip 未成功，继续尝试: ${ensurepipResult.output.take(200)}")
+            if (pipBootstrapResult.success) {
+                Log.i(TAG, "pip bootstrap 成功")
+            } else if (pipBootstrapResult.output.contains("No module named ensurepip")) {
+                Log.w(TAG, "ensurepip 模块不可用: ${pipBootstrapResult.output.take(200)}")
+            } else {
+                Log.w(TAG, "pip bootstrap 返回值异常: ${pipBootstrapResult.output.take(200)}")
             }
 
             // Step 2: 检查 requirements.txt
