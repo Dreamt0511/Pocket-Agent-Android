@@ -60,17 +60,21 @@ jobs:
 
           # 下载 pip wheel (pure Python) - 使用官方镜像 URL
           curl -sL -o pip.whl "https://pypi.org/packages/py3/p/pip/pip-24.0-py3-none-any.whl"
-          unzip -q -o pip.whl -d pip
+          unzip -q -o pip.whl
           rm pip.whl
 
           # 下载 setuptools wheel (pure Python) - 使用官方镜像 URL
           curl -sL -o setuptools.whl "https://pypi.org/packages/py3/s/setuptools/setuptools-68.0.0-py3-none-any.whl"
-          unzip -q -o setuptools.whl -d setuptools
+          unzip -q -o setuptools.whl
           rm setuptools.whl
 
-          # 创建 .pth 文件以便 site-packages 被自动加入 sys.path
+          # sitecustomize.py: Python 启动时将 site-packages 加入 sys.path
+          # 注意：不能使用 .pth 文件，因为 site-packages 此时尚未在 sys.path 上
           cd $GITHUB_WORKSPACE/app/src/main/assets/python/lib/python3.13
-          echo "./site-packages" > sitecustomize.py
+          cat > sitecustomize.py << 'PYEOF'
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'site-packages'))
+PYEOF
 
           # --- 修改 RPATH（关键修复）---
           # Termux 编译的 python3.13 和 libpython3.13.so 硬编码了
