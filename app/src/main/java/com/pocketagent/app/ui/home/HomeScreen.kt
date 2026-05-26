@@ -338,43 +338,20 @@ private fun TermuxStatusCard(
     onLaunch: (mirrorUrl: String) -> Unit
 ) {
     var isChecking by remember { mutableStateOf(false) }
-    var isLaunching by remember { mutableStateOf(false) }
-    var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
+    var testResult by remember { mutableStateOf<String?>(null) }
     var showPermDialog by remember { mutableStateOf(false) }
     var permPrompted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // 从全局 ScriptProgress 观察启动状态，切页面回来也不会丢失
+    val launchStatus by ScriptProgress.status.collectAsState()
+    val isLaunching by ScriptProgress.isLaunching.collectAsState()
+    val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
+
     val launchService: () -> Unit = {
         onLaunch(currentMirrorUrl)
-        isLaunching = true
-        ScriptProgress.reset()
-        statusText = "已发送启动指令，等待 Termux 脚本上报进度..."
-        scope.launch {
-            ScriptProgress.status.collect { msg ->
-                if (msg != null) {
-                    statusText = msg
-                    if (msg == "服务已启动！") {
-                        // 收到了启动成功，做一次最终确认
-                        when (TermuxServiceClient.healthCheck()) {
-                            is TermuxServiceClient.HealthResult.Ok -> {
-                                statusText = "服务已就绪!"
-                            }
-                            is TermuxServiceClient.HealthResult.Error -> {
-                                statusText = "$msg（但 HTTP 连接暂未就绪，稍后重试「测试连接」）"
-                            }
-                        }
-                        isLaunching = false
-                    }
-                }
-            }
-        }
-        // 5 分钟超时保护
-        scope.launch {
-            kotlinx.coroutines.delay(300_000L)
-            if (isLaunching) {
-                statusText = "启动超时（5 分钟），脚本可能执行失败，请检查 Termux 的 ~/startup.log"
-                isLaunching = false
-            }
-        }
+        testResult = null
+        ScriptProgress.startLaunch()
     }
     val permLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -383,7 +360,7 @@ private fun TermuxStatusCard(
             permPrompted = true
             launchService()
         } else {
-            statusText = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
+            testResult = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
         }
     }
     var mirrorCustom by remember { mutableStateOf(
@@ -520,10 +497,10 @@ private fun TermuxStatusCard(
                     onClick = {
                         scope.launch {
                             isChecking = true
-                            statusText = "正在连接..."
+                            testResult = "正在连接..."
                             when (val r = TermuxServiceClient.healthCheck()) {
-                                is TermuxServiceClient.HealthResult.Ok -> statusText = "连接成功! ${r.body}"
-                                is TermuxServiceClient.HealthResult.Error -> statusText = "连接失败: ${r.message}"
+                                is TermuxServiceClient.HealthResult.Ok -> testResult = "连接成功! ${r.body}"
+                                is TermuxServiceClient.HealthResult.Error -> testResult = "连接失败: ${r.message}"
                             }
                             isChecking = false
                         }
