@@ -189,7 +189,7 @@ class AgentDaemon(private val context: Context) {
     // ===== 自诊断系统 =====
 
     private fun runDiagnostics(): DiagnosticReport {
-        val report = DiagnosticReport()
+        var report = DiagnosticReport()
 
         try {
             // 1. 检测 Python 版本
