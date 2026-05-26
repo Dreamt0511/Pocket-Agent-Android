@@ -7,6 +7,7 @@ import android.util.Log
 object TermuxLauncher {
     private const val TAG = "TermuxLauncher"
     private const val TERMUX_PACKAGE = "com.termux"
+    private const val TERMUX_SERVICE = "$TERMUX_PACKAGE.app.RunCommandService"
     private const val TERMUX_RUN_COMMAND = "com.termux.RUN_COMMAND"
     private const val POCKET_AGENT_DIR = "Pocket-Agent"
     private const val GIT_REPO = "https://github.com/Dreamt0511/Pocket-Agent.git"
@@ -37,32 +38,30 @@ object TermuxLauncher {
 
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
-        // bash -c 执行脚本，每步通过 am broadcast 发回实时状态
-        val broadcast = "am broadcast -n com.pocketagent.app/com.pocketagent.app.core.ScriptStatusReceiver " +
-                "-a com.pocketagent.app.SCRIPT_STATUS --es msg"
+        // bash -c 执行脚本，日志写到 ~/startup.log
         val script = buildString {
             append("cd && { ")
-            append("$broadcast '正在克隆 Pocket-Agent 代码库...' >/dev/null 2>&1; ")
+            append("echo \"=== Pocket-Agent \$(date) ===\"; ")
             append("if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then ")
+            append("  echo \"[git] Cloning repo...\"; ")
             append("  git clone $GIT_REPO ~/$POCKET_AGENT_DIR || exit 1; ")
             append("else ")
             append("  cd ~/$POCKET_AGENT_DIR && git pull origin main || true; ")
             append("fi && ")
             append("cd ~/$POCKET_AGENT_DIR && ")
-            append("$broadcast '正在安装 fastapi+uvicorn...' >/dev/null 2>&1; ")
+            append("echo \"[pip] Installing fastapi+uvicorn...\"; ")
             append("${pipEnv}pip install -q fastapi uvicorn 2>&1 || exit 1; ")
-            append("$broadcast '正在安装 requirements.txt 依赖（可能需 2-3 分钟）...' >/dev/null 2>&1; ")
+            append("echo \"[pip] Installing requirements.txt...\"; ")
             append("${pipEnv}pip install -q -r requirements.txt 2>&1 || exit 1; ")
-            append("$broadcast '正在启动 uvicorn 服务...' >/dev/null 2>&1; ")
+            append("echo \"[uvicorn] Starting...\"; ")
             append("nohup uvicorn app:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 & ")
-            append("$broadcast '服务已启动！' >/dev/null 2>&1; ")
+            append("echo \"[ok] Uvicorn started\"; ")
             append("} >~/startup.log 2>&1")
         }
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
-            setClassName(TERMUX_PACKAGE, "$TERMUX_PACKAGE.RunCommandService")
+            setClassName(TERMUX_PACKAGE, TERMUX_SERVICE)
             action = TERMUX_RUN_COMMAND
-            // RUN_COMMAND_PATH 需要可执行文件路径，内联脚本用 bash -c
             putExtra("$TERMUX_PACKAGE.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
             putExtra("$TERMUX_PACKAGE.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
             putExtra("$TERMUX_PACKAGE.RUN_COMMAND_BACKGROUND", true)

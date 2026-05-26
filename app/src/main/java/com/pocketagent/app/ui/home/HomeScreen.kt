@@ -340,12 +340,12 @@ private fun TermuxStatusCard(
     var isChecking by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var showPermDialog by remember { mutableStateOf(false) }
-    var permPrompted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // 从全局 ScriptProgress 观察启动状态，切页面回来也不会丢失
+    // 全局状态，切页面回来不丢失
     val launchStatus by ScriptProgress.status.collectAsState()
     val isLaunching by ScriptProgress.isLaunching.collectAsState()
+    val permPrompted by ScriptProgress.permPrompted.collectAsState()
     val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
 
     val launchService: () -> Unit = {
@@ -357,7 +357,7 @@ private fun TermuxStatusCard(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            permPrompted = true
+            ScriptProgress.permPrompted.value = true
             launchService()
         } else {
             testResult = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
