@@ -635,18 +635,23 @@ sys.stdout.write("pip bootstrap done\n")
      * 但 installDependencies 每次运行都会重新生成，因此不受影响。
      */
     private fun installSelinuxCompat(context: Context, pythonBin: String, pythonDir: File) {
-        val pySitePackages = File(pythonDir, "lib/python3.13/site-packages")
-        pySitePackages.mkdirs()
-        val sitecustomize = File(pySitePackages, "sitecustomize.py")
         val linker = BundledPythonManager.getLinkerPath()
 
-        sitecustomize.writeText("""
+        // 写入两个位置以确保被加载：
+        // 1) std lib 目录 — 即使 pip 隔离环境覆盖 PYTHONPATH，PYTHONHOME 仍保留此路径
+        // 2) site-packages — 主进程正常加载
+        val locations = listOf(
+            File(pythonDir, "lib/python3.13/sitecustomize.py"),
+            File(pythonDir, "lib/python3.13/site-packages/sitecustomize.py"),
+        )
+
+        val script = """
 import sys, os
 
-# SELinux compat: when loaded via linker64 on Android, direct exec of
-# python binary in subprocesses is blocked by SELinux (EACCES).
-# This is loaded at Python startup via sitecustomize mechanism.
-# It monkey-patches subprocess.Popen to route through linker64.
+# SELinux compat: 使 Python 子进程绕过 SELinux exec 限制。
+# 在 Android 上 linker64（system_exec 上下文）可以 exec 但 python3.13（app_data_file）不行。
+# 通过 linker64 间接加载时，pip 子进程可能使用 sys.executable（linker64 路径）
+# 或直接找到 python 二进制路径。本补丁处理两种情况。
 linker = "${linker}"
 python_bin = "${pythonBin}"
 
@@ -658,15 +663,25 @@ if os.path.exists(linker) and os.path.exists(python_bin):
         def _patched_init(self, args, **kwargs):
             if isinstance(args, (list, tuple)) and len(args) > 0:
                 a0 = args[0]
-                if isinstance(a0, str) and python_bin in a0:
-                    args = [linker, a0] + list(args[1:])
+                if isinstance(a0, str):
+                    # 情况 A: args[0] 是 python 二进制本身 → 用 linker64 包装
+                    if python_bin in a0:
+                        args = [linker, a0] + list(args[1:])
+                    # 情况 B: args[0] 是 linker64（sys.executable）→ 注入 python_bin
+                    elif linker in a0:
+                        args = [a0, python_bin] + list(args[1:])
             _orig_init(self, args, **kwargs)
 
         subprocess.Popen.__init__ = _patched_init
     except Exception:
         pass
-""".trimIndent())
-        Log.i(TAG, "SELinux compat 已安装: ${sitecustomize.absolutePath}")
+""".trimStart()
+
+        for loc in locations {
+            loc.parentFile.mkdirs()
+            loc.writeText(script)
+            Log.i(TAG, "SELinux compat: ${loc.absolutePath}")
+        }
     }
 
     /**
@@ -1118,6 +1133,10 @@ if os.path.exists(linker) and os.path.exists(python_bin):
         pkg: String,
         errors: MutableList<String>
     ) {
+        // 必须加 PYTHONPATH 指向 site-packages，否则 pip 解析器看不到预编译的 C 扩展包
+        val env = baseEnv.toMutableMap().apply {
+            put("PYTHONPATH", sitePackages.absolutePath)
+        }
         val pipArgs = listOf(
             "-m", "pip", "install",
             "--target", sitePackages.absolutePath,
@@ -1128,7 +1147,7 @@ if os.path.exists(linker) and os.path.exists(python_bin):
             "--upgrade",
             pkg
         )
-        val result = runPython(context, pythonBin, baseEnv, pipArgs)
+        val result = runPython(context, pythonBin, env, pipArgs)
         if (result.success) return
 
         Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output}")
@@ -1137,11 +1156,12 @@ if os.path.exists(linker) and os.path.exists(python_bin):
             "--target", sitePackages.absolutePath,
             "--trusted-host", "pypi.org",
             "--trusted-host", "files.pythonhosted.org",
+            "--no-build-isolation",
             "--no-input",
             "--upgrade",
             pkg
         )
-        val fallbackResult = runPython(context, pythonBin, baseEnv, fallbackArgs)
+        val fallbackResult = runPython(context, pythonBin, env, fallbackArgs)
         if (!fallbackResult.success) {
             errors.add("${pkg}: ${fallbackResult.output}")
             Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output}")
