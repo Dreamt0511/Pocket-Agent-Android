@@ -31,7 +31,9 @@ import java.util.concurrent.TimeUnit
  */
 object PythonDependencyManager {
     private const val TAG = "PyDependencyMgr"
-    private const val SITE_PACKAGES_DIR = "python/site-packages"
+    // 与 python/（内置运行时的解压目录）独立，避免 APK 更新时 ensureExtracted
+    // 执行 deleteRecursively() 连带清空已安装的 pip 包
+    private const val SITE_PACKAGES_DIR = "python-site-packages"
 
     // ─── Termux 依赖库自愈映射 ──────────────────────
     // soname → Termux .deb 下载 URL
@@ -104,6 +106,24 @@ object PythonDependencyManager {
     }
 
     /**
+     * 迁移旧版 site-packages（filesDir/python/site-packages/ → filesDir/python-site-packages/）。
+     *
+     * 旧版 site-packages 在 filesDir/python/ 下面，和内置 Python 运行时混在一起。
+     * APK 升级时 BundledPythonManager 会 deleteRecursively 整个 python/ 目录，
+     * 导致已装依赖全部丢失，下次环境配置必须从头下载。
+     * 迁移后 site-packages 独立于 python/，不会受 ensureExtracted 的清空影响。
+     */
+    private fun migrateSitePackages(context: Context) {
+        val newDir = getSitePackagesDir(context)          // filesDir/python-site-packages/
+        if (newDir.exists()) return                       // 已迁移或全新安装，跳过
+        val oldDir = File(context.filesDir, "python/site-packages")
+        if (oldDir.exists() && oldDir.isDirectory) {
+            Log.i(TAG, "迁移 site-packages: ${oldDir.absolutePath} → ${newDir.absolutePath}")
+            oldDir.renameTo(newDir)
+        }
+    }
+
+    /**
      * 一键安装所有依赖。
      *
      * 内部使用 [installScope] 启动协程，不绑定 UI 生命周期。
@@ -136,6 +156,10 @@ object PythonDependencyManager {
     ): Boolean = withContext(Dispatchers.IO) {
         _setupState.value = SetupState.EnsuringPip
         Log.i(TAG, "开始安装依赖")
+
+        // 迁移：旧版 site-packages 在 filesDir/python/site-packages/ 下，
+        // APK 更新时会被 BundledPythonManager.ensureExtracted() 的 deleteRecursively 清空
+        migrateSitePackages(context)
 
         try {
             val pythonDir = BundledPythonManager.getPythonDir(context)
