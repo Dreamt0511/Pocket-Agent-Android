@@ -4,6 +4,7 @@ import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -532,7 +533,10 @@ private fun TermuxStatusCard(
                     }
                 }
                 OutlinedButton(
-                    onClick = { TermuxLauncher.stopFastAPI(context) },
+                    onClick = {
+                        val ok = TermuxLauncher.stopFastAPI(context)
+                        Toast.makeText(context, if (ok) "关闭指令已发送" else "关闭失败", Toast.LENGTH_SHORT).show()
+                    },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(

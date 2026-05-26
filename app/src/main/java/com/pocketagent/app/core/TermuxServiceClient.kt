@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
@@ -109,16 +110,13 @@ object TermuxServiceClient {
     // ─── SSE 流式执行 ───────────────────
 
     fun chatStream(command: String, config: Map<String, String> = emptyMap()): Flow<String> = flow {
-        val escaped = command.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-        val configJson = if (config.isNotEmpty()) {
-            val inner = config.entries.joinToString(",") {
-                "\"${it.key}\": \"${it.value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        val bodyJson = JSONObject().apply {
+            put("message", command)
+            if (config.isNotEmpty()) {
+                put("config", JSONObject(config as Map<*, *>))
             }
-            """"config": {$inner}"""
-        } else ""
-        val sep = if (configJson.isNotEmpty()) "," else ""
-        val json = """{"message": "$escaped"$sep$configJson}"""
-        val body = json.toRequestBody("application/json".toMediaType())
+        }.toString()
+        val body = bodyJson.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$BASE_URL/chat")
             .header("Accept", "text/event-stream")

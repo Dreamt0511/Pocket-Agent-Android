@@ -88,7 +88,7 @@ class AgentDaemon(
         val output = StringBuilder()
         try {
             // 读取配置随请求发送，确保 Termux 侧使用用户配置的 LLM
-            val settings = settingsRepo.getSettings()
+            val settings = withContext(Dispatchers.IO) { settingsRepo.getSettings() }
             val config = mutableMapOf<String, String>()
             if (settings.llmBaseUrl.isNotBlank()) config["base_url"] = settings.llmBaseUrl
             if (settings.llmApiKey.isNotBlank()) config["api_key"] = settings.llmApiKey
