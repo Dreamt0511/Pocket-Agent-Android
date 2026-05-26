@@ -364,6 +364,7 @@ private fun ChatInputBar(
                 modifier = Modifier.height(40.dp)
             ) {
                 Text("发送")
+            }
         }
     }
 }
