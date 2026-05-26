@@ -439,7 +439,7 @@ sys.stdout.write("pip bootstrap done\n")
         }
     }
 
-    /** canary 测试：import zlib + pyexpat（pip 依赖的 C 扩展模块） */
+    /** canary 测试：import zlib + pyexpat + ssl（pip 依赖的 C 扩展和 SSL） */
     private suspend fun runCanaryTest(
         context: Context,
         pythonBin: String,
@@ -449,7 +449,7 @@ sys.stdout.write("pip bootstrap done\n")
         for (i in 0 until retries) {
             // 同时测试 zlib 和 pyexpat（pip 内部依赖 xmlrpc → pyexpat → libexpat.so）
             val result = runPython(context, pythonBin, baseEnv,
-                listOf("-c", "import zlib; import pyexpat; print('ok')"))
+                listOf("-c", "import zlib; import pyexpat; import ssl; print('ok')"))
             if (result.success) return true
             if (i < retries - 1) delay(500)
         }
@@ -766,10 +766,12 @@ sys.stdout.write("pip bootstrap done\n")
         return lines
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .mapNotNull { line ->
-                val parts = line.split(Regex("[>=<~!;]")).first().trim()
+                val cleaned = line.split("#").first().trim()  // 剥离行内 # 注释
+                if (cleaned.isBlank()) return@mapNotNull null
+                val parts = cleaned.split(Regex("[>=<~!;]")).first().trim()
                 if (parts.isBlank()) return@mapNotNull null
                 val name = parts
-                val spec = line.removePrefix(name).trim()
+                val spec = cleaned.removePrefix(name).trim()
                 name to spec
             }
             .toMap()
