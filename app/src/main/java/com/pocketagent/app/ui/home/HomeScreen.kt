@@ -341,7 +341,7 @@ private fun TermuxStatusCard(
     var isLaunching by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
     var showPermDialog by remember { mutableStateOf(false) }
-    var permPrompted by rememberSaveable { mutableStateOf(false) }
+    var permPrompted by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val launchService: () -> Unit = {
         onLaunch(currentMirrorUrl)
