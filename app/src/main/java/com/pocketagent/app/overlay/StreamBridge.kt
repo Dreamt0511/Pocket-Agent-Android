@@ -33,10 +33,15 @@ object StreamBridge {
 
     // ─── 输出方法 ───────────────────────────
 
-    /** 普通日志输出 */
+    /** 普通日志输出（自动追加换行） */
     fun out(message: String) {
         val line = if (message.endsWith("\n")) message else "$message\n"
         targets.forEach { it.onOutput(line) }
+    }
+
+    /** 流式 token 输出（不追加换行，保证连续文本） */
+    fun stream(text: String) {
+        targets.forEach { it.onOutput(text) }
     }
 
     /** 步骤输出 - 自动添加 [step] 前缀 */

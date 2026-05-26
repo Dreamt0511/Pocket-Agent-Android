@@ -96,14 +96,13 @@ class AgentDaemon(
             config["max_tokens"] = settings.llmMaxTokens.toString()
 
             TermuxServiceClient.chatStream(command, config).collect { data ->
-                StreamBridge.out(data)
+                StreamBridge.stream(data)
                 output.append(data)
                 task.output.value = output.toString()
             }
             taskQueueManager.onTaskComplete(task, true, output.toString())
             _status.value = DaemonStatus.Ready
             StreamBridge.status("空闲")
-            StreamBridge.done(output.toString())
             return TaskResult.Success(output.toString())
         } catch (e: Exception) {
             Log.e(TAG, "Execute failed", e)
