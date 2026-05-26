@@ -152,11 +152,13 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
 
             Spacer(Modifier.height(24.dp))
 
-            // ─── 环境配置卡片（常驻首页，Completed 后自动收起） ───
+            // ─── 环境配置卡片（常驻首页） ───
             if (isPythonReady.value) {
                 AnimatedStaggeredItem(delayMs = 80) {
                     SetupDependenciesCard(
                         setupState = setupState,
+                        currentMirrorUrl = settings?.pypiMirrorUrl ?: "",
+                        settingsRepo = settingsRepo,
                         onStartSetup = {
                             val pyBin = BundledPythonManager.findPythonBinary(context)
                             if (pyBin != null) {
@@ -165,17 +167,6 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                             }
                         },
                         onRetry = { PythonDependencyManager.resetState() }
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-
-            // ─── PyPI 镜像源选择（环境配置未完成时可用） ───
-            if (isPythonReady.value && setupState !is PythonDependencyManager.SetupState.Completed) {
-                AnimatedStaggeredItem(delayMs = 80) {
-                    MirrorSelectorCard(
-                        currentUrl = settings?.pypiMirrorUrl ?: "",
-                        settingsRepo = settingsRepo
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -343,17 +334,34 @@ private fun perimeterPosToPoint(pos: Float, w: Float, h: Float): Offset {
     }
 }
 
-// ─── 环境配置卡片 ────────────────────────────────
+// ─── 环境配置卡片（含镜像选择） ──────────────────
 
+private val pypiMirrors = listOf(
+    "官方 PyPI" to "https://pypi.org/simple/",
+    "清华" to "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/",
+    "阿里云" to "https://mirrors.aliyun.com/pypi/simple/",
+    "中科大" to "https://pypi.mirrors.ustc.edu.cn/simple/",
+    "豆瓣" to "https://pypi.doubanio.com/simple/",
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SetupDependenciesCard(
     setupState: PythonDependencyManager.SetupState,
+    currentMirrorUrl: String,
+    settingsRepo: SettingsRepository,
     onStartSetup: () -> Unit,
     onRetry: () -> Unit
 ) {
     val isInstalling = setupState !is PythonDependencyManager.SetupState.Idle &&
             setupState !is PythonDependencyManager.SetupState.Completed &&
             setupState !is PythonDependencyManager.SetupState.Failed
+
+    val scope = rememberCoroutineScope()
+    var mirrorCustom by remember { mutableStateOf(
+        currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
+    ) }
+    var mirrorCustomUrl by remember { mutableStateOf(if (mirrorCustom) currentMirrorUrl else "") }
 
     GlassCard(
         shape = RoundedCornerShape(16.dp),
@@ -420,6 +428,94 @@ private fun SetupDependenciesCard(
                     )
                 }
             }
+
+            // ─── Idle / Failed 状态显示镜像选择 ───
+            if (setupState is PythonDependencyManager.SetupState.Idle ||
+                setupState is PythonDependencyManager.SetupState.Failed) {
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Spacer(Modifier.height(10.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "PyPI 镜像源",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    pypiMirrors.forEach { (label, url) ->
+                        FilterChip(
+                            selected = if (url == "https://pypi.org/simple/") {
+                                currentMirrorUrl.isEmpty() || currentMirrorUrl == url
+                            } else {
+                                currentMirrorUrl == url
+                            },
+                            onClick = {
+                                scope.launch {
+                                    val s = settingsRepo.getSettings()
+                                    settingsRepo.saveSettings(s.copy(
+                                        pypiMirrorUrl = if (url == "https://pypi.org/simple/") "" else url
+                                    ))
+                                }
+                                mirrorCustom = false
+                            },
+                            label = { Text(label, fontSize = 11.sp) },
+                            modifier = Modifier.height(30.dp)
+                        )
+                    }
+                    FilterChip(
+                        selected = mirrorCustom,
+                        onClick = { mirrorCustom = !mirrorCustom },
+                        label = { Text("自定义", fontSize = 11.sp) },
+                        modifier = Modifier.height(30.dp)
+                    )
+                }
+
+                if (mirrorCustom) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = mirrorCustomUrl,
+                        onValueChange = { mirrorCustomUrl = it },
+                        placeholder = { Text("https://...", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            scope.launch {
+                                val s = settingsRepo.getSettings()
+                                settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                            }
+                        }),
+                        trailingIcon = {
+                            if (mirrorCustomUrl.isNotBlank()) {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        val s = settingsRepo.getSettings()
+                                        settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
             Spacer(Modifier.height(12.dp))
             // 操作按钮
             when (setupState) {
@@ -433,7 +529,6 @@ private fun SetupDependenciesCard(
                     }
                 }
                 is PythonDependencyManager.SetupState.Completed -> {
-                    // 已完成，但保留一个轻量的"更新依赖"入口
                     OutlinedButton(
                         onClick = {
                             PythonDependencyManager.resetState()
@@ -465,117 +560,4 @@ private fun SetupDependenciesCard(
     }
 }
 
-// ─── PyPI 镜像源选择卡片 ───────────────────────────
 
-private val pypiMirrors = listOf(
-    "官方 PyPI" to "https://pypi.org/simple/",
-    "清华" to "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/",
-    "阿里云" to "https://mirrors.aliyun.com/pypi/simple/",
-    "中科大" to "https://pypi.mirrors.ustc.edu.cn/simple/",
-    "豆瓣" to "https://pypi.doubanio.com/simple/",
-)
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MirrorSelectorCard(currentUrl: String, settingsRepo: SettingsRepository) {
-    val scope = rememberCoroutineScope()
-    var isCustom by remember { mutableStateOf(
-        currentUrl.isNotEmpty() && pypiMirrors.none { it.second == currentUrl }
-    ) }
-    var customUrl by remember { mutableStateOf(if (isCustom) currentUrl else "") }
-
-    GlassCard(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Cloud,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "PyPI 镜像源",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "加速 pip 下载",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-
-            // 镜像选择 Chip
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                pypiMirrors.forEach { (label, url) ->
-                    FilterChip(
-                        selected = if (url == "https://pypi.org/simple/") {
-                            currentUrl.isEmpty() || currentUrl == url
-                        } else {
-                            currentUrl == url
-                        },
-                        onClick = {
-                            scope.launch {
-                                val s = settingsRepo.getSettings()
-                                settingsRepo.saveSettings(s.copy(
-                                    pypiMirrorUrl = if (url == "https://pypi.org/simple/") "" else url
-                                ))
-                            }
-                            isCustom = false
-                        },
-                        label = { Text(label, fontSize = 11.sp) },
-                        modifier = Modifier.height(30.dp)
-                    )
-                }
-
-                FilterChip(
-                    selected = isCustom,
-                    onClick = { isCustom = !isCustom },
-                    label = { Text("自定义", fontSize = 11.sp) },
-                    modifier = Modifier.height(30.dp)
-                )
-            }
-
-            // 自定义 URL 输入
-            if (isCustom) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = customUrl,
-                    onValueChange = { customUrl = it },
-                    placeholder = { Text("https://...", fontSize = 12.sp) },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = {
-                        scope.launch {
-                            val s = settingsRepo.getSettings()
-                            settingsRepo.saveSettings(s.copy(pypiMirrorUrl = customUrl))
-                        }
-                    }),
-                    trailingIcon = {
-                        if (customUrl.isNotBlank()) {
-                            IconButton(onClick = {
-                                scope.launch {
-                                    val s = settingsRepo.getSettings()
-                                    settingsRepo.saveSettings(s.copy(pypiMirrorUrl = customUrl))
-                                }
-                            }) {
-                                Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                )
-            }
-        }
-    }
-}

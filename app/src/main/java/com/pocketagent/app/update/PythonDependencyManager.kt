@@ -245,6 +245,16 @@ sys.stdout.write("pip bootstrap done\n")
             var firstError: String? = null
 
             for (pkg in allPackages) {
+                // 检查是否已安装（dist-info 存在则跳过）
+                val normalizedName = pkg.lowercase().replace("-", "_").replace(".", "_")
+                val alreadyInstalled = sitePackages.listFiles()
+                    ?.any { f -> f.isDirectory && f.name.startsWith("${normalizedName}-") && f.name.endsWith(".dist-info") }
+                    ?: false
+                if (alreadyInstalled) {
+                    Log.i(TAG, "$pkg 已安装，跳过")
+                    continue
+                }
+
                 _setupState.value = SetupState.Installing(pkg)
                 Log.i(TAG, "安装: $pkg")
 
