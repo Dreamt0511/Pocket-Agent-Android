@@ -156,7 +156,18 @@ object PythonDependencyManager {
         mirrorUrl: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         _setupState.value = SetupState.EnsuringPip
-        Log.i(TAG, "开始安装依赖")
+        Log.i(TAG, "开始安装依赖 (pythonBin=$pythonBin)")
+
+        // 防御：确认 python 二进制真实存在，避免 CI 构建不完整导致迷惑的 "error=2" 错误
+        val pythonFile = File(pythonBin)
+        if (!pythonFile.exists()) {
+            val msg = "Python 二进制不存在: $pythonBin\n" +
+                    "内置 Python 可能未正确打包进 APK，请检查 CI 构建日志中 'Download bundled Python' 步骤\n" +
+                    "当前 assets/python/ 文件列表: ${describePythonAssets(context)}"
+            Log.e(TAG, msg)
+            _setupState.value = SetupState.Failed(msg)
+            return@withContext false
+        }
 
         // 迁移：旧版 site-packages 在 filesDir/python/site-packages/ 下，
         // APK 更新时会被 BundledPythonManager.ensureExtracted() 的 deleteRecursively 清空
@@ -556,6 +567,16 @@ sys.stdout.write("pip bootstrap done\n")
             }
         } finally {
             if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
+    /** 列出 assets/python/ 的内容用于 CI 构建诊断 */
+    private fun describePythonAssets(context: Context): String {
+        return try {
+            val entries = context.assets.list("python") ?: return "目录不存在"
+            entries.joinToString(", ")
+        } catch (e: Exception) {
+            "读取失败: ${e.message}"
         }
     }
 
