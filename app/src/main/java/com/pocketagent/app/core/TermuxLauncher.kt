@@ -22,13 +22,8 @@ object TermuxLauncher {
     }
 
     /**
-     * 启动 FastAPI 服务。代码存储在 Termux 私有目录 ~/Pocket-Agent，
-     * 避免 sdcardfs 跨应用权限限制。
-     *
-     * 关键修复历史：
-     * - v1: RUN_COMMAND_PATH 传脚本字符串 → Termux 期望文件路径，脚本不执行
-     * - v2: 改 bash -c + ARGUMENTS → 脚本正确执行
-     * - v3: exec → nohup &，让脚本正常结束但 uvicorn 在后台持续运行
+     * 启动 FastAPI 服务。环境初始化（clone + pip install）只执行一次，
+     * 后续点启动直接跑 uvicorn。
      */
     fun launchFastAPI(context: Context, mirrorUrl: String = ""): Boolean {
         if (!isTermuxInstalled(context)) {
@@ -38,24 +33,32 @@ object TermuxLauncher {
 
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
-        // bash -c 执行脚本，日志写到 ~/startup.log
+        // 环境初始化 + 启动 uvicorn。第一次会 git clone + pip install，
+        // 完成后创建 ~/.pocket-agent-ready，后续启动跳过初始化。
         val script = buildString {
-            append("cd && { ")
-            append("echo \"=== Pocket-Agent \$(date) ===\"; ")
-            append("if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then ")
-            append("  echo \"[git] Cloning repo...\"; ")
-            append("  git clone $GIT_REPO ~/$POCKET_AGENT_DIR || exit 1; ")
-            append("else ")
-            append("  cd ~/$POCKET_AGENT_DIR && git pull origin main || true; ")
-            append("fi && ")
-            append("cd ~/$POCKET_AGENT_DIR && ")
-            append("echo \"[pip] Installing fastapi+uvicorn...\"; ")
-            append("${pipEnv}pip install -q fastapi uvicorn 2>&1 || exit 1; ")
-            append("echo \"[pip] Installing requirements.txt...\"; ")
-            append("${pipEnv}pip install -q -r requirements.txt 2>&1 || exit 1; ")
-            append("echo \"[uvicorn] Starting...\"; ")
-            append("nohup uvicorn app:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 & ")
-            append("echo \"[ok] Uvicorn started\"; ")
+            append("cd && {\n")
+            append("  echo \"=== Pocket-Agent \$(date) ===\";\n")
+            append("  if [ ! -f ~/.pocket-agent-ready ]; then\n")
+            append("    echo \"[init] First run — setting up environment...\";\n")
+            append("    if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then\n")
+            append("      git clone $GIT_REPO ~/$POCKET_AGENT_DIR || exit 1;\n")
+            append("    else\n")
+            append("      cd ~/$POCKET_AGENT_DIR && git pull origin main || true;\n")
+            append("    fi &&\n")
+            append("    cd ~/$POCKET_AGENT_DIR &&\n")
+            append("    echo \"[init] Installing fastapi+uvicorn...\";\n")
+            append("    ${pipEnv}pip install -q fastapi uvicorn 2>&1 || exit 1;\n")
+            append("    echo \"[init] Installing requirements.txt...\";\n")
+            append("    ${pipEnv}pip install -q -r requirements.txt 2>&1 || exit 1;\n")
+            append("    touch ~/.pocket-agent-ready\n")
+            append("    echo \"[init] Done — ready for future starts\";\n")
+            append("  else\n")
+            append("    echo \"[start] Environment ready, launching uvicorn...\";\n")
+            append("    cd ~/$POCKET_AGENT_DIR;\n")
+            append("  fi &&\n")
+            append("  echo \"[uvicorn] Starting...\";\n")
+            append("  nohup uvicorn app:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &\n")
+            append("  echo \"[ok] Uvicorn started PID=\$!\";\n")
             append("} >~/startup.log 2>&1")
         }
 
