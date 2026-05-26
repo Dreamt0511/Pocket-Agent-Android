@@ -24,6 +24,7 @@ class AgentDaemon(
 
     sealed class DaemonStatus {
         object Idle : DaemonStatus()
+        object Syncing : DaemonStatus()
         object Initializing : DaemonStatus()
         object Ready : DaemonStatus()
         object Executing : DaemonStatus()

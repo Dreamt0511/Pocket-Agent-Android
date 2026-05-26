@@ -24,3 +24,4 @@ class PocketAgentApp : Application() {
         lateinit var instance: PocketAgentApp
             private set
     }
+}
