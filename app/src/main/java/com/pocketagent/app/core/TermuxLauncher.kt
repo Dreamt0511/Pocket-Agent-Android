@@ -32,24 +32,31 @@ object TermuxLauncher {
 
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
-        // Termux 脚本：git clone/pull → pip install → uvicorn（app.py 在仓库中）
+        // Termux 脚本：git clone/pull → pip install → uvicorn
+        // 输出重定向到 /sdcard/Pocket-Agent/startup.log 以便调试
         val script = buildString {
-            append("cd && ")
+            append("mkdir -p /sdcard/Pocket-Agent 2>/dev/null; ")
+            append("{ echo \"[Pocket-Agent] \$(date) starting...\"; ")
+            append("set -x; ")
+            append("cd; ")
             append("if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then ")
-            append("git clone $GIT_REPO ~/$POCKET_AGENT_DIR; ")
-            append("else cd ~/$POCKET_AGENT_DIR && git pull origin main; ")
-            append("fi && ")
-            append("cd ~/$POCKET_AGENT_DIR && ")
-            append("${pipEnv}pip install fastapi uvicorn -q && ")
-            append("${pipEnv}pip install -r requirements.txt -q && ")
-            append("exec uvicorn app:app --host 0.0.0.0 --port 8000")
+            append("  git clone $GIT_REPO ~/$POCKET_AGENT_DIR; ")
+            append("else ")
+            append("  cd ~/$POCKET_AGENT_DIR && git pull origin main; ")
+            append("fi; ")
+            append("cd ~/$POCKET_AGENT_DIR; ")
+            append("${pipEnv}pip install fastapi uvicorn -q; ")
+            append("${pipEnv}pip install -r requirements.txt -q; ")
+            append("echo \"[Pocket-Agent] starting uvicorn...\"; ")
+            append("exec uvicorn app:app --host 0.0.0.0 --port 8000; ")
+            append("} >/sdcard/Pocket-Agent/startup.log 2>&1")
         }
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, "$TERMUX_PACKAGE.RunCommandService")
             action = TERMUX_RUN_COMMAND
             putExtra("$TERMUX_PACKAGE.RUN_COMMAND_PATH", script)
-            putExtra("$TERMUX_PACKAGE.RUN_COMMAND_BACKGROUND", true)
+            putExtra("$TERMUX_PACKAGE.RUN_COMMAND_SESSION_ACTION", 2)
         }
 
         return try {
