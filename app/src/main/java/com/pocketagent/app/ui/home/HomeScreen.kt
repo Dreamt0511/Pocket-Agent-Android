@@ -338,6 +338,7 @@ private fun TermuxStatusCard(
     settingsRepo: SettingsRepository,
     onLaunch: (mirrorUrl: String) -> Unit
 ) {
+    val context = LocalContext.current
     var isChecking by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
     var showPermDialog by remember { mutableStateOf(false) }
