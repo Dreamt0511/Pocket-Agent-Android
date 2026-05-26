@@ -338,7 +338,10 @@ private fun TermuxStatusCard(
     var isChecking by remember { mutableStateOf(false) }
     var isLaunching by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
+    var showPermDialog by remember { mutableStateOf(false) }
+    var permPrompted by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val termuxContext = LocalContext.current
     var mirrorCustom by remember { mutableStateOf(
         currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
     ) }
@@ -486,24 +489,28 @@ private fun TermuxStatusCard(
                 ) { Text("测试连接", fontSize = 12.sp) }
                 OutlinedButton(
                     onClick = {
-                        onLaunch(currentMirrorUrl)
-                        isLaunching = true
-                        scope.launch {
-                            statusText = "正在拉取代码..."
-                            delay(4000)
-                            if (!isLaunching) return@launch
-                            statusText = "正在安装 Python 依赖..."
-                            delay(8000)
-                            if (!isLaunching) return@launch
-                            statusText = "正在启动服务..."
-                            delay(6000)
-                            if (!isLaunching) return@launch
-                            statusText = "等待服务就绪..."
-                            when (val r = TermuxServiceClient.healthCheck()) {
-                                is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
-                                is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
+                        if (!permPrompted) {
+                            showPermDialog = true
+                        } else {
+                            onLaunch(currentMirrorUrl)
+                            isLaunching = true
+                            scope.launch {
+                                statusText = "正在拉取代码..."
+                                delay(4000)
+                                if (!isLaunching) return@launch
+                                statusText = "正在安装 Python 依赖..."
+                                delay(8000)
+                                if (!isLaunching) return@launch
+                                statusText = "正在启动服务..."
+                                delay(6000)
+                                if (!isLaunching) return@launch
+                                statusText = "等待服务就绪..."
+                                when (val r = TermuxServiceClient.healthCheck()) {
+                                    is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
+                                    is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
+                                }
+                                isLaunching = false
                             }
-                            isLaunching = false
                         }
                     },
                     enabled = !isLaunching,
@@ -521,8 +528,37 @@ private fun TermuxStatusCard(
                     }
                 }
             }
+
+            // ─── Termux 权限引导弹窗（仅首次启动时弹出） ───
+            if (showPermDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPermDialog = false },
+                    title = { Text("需要 Termux 权限") },
+                    text = {
+                        Text(
+                            "首次使用需要开启 Termux 的「允许外部应用执行命令」权限:\n\n" +
+                            "① 点击下方「去设置」\n" +
+                            "② 在 Termux 设置中开启「允许外部应用执行命令」\n" +
+                            "③ 返回本应用，再次点击「启动服务」"
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            showPermDialog = false
+                            permPrompted = true
+                            TermuxLauncher.openTermuxSettings(termuxContext)
+                        }) { Text("去设置") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPermDialog = false }) {
+                            Text("取消")
+                        }
+                    }
+                )
+            }
         }
     }
 }
+
 
 
