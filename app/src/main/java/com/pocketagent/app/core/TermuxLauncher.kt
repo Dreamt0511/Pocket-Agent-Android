@@ -33,9 +33,10 @@ object TermuxLauncher {
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
         // Termux 脚本：git clone/pull → pip install → uvicorn
-        // RUN_COMMAND_SESSION_ACTION=2 使 Termux 弹窗可见，输出直接显示在终端
+        // 日志写到 ~/startup.log（Termux home，总是可写，不需存储权限）
         val script = buildString {
             append("cd && ")
+            append("{ echo \"[Pocket-Agent] \$(date) starting...\"; ")
             append("if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then ")
             append("  git clone $GIT_REPO ~/$POCKET_AGENT_DIR; ")
             append("else ")
@@ -44,14 +45,15 @@ object TermuxLauncher {
             append("cd ~/$POCKET_AGENT_DIR && ")
             append("${pipEnv}pip install fastapi uvicorn -q && ")
             append("${pipEnv}pip install -r requirements.txt -q && ")
-            append("exec uvicorn app:app --host 0.0.0.0 --port 8000")
+            append("exec uvicorn app:app --host 0.0.0.0 --port 8000; ")
+            append("} >~/startup.log 2>&1")
         }
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, "$TERMUX_PACKAGE.RunCommandService")
             action = TERMUX_RUN_COMMAND
             putExtra("$TERMUX_PACKAGE.RUN_COMMAND_PATH", script)
-            putExtra("$TERMUX_PACKAGE.RUN_COMMAND_SESSION_ACTION", 2)
+            putExtra("$TERMUX_PACKAGE.RUN_COMMAND_BACKGROUND", true)
         }
 
         return try {
