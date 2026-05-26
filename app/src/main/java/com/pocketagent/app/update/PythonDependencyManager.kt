@@ -350,10 +350,18 @@ sys.stdout.write("pip bootstrap done\n")
         Log.i(TAG, "自愈检查: Termux 依赖库...")
         val libDir = File(BundledPythonManager.getPythonDir(context), "lib")
 
-        // Step 1: canary 测试（先快速检查，已安装则跳过）
-        if (runCanaryTest(context, pythonBin, baseEnv, 2)) {
+        // Step 1: 先检查是否有缺失的 .so 文件
+        val missingBefore = TERMUX_DEB_URLS
+            .filter { (soname, _) -> !File(libDir, soname).exists() }
+        val noMissingSo = missingBefore.isEmpty()
+
+        // Step 2: canary 测试（仅当所有 .so 文件都存在时才能跳过）
+        if (noMissingSo && runCanaryTest(context, pythonBin, baseEnv, 2)) {
             Log.i(TAG, "自愈: 依赖库完整")
             return@withContext true
+        }
+        if (missingBefore.isNotEmpty()) {
+            Log.i(TAG, "自愈: 缺失 ${missingBefore.size} 个 .so 文件: ${missingBefore.keys}")
         }
 
         // Step 2: 找出缺失的 soname，按 deb URL 去重
@@ -421,7 +429,7 @@ sys.stdout.write("pip bootstrap done\n")
         }
     }
 
-    /** canary 测试：import zlib（最基础的 C 扩展模块） */
+    /** canary 测试：import zlib + pyexpat（pip 依赖的 C 扩展模块） */
     private suspend fun runCanaryTest(
         context: Context,
         pythonBin: String,
@@ -429,8 +437,9 @@ sys.stdout.write("pip bootstrap done\n")
         retries: Int = 1
     ): Boolean {
         for (i in 0 until retries) {
+            // 同时测试 zlib 和 pyexpat（pip 内部依赖 xmlrpc → pyexpat → libexpat.so）
             val result = runPython(context, pythonBin, baseEnv,
-                listOf("-c", "import zlib; print('ok')"))
+                listOf("-c", "import zlib; import pyexpat; print('ok')"))
             if (result.success) return true
             if (i < retries - 1) delay(500)
         }
