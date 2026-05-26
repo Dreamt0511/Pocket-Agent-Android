@@ -15,6 +15,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.focus.onFocusChanged
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemon
@@ -52,6 +55,7 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
+    val toolStatus by OverlayService.taskStatus.collectAsState()
 
     // 进入页面时创建新会话或加载已有会话
     LaunchedEffect(conversationId) {
@@ -119,6 +123,15 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
             ChatInputBar(
                 inputText = inputText,
                 onInputChange = { inputText = it },
+                onFocusChange = { focused ->
+                    if (focused && messages.isNotEmpty()) {
+                        scope.launch {
+                            try {
+                                listState.scrollToItem(messages.size - 1)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                },
                 onSend = {
                     if (inputText.isNotBlank() && !isProcessing && isDaemonReady && currentConvId != null) {
                         scope.launch {
@@ -196,6 +209,7 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
         ) {
             DaemonStatusBar(
                 status = daemonStatus,
+                toolStatus = toolStatus,
                 onRetry = { scope.launch { AppBootstrapper.start() } }
             )
 
@@ -210,10 +224,12 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
                 }
             }
 
-            // 自动滚动到底部（新消息或 streamText 变化时）
-            LaunchedEffect(messages.size, streamText.length) {
+            // 自动滚动到底部（新消息时触发，避免 streamText 频繁取消）
+            LaunchedEffect(messages.size) {
                 if (messages.isNotEmpty()) {
-                    listState.animateScrollToItem(messages.size - 1)
+                    try {
+                        listState.scrollToItem(messages.size - 1)
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -226,6 +242,7 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
 @Composable
 private fun DaemonStatusBar(
     status: AgentDaemon.DaemonStatus,
+    toolStatus: String,
     onRetry: () -> Unit
 ) {
     val bgColor: Color
@@ -262,19 +279,29 @@ private fun DaemonStatusBar(
     }
 
     Surface(modifier = Modifier.fillMaxWidth(), color = bgColor) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = message,
-                fontSize = 12.sp,
-                modifier = Modifier.weight(1f)
-            )
-            if (showRetry) {
-                TextButton(onClick = onRetry) {
-                    Text("重试", fontSize = 12.sp)
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = message,
+                    fontSize = 12.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                if (showRetry) {
+                    TextButton(onClick = onRetry) {
+                        Text("重试", fontSize = 12.sp)
+                    }
                 }
+            }
+            // 工具执行状态（仅在工具活动时显示）
+            if (toolStatus.isNotBlank() && toolStatus !in listOf("空闲", "就绪")) {
+                Text(
+                    text = toolStatus,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
     }
@@ -330,10 +357,13 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                     if (message.text.isEmpty() && isProcessing) {
                         ThinkingDots()
                     } else {
-                        Text(
-                            text = message.text,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 14.sp
+                        MarkdownText(
+                            markdown = message.text,
+                            style = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp
+                            ),
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                     Text(
@@ -355,6 +385,7 @@ private fun ChatInputBar(
     inputText: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onFocusChange: (Boolean) -> Unit,
     enabled: Boolean
 ) {
     Surface(
@@ -372,7 +403,11 @@ private fun ChatInputBar(
             OutlinedTextField(
                 value = inputText,
                 onValueChange = onInputChange,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focusState ->
+                        onFocusChange(focusState.isFocused)
+                    },
                 placeholder = { Text("输入指令或问题...") },
                 singleLine = true,
                 enabled = enabled

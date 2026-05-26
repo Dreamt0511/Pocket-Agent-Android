@@ -96,9 +96,28 @@ class AgentDaemon(
             config["max_tokens"] = settings.llmMaxTokens.toString()
 
             TermuxServiceClient.chatStream(command, config).collect { data ->
-                StreamBridge.stream(data)
-                output.append(data)
-                task.output.value = output.toString()
+                when {
+                    data.startsWith("[TOOL]") -> {
+                        // 工具调用事件不放入聊天内容，只更新状态栏
+                        try {
+                            val jsonStr = data.removePrefix("[TOOL]").trim()
+                            val event = org.json.JSONObject(jsonStr)
+                            when (event.optString("type")) {
+                                "tool_start" -> {
+                                    val toolName = event.optString("name", "工具")
+                                    StreamBridge.status("执行: $toolName")
+                                }
+                                "tool_end" -> StreamBridge.status("处理结果")
+                                "thinking" -> StreamBridge.status("思考中")
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    else -> {
+                        StreamBridge.stream(data)
+                        output.append(data)
+                        task.output.value = output.toString()
+                    }
+                }
             }
             taskQueueManager.onTaskComplete(task, true, output.toString())
             _status.value = DaemonStatus.Ready
