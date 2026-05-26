@@ -1,7 +1,6 @@
 package com.pocketagent.app.ui.home
 
-import android.content.ClipData
-import android.content.ClipboardManager
+import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -41,6 +40,7 @@ import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.core.ScriptProgress
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
 
 private data class NavEntry(
@@ -345,7 +345,6 @@ private fun TermuxStatusCard(
     // 全局状态，切页面回来不丢失
     val launchStatus by ScriptProgress.status.collectAsState()
     val isLaunching by ScriptProgress.isLaunching.collectAsState()
-    val permPrompted by ScriptProgress.permPrompted.collectAsState()
     val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
 
     val launchService: () -> Unit = {
@@ -357,7 +356,6 @@ private fun TermuxStatusCard(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            ScriptProgress.permPrompted.value = true
             launchService()
         } else {
             testResult = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
@@ -510,7 +508,10 @@ private fun TermuxStatusCard(
                 ) { Text("测试连接", fontSize = 12.sp) }
                 OutlinedButton(
                     onClick = {
-                        if (!permPrompted) {
+                        val hasPerm = ContextCompat.checkSelfPermission(
+                            context, "com.termux.permission.RUN_COMMAND"
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (!hasPerm) {
                             showPermDialog = true
                         } else {
                             launchService()

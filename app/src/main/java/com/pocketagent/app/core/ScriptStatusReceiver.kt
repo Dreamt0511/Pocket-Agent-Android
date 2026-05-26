@@ -28,7 +28,6 @@ class ScriptStatusReceiver : BroadcastReceiver() {
 object ScriptProgress {
     val status: MutableStateFlow<String?> = MutableStateFlow(null)
     val isLaunching: MutableStateFlow<Boolean> = MutableStateFlow(false)
-    val permPrompted: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
