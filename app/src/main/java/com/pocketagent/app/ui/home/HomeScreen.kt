@@ -371,7 +371,7 @@ private fun TermuxStatusCard(
             permPrompted = true
             launchService()
         } else {
-            statusText = "Termux 权限被拒绝"
+            statusText = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
         }
     }
     var mirrorCustom by remember { mutableStateOf(
