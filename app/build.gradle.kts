@@ -68,12 +68,6 @@ android {
         }
     }
 
-    aaptOptions {
-        // AAPT2 默认的 --ignore-assets 包含 <dir>_* 规则，
-        // 会忽略所有以 _ 开头的目录（如 pip/_internal/、_distutils_hack/ 等）。
-        // Python wheel 中的子包多以下划线开头，故需移除此规则。
-        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~"
-    }
 }
 
 dependencies {
@@ -101,7 +95,6 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("org.tukaani:xz:1.9")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("com.github.jeziellago:compose-markdown:0.5.0")
 

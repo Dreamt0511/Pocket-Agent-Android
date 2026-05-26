@@ -46,26 +46,13 @@ object SkillManager {
 
     fun init(context: Context) {
         appContext = context.applicationContext
-        try {
-            val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
-            init(File(runtimeDir, "agent/skills").absolutePath)
-        } catch (e: Exception) {
-            Log.w(TAG, "CodeSyncManager failed, using internal storage", e)
-            val internalPath = File(context.filesDir, "agent/skills").absolutePath
-            init(internalPath)
-        }
+        init(File("/sdcard/Pocket-Agent/agent/skills").absolutePath)
     }
 
     fun rescan() {
-        val ctx = appContext ?: return
-        try {
-            val runtimeDir = com.pocketagent.app.update.CodeSyncManager.getInstance().getRuntimeDir()
-            val skillsDir = File(runtimeDir, "agent/skills").absolutePath
-            init(skillsDir)
-            Log.i(TAG, "Rescanned skills root (runtime): $skillsDir")
-        } catch (e: Exception) {
-            Log.w(TAG, "Rescan failed, keeping current skills root", e)
-        }
+        val skillsDir = File("/sdcard/Pocket-Agent/agent/skills").absolutePath
+        init(skillsDir)
+        Log.i(TAG, "Rescanned skills root: $skillsDir")
     }
 
     private fun getSkillsRoot(): File =

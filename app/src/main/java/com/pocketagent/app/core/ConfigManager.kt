@@ -2,7 +2,6 @@ package com.pocketagent.app.core
 
 import android.content.Context
 import android.util.Log
-import com.pocketagent.app.update.CodeSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -16,6 +15,7 @@ import java.io.File
  */
 object ConfigManager {
     private const val TAG = "ConfigManager"
+    private const val RUNTIME_DIR = "/sdcard/Pocket-Agent"
     private const val ENV_FILE = ".env"
     private const val ENV_EXAMPLE = ".env.example"
     private const val CONFIG_PY_FILE = "agent/config.py"
@@ -99,6 +99,11 @@ object ConfigManager {
     suspend fun saveAll(config: Map<String, String>) = withContext(Dispatchers.IO) {
         saveEnvConfig(config)
         saveConfigPy(config)
+        try {
+            TermuxServiceClient.syncConfig(config)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to sync config to Termux: ${e.message}")
+        }
     }
 
     suspend fun get(key: String, defaultValue: String = ""): String {
@@ -165,13 +170,7 @@ object ConfigManager {
 
     // ─── 私有方法 ─────────────────────────────────
 
-    private fun getRuntimeDir(): File? {
-        return try {
-            CodeSyncManager.getInstance().getRuntimeDir()
-        } catch (_: IllegalStateException) {
-            context?.let { File(it.filesDir, "app_python_runtime") }
-        }
-    }
+    private fun getRuntimeDir(): File = File(RUNTIME_DIR).also { it.mkdirs() }
 
     private fun getEnvFile(): File? {
         return getRuntimeDir()?.let { File(it, ENV_FILE) }

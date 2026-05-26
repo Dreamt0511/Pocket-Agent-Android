@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
-import com.pocketagent.app.core.AgentDaemonV2
+import com.pocketagent.app.core.AgentDaemon
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.service.SessionManager
@@ -43,7 +43,7 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
     var sessionTitle by remember { mutableStateOf("新会话") }
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
-    val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
+    val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
 
     // 进入页面时创建一个新会话
     LaunchedEffect(Unit) {
@@ -208,7 +208,7 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
  */
 @Composable
 private fun DaemonStatusBar(
-    status: AgentDaemonV2.DaemonStatus,
+    status: AgentDaemon.DaemonStatus,
     onRetry: () -> Unit
 ) {
     val bgColor: Color
@@ -216,28 +216,28 @@ private fun DaemonStatusBar(
     val showRetry: Boolean
 
     when (status) {
-        is AgentDaemonV2.DaemonStatus.Ready -> {
+        is AgentDaemon.DaemonStatus.Ready -> {
             bgColor = Color(0xFF1B5E20).copy(alpha = 0.08f)
             message = "Agent 就绪"
             showRetry = false
         }
-        is AgentDaemonV2.DaemonStatus.Error -> {
+        is AgentDaemon.DaemonStatus.Error -> {
             bgColor = Color(0xFFB71C1C).copy(alpha = 0.08f)
             message = "Agent 错误: ${status.message}"
             showRetry = true
         }
-        is AgentDaemonV2.DaemonStatus.Idle -> {
+        is AgentDaemon.DaemonStatus.Idle -> {
             bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
             message = "Agent 未就绪"
             showRetry = true
         }
-        is AgentDaemonV2.DaemonStatus.Syncing,
-        is AgentDaemonV2.DaemonStatus.Initializing -> {
+        is AgentDaemon.DaemonStatus.Syncing,
+        is AgentDaemon.DaemonStatus.Initializing -> {
             bgColor = Color(0xFFE65100).copy(alpha = 0.08f)
             message = "Agent 正在初始化..."
             showRetry = false
         }
-        is AgentDaemonV2.DaemonStatus.Executing -> {
+        is AgentDaemon.DaemonStatus.Executing -> {
             bgColor = Color(0xFF1565C0).copy(alpha = 0.08f)
             message = "Agent 执行中..."
             showRetry = false

@@ -13,7 +13,9 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.pocketagent.app.MainActivity
 import com.pocketagent.app.R
-import com.pocketagent.app.bridge.AgentDaemon
+import com.pocketagent.app.core.AgentDaemon
+import com.pocketagent.app.core.TermuxLauncher
+import com.pocketagent.app.core.TermuxServiceClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +38,7 @@ class AgentService : Service() {
     private var agentDaemon: AgentDaemon? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val taskQueue = ConcurrentLinkedQueue<TaskItem>()
+    private var healthCheckJob: Job? = null
 
     enum class ServiceState {
         IDLE, RUNNING, ERROR
@@ -62,6 +65,7 @@ class AgentService : Service() {
         val prompt = intent?.getStringExtra("task_prompt") ?: ""
         startForeground(NOTIFICATION_ID, createNotification(prompt))
         acquireWakeLock()
+        startHealthMonitor()
 
         if (prompt.isNotBlank()) {
             taskQueue.add(TaskItem(
@@ -137,6 +141,20 @@ class AgentService : Service() {
         }
     }
 
+    private fun startHealthMonitor() {
+        healthCheckJob = serviceScope.launch {
+            while (isActive) {
+                delay(30_000)
+                when (TermuxServiceClient.healthCheck()) {
+                    is TermuxServiceClient.HealthResult.Ok -> { /* 正常 */ }
+                    is TermuxServiceClient.HealthResult.Error -> {
+                        TermuxLauncher.launchFastAPI(this@AgentService)
+                    }
+                }
+            }
+        }
+    }
+
     private fun processQueue() {
         serviceScope.launch {
             while (taskQueue.isNotEmpty()) {
@@ -179,6 +197,7 @@ class AgentService : Service() {
     }
 
     override fun onDestroy() {
+        healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.shutdown()
         wakeLock?.let { if (it.isHeld) it.release() }
@@ -187,6 +206,7 @@ class AgentService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.shutdown()
         wakeLock?.let { if (it.isHeld) it.release() }

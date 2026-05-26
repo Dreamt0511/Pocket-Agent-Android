@@ -36,8 +36,8 @@ import androidx.navigation.NavController
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
-import com.pocketagent.app.update.BundledPythonManager
-import com.pocketagent.app.update.PythonDependencyManager
+import com.pocketagent.app.core.TermuxLauncher
+import com.pocketagent.app.core.TermuxServiceClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -60,19 +60,8 @@ private val navEntries = listOf(
 @Composable
 fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsRepo: SettingsRepository) {
     val context = LocalContext.current
-    val setupState by PythonDependencyManager.setupState.collectAsState()
-    val isPythonReady = remember { mutableStateOf(BundledPythonManager.isReady(context)) }
+    val isPythonReady = remember { mutableStateOf(false) } // 不再使用内嵌 Python
     val settings by settingsRepo.settingsFlow.collectAsState(initial = null)
-
-    // 如果 Python 尚未就绪（首次安装正在解压），等待解压完成后再显示配置卡片
-    LaunchedEffect(Unit) {
-        if (!isPythonReady.value) {
-            while (!BundledPythonManager.isReady(context)) {
-                delay(800)
-            }
-            isPythonReady.value = true
-        }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ─── 液态玻璃动态背景 ───
@@ -156,20 +145,10 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
             Spacer(Modifier.height(24.dp))
 
             // ─── 环境配置卡片（常驻首页） ───
-            if (isPythonReady.value) {
+            if (true) {
                 AnimatedStaggeredItem(delayMs = 80) {
-                    SetupDependenciesCard(
-                        setupState = setupState,
-                        currentMirrorUrl = settings?.pypiMirrorUrl ?: "",
-                        settingsRepo = settingsRepo,
-                        onStartSetup = {
-                            val pyBin = BundledPythonManager.findPythonBinary(context)
-                            if (pyBin != null) {
-                                val mirrorUrl = settings?.pypiMirrorUrl ?: ""
-                                PythonDependencyManager.launchInstall(context, pyBin, mirrorUrl)
-                            }
-                        },
-                        onRetry = { PythonDependencyManager.resetState() }
+                    TermuxStatusCard(
+                        onLaunch = { TermuxLauncher.launchFastAPI(context) }
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -337,35 +316,11 @@ private fun perimeterPosToPoint(pos: Float, w: Float, h: Float): Offset {
     }
 }
 
-// ─── 环境配置卡片（含镜像选择） ──────────────────
-
-private val pypiMirrors = listOf(
-    "官方 PyPI" to "https://pypi.org/simple/",
-    "清华" to "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/",
-    "阿里云" to "https://mirrors.aliyun.com/pypi/simple/",
-    "中科大" to "https://pypi.mirrors.ustc.edu.cn/simple/",
-    "豆瓣" to "https://pypi.doubanio.com/simple/",
-)
-
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SetupDependenciesCard(
-    setupState: PythonDependencyManager.SetupState,
-    currentMirrorUrl: String,
-    settingsRepo: SettingsRepository,
-    onStartSetup: () -> Unit,
-    onRetry: () -> Unit
-) {
-    val isInstalling = setupState !is PythonDependencyManager.SetupState.Idle &&
-            setupState !is PythonDependencyManager.SetupState.Completed &&
-            setupState !is PythonDependencyManager.SetupState.Failed
-
-    val context = LocalContext.current
+private fun TermuxStatusCard(onLaunch: () -> Unit) {
+    var isChecking by remember { mutableStateOf(false) }
+    var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
     val scope = rememberCoroutineScope()
-    var mirrorCustom by remember { mutableStateOf(
-        currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
-    ) }
-    var mirrorCustomUrl by remember { mutableStateOf(if (mirrorCustom) currentMirrorUrl else "") }
 
     GlassCard(
         shape = RoundedCornerShape(16.dp),
@@ -380,198 +335,63 @@ private fun SetupDependenciesCard(
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    when (setupState) {
-                        is PythonDependencyManager.SetupState.Completed -> {
-                            Text("✓", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
-                        }
-                        is PythonDependencyManager.SetupState.Failed -> {
-                            Text("✗", color = Color(0xFFE53935), fontWeight = FontWeight.Bold)
-                        }
-                        else -> {
-                            if (isInstalling) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+                    if (isChecking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Terminal,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = when (setupState) {
-                            is PythonDependencyManager.SetupState.Idle -> "环境配置"
-                            is PythonDependencyManager.SetupState.EnsuringPip -> "准备 pip..."
-                            is PythonDependencyManager.SetupState.Installing -> setupState.pkg
-                            is PythonDependencyManager.SetupState.Completed -> "环境就绪"
-                            is PythonDependencyManager.SetupState.Failed -> "配置失败"
-                        },
+                        text = "Termux 服务",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = when (setupState) {
-                            is PythonDependencyManager.SetupState.Idle -> "安装 Python 依赖包后才能使用 Agent"
-                            is PythonDependencyManager.SetupState.EnsuringPip -> "正在自举 pip..."
-                            is PythonDependencyManager.SetupState.Installing -> "正在从 PyPI 下载并安装..."
-                            is PythonDependencyManager.SetupState.Completed -> {
-                                if (setupState.summary.isNotEmpty()) setupState.summary
-                                else "所有依赖已就绪，可以开始使用"
-                            }
-                            is PythonDependencyManager.SetupState.Failed -> setupState.error
-                        },
+                        text = statusText,
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     )
                 }
             }
 
-            // ─── Idle / Failed 状态显示镜像选择 ───
-            if (setupState is PythonDependencyManager.SetupState.Idle ||
-                setupState is PythonDependencyManager.SetupState.Failed) {
-                Spacer(Modifier.height(14.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                Spacer(Modifier.height(10.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Cloud,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "PyPI 镜像源",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    pypiMirrors.forEach { (label, url) ->
-                        FilterChip(
-                            selected = if (url == "https://pypi.org/simple/") {
-                                currentMirrorUrl.isEmpty() || currentMirrorUrl == url
-                            } else {
-                                currentMirrorUrl == url
-                            },
-                            onClick = {
-                                scope.launch {
-                                    val s = settingsRepo.getSettings()
-                                    settingsRepo.saveSettings(s.copy(
-                                        pypiMirrorUrl = if (url == "https://pypi.org/simple/") "" else url
-                                    ))
-                                }
-                                mirrorCustom = false
-                            },
-                            label = { Text(label, fontSize = 11.sp) },
-                            modifier = Modifier.height(30.dp)
-                        )
-                    }
-                    FilterChip(
-                        selected = mirrorCustom,
-                        onClick = { mirrorCustom = !mirrorCustom },
-                        label = { Text("自定义", fontSize = 11.sp) },
-                        modifier = Modifier.height(30.dp)
-                    )
-                }
-
-                if (mirrorCustom) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = mirrorCustomUrl,
-                        onValueChange = { mirrorCustomUrl = it },
-                        placeholder = { Text("https://...", fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = {
-                            scope.launch {
-                                val s = settingsRepo.getSettings()
-                                settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
-                            }
-                        }),
-                        trailingIcon = {
-                            if (mirrorCustomUrl.isNotBlank()) {
-                                IconButton(onClick = {
-                                    scope.launch {
-                                        val s = settingsRepo.getSettings()
-                                        settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
-                                    }
-                                }) {
-                                    Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    )
-                }
-            }
-
             Spacer(Modifier.height(12.dp))
-            // 操作按钮
-            when (setupState) {
-                is PythonDependencyManager.SetupState.Idle -> {
-                    Button(
-                        onClick = onStartSetup,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text("开始配置")
-                    }
-                }
-                is PythonDependencyManager.SetupState.Completed -> {
-                    OutlinedButton(
-                        onClick = {
-                            PythonDependencyManager.resetState()
-                            onStartSetup()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                        )
-                    ) {
-                        Text("更新依赖", fontSize = 12.sp)
-                    }
-                }
-                is PythonDependencyManager.SetupState.Failed -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = {
-                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clip.setPrimaryClip(ClipData.newPlainText("PocketAgent错误", setupState.error))
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("复制错误")
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isChecking = true
+                            statusText = "正在连接..."
+                            when (val r = TermuxServiceClient.healthCheck()) {
+                                is TermuxServiceClient.HealthResult.Ok -> statusText = "连接成功! ${r.body}"
+                                is TermuxServiceClient.HealthResult.Error -> statusText = "连接失败: ${r.message}"
+                            }
+                            isChecking = false
                         }
-                        OutlinedButton(
-                            onClick = onRetry,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("重试")
-                        }
-                    }
-                }
-                else -> {} // 安装中，不显示按钮
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("测试连接", fontSize = 12.sp) }
+                OutlinedButton(
+                    onClick = {
+                        onLaunch()
+                        statusText = "已发送启动指令"
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) { Text("启动服务", fontSize = 12.sp) }
             }
         }
     }

@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
-import com.pocketagent.app.termux.TermuxBootstrap
 import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.TaskResult
@@ -32,14 +31,14 @@ object AppBootstrapper {
     private const val TAG = "AppBootstrapper"
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    private lateinit var daemon: AgentDaemonV2
+    private lateinit var daemon: AgentDaemon
     private var repoUrl: String = ""
 
     /** 任务队列管理器（供历史页面使用） */
     val taskQueueManager: TaskQueueManager = TaskQueueManager()
 
     /** 暴露 daemon 状态供 UI 层收集 */
-    val daemonStatus: StateFlow<AgentDaemonV2.DaemonStatus>
+    val daemonStatus: StateFlow<AgentDaemon.DaemonStatus>
         get() = daemon.status
 
     /**
@@ -53,13 +52,13 @@ object AppBootstrapper {
         OverlayManager.init(context)
 
         // 2. 代码同步引擎
-        CodeSyncManager.init(context, "$repoUrl/releases")
+        CodeSyncManager.init(context, repoUrl)
 
         // 3. 更新检查器
         UpdateChecker.init(context, repoUrl)
 
         // 4. Agent 守护进程（共享 taskQueueManager）
-        daemon = AgentDaemonV2(context, taskQueueManager)
+        daemon = AgentDaemon(context, taskQueueManager)
 
         // 5. 技能管理器（数据目录就绪后初始化）
         SkillManager.init(context)
@@ -77,6 +76,11 @@ object AppBootstrapper {
         return scope.launch {
             StreamBridge.status("正在启动...")
             StreamBridge.out("[info] Pocket Agent 启动中\n")
+
+            if (!TermuxLauncher.isTermuxInstalled(getContext())) {
+                StreamBridge.error("请先安装 Termux、Termux:API、Termux:Boot")
+                return@launch
+            }
 
             // 代码同步 + Python 初始化
             val success = daemon.bootstrap()
@@ -116,7 +120,7 @@ object AppBootstrapper {
             is UpdateChecker.UpdateEvent.CodeUpdated -> {
                 StreamBridge.done("代码已更新到 v${event.version}")
                 // 重新初始化 Python 运行时
-                daemon = AgentDaemonV2(getContext())
+                daemon = AgentDaemon(getContext(), taskQueueManager)
                 daemon.bootstrap()
             }
             is UpdateChecker.UpdateEvent.AppUpdateAvailable -> {

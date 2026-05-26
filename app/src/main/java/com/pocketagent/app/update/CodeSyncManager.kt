@@ -24,7 +24,8 @@ class CodeSyncManager(private val context: Context) {
         private const val TAG = "CodeSyncManager"
         private const val GITHUB_REPO = "Dreamt0511/Pocket-Agent"
         private const val GITHUB_BRANCH = "main"
-        private const val RUNTIME_DIR = "app_python_runtime"
+//        private const val RUNTIME_DIR = "app_python_runtime"
+        private const val TARGET_DIR = "/sdcard/Pocket-Agent"
         private const val VERSION_FILE = "version.json"
 
         @Volatile
@@ -60,9 +61,9 @@ class CodeSyncManager(private val context: Context) {
         data class Error(val message: String) : SyncState()
     }
 
-    /** 运行时目录: /data/data/<package>/files/app_python_runtime/ */
+    /** 运行时目录: /sdcard/Pocket-Agent/ */
     fun getRuntimeDir(): File {
-        return File(context.filesDir, RUNTIME_DIR).also { it.mkdirs() }
+        return File(TARGET_DIR).also { it.mkdirs() }
     }
 
     /** 版本文件本地路径 */
@@ -310,7 +311,7 @@ class CodeSyncManager(private val context: Context) {
 
     /** 获取入口脚本路径 */
     fun getEntryPoint(): File {
-        return File(getRuntimeDir(), "stable_entry.py")
+        return File(getRuntimeDir(), "app.py")
     }
 
     /** 检查入口脚本是否存在 */
@@ -318,20 +319,9 @@ class CodeSyncManager(private val context: Context) {
         return getEntryPoint().exists()
     }
 
-    /** 确保种子代码存在 — 无网络时使用内置代码 */
+    /** 确保种子代码存在 — 不再需要 seed code，直接检查入口文件 */
     fun ensureSeedCode(): Boolean {
-        val entry = getEntryPoint()
-        if (entry.exists()) return true
-        val runtimeDir = getRuntimeDir()
-        if (!runtimeDir.exists()) runtimeDir.mkdirs()
-        try {
-            entry.writeText("# Pocket Agent Seed Entry\nprint('{\"type\": \"ready\"}')\n")
-            Log.i(TAG, "Seed code created at ${entry.absolutePath}")
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to create seed code", e)
-            return false
-        }
+        return getEntryPoint().exists()
     }
 }
 
