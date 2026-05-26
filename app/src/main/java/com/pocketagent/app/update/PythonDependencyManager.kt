@@ -483,15 +483,20 @@ sys.stdout.write("pip bootstrap done\n")
         sitePackages: File,
         pythonDir: File
     ) {
-        // 探测 assets 是否存在
-        if (context.assets.list("python-ext") == null) {
-            Log.i(TAG, "assets/python-ext/ 不存在，跳过预编译提取")
+        // 探测 assets 是否存在（list 返回 null=目录不存在, 空数组=文件未打包）
+        val entries = context.assets.list("python-ext")
+        if (entries == null || entries.isEmpty()) {
+            Log.i(TAG, "assets/python-ext/ 无内容，跳过预编译提取")
             return
         }
 
         // 1. 提取 Python 包到 site-packages
         Log.i(TAG, "提取预编译 C 扩展包到 site-packages...")
-        extractAssetTarGz(context, "python-ext/packages.tar.gz", sitePackages, pythonBin, baseEnv)
+        try {
+            extractAssetTarGz(context, "python-ext/packages.tar.gz", sitePackages, pythonBin, baseEnv)
+        } catch (e: java.io.FileNotFoundException) {
+            throw RuntimeException("预编译包文件未打包进 APK（assets list 有内容但 open 失败），请执行 clean 构建: ${e.message}")
+        }
 
         // 验证：检查一个已知 marker 文件
         val marker = File(sitePackages, "aiohttp/__init__.py")
@@ -502,7 +507,11 @@ sys.stdout.write("pip bootstrap done\n")
         // 2. 提取系统库到 python/lib/
         val libDir = File(pythonDir, "lib")
         Log.i(TAG, "提取预编译系统库到 $libDir ...")
-        extractAssetTarGz(context, "python-ext/libs.tar.gz", libDir, pythonBin, baseEnv)
+        try {
+            extractAssetTarGz(context, "python-ext/libs.tar.gz", libDir, pythonBin, baseEnv)
+        } catch (e: java.io.FileNotFoundException) {
+            throw RuntimeException("预编译系统库文件未打包进 APK，请执行 clean 构建: ${e.message}")
+        }
 
         // 验证：检查一个关键系统库
         val libMarker = File(libDir, "libjpeg.so.8")
