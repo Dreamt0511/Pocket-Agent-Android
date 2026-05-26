@@ -24,6 +24,10 @@ import com.pocketagent.app.data.ChatRepository
 import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -107,14 +111,6 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Text("←")
-                    }
-                },
-                actions = {
-                    if (isProcessing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
                     }
                 }
             )
@@ -210,7 +206,14 @@ fun ChatScreen(navController: NavController, conversationId: Long? = null) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages) { message ->
-                    ChatMessageItem(message)
+                    ChatMessageItem(message, isProcessing)
+                }
+            }
+
+            // 自动滚动到底部（新消息或 streamText 变化时）
+            LaunchedEffect(messages.size, streamText.length) {
+                if (messages.isNotEmpty()) {
+                    listState.animateScrollToItem(messages.size - 1)
                 }
             }
         }
@@ -288,7 +291,7 @@ data class ChatMessage(
 // ─── 消息气泡 ───────────────────────────────────
 
 @Composable
-private fun ChatMessageItem(message: ChatMessage) {
+private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -324,11 +327,15 @@ private fun ChatMessageItem(message: ChatMessage) {
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = message.text,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp
-                    )
+                    if (message.text.isEmpty() && isProcessing) {
+                        ThinkingDots()
+                    } else {
+                        Text(
+                            text = message.text,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp
+                        )
+                    }
                     Text(
                         text = formatTime(message.timestamp),
                         fontSize = 10.sp,
@@ -379,6 +386,34 @@ private fun ChatInputBar(
             ) {
                 Text("发送")
             }
+        }
+    }
+}
+
+// ─── 思考动画 ───────────────────────────────────
+
+@Composable
+private fun ThinkingDots() {
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking")
+    val dotCount = 3
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        repeat(dotCount) { index ->
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.2f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = index * 300),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dot_alpha_$index"
+            )
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .padding(horizontal = 2.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
+            )
         }
     }
 }
