@@ -7,20 +7,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 配置管理器 — 按归属分类持久化配置
- *
- * 配置分为两类，各自写入主库对应的文件，确保主库代码能读到：
- *   .env 类      → runtime/.env             （被 agent/core.py 的 load_dotenv 读取）
- *   config.py 类 → runtime/agent/config.py   （被 agent/core.py import）
+ * 配置管理器 — 本地文件作缓存，HTTP 同步到 Termux
  */
 object ConfigManager {
     private const val TAG = "ConfigManager"
-    private const val RUNTIME_DIR = "/sdcard/Pocket-Agent"
     private const val ENV_FILE = ".env"
-    private const val ENV_EXAMPLE = ".env.example"
     private const val CONFIG_PY_FILE = "agent/config.py"
 
-    /** 归属于 .env 的键 */
     private val ENV_KEYS = setOf(
         "DEFAULT_LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL",
         "LLM_TEMPERATURE", "LLM_MAX_TOKENS",
@@ -29,7 +22,6 @@ object ConfigManager {
         "MCP_SERVER_URL",
     )
 
-    /** 归属于 config.py 的键 */
     private val CONFIG_PY_KEYS = setOf(
         "MAX_ITERATIONS", "RECURSION_LIMIT", "MAX_CONTEXT_TOKENS",
     )
@@ -42,63 +34,45 @@ object ConfigManager {
 
     // ─── 公开接口 ─────────────────────────────────
 
-    /**
-     * 确保 .env 文件存在，不存在则从 .env.example 模板创建
-     */
-    suspend fun ensureEnvFile(): Boolean = withContext(Dispatchers.IO) {
-        val envFile = getEnvFile() ?: return@withContext false
-        if (envFile.exists()) return@withContext true
+    /** 确保 .env 存在（现在 Termux 侧管理，App 侧返回 true 即可） */
+    suspend fun ensureEnvFile(): Boolean = true
 
-        // 优先从种子 assets 复制 .env.example
-        val exampleFile = getExampleFile()
-        if (exampleFile?.exists() == true) {
-            exampleFile.copyTo(envFile, overwrite = false)
-            Log.i(TAG, "Created .env from .env.example at ${envFile.absolutePath}")
-            return@withContext true
-        }
-
-        // 兜底：写默认值
-        val defaults = loadDefaults()
-        val content = defaults.filterKeys { it in ENV_KEYS }
-            .entries.joinToString("\n") { "${it.key}=${it.value}" }
-        envFile.writeText(content)
-        Log.i(TAG, "Created .env with defaults at ${envFile.absolutePath}")
-        true
-    }
-
-    /**
-     * 读取所有配置（合并 .env + config.py）
-     */
     suspend fun loadAll(): Map<String, String> = withContext(Dispatchers.IO) {
         val result = mutableMapOf<String, String>()
+        val runtimeDir = getRuntimeDir()
 
-        // 从 .env 读取
-        getEnvFile()?.let { envFile ->
-            if (envFile.exists()) {
-                envFile.readLines().forEach { line ->
-                    parseLine(line)?.let { (k, v) -> result[k] = v }
+        // 从 .env 读取（安全：文件不存在则跳过）
+        if (runtimeDir != null) {
+            try {
+                val envFile = File(runtimeDir, ENV_FILE)
+                if (envFile.exists()) {
+                    envFile.readLines().forEach { line ->
+                        parseLine(line)?.let { (k, v) -> result[k] = v }
+                    }
                 }
-            }
+            } catch (_: Exception) {}
         }
 
-        // 从 config.py 读取 MAX_ITERATIONS / RECURSION_LIMIT / MAX_CONTEXT_TOKENS
-        result.putAll(loadConfigPyValues())
-
-        // 用默认值补全缺失项
-        val defaults = loadDefaults()
-        defaults.forEach { (k, v) -> result.putIfAbsent(k, v) }
-
+        // 默认值补全
+        loadDefaults().forEach { (k, v) -> result.putIfAbsent(k, v) }
         result
     }
 
-    /**
-     * 保存配置（自动按归属分类）
-     * - .env 类 → runtime/.env
-     * - config.py 类 → runtime/agent/config.py
-     */
     suspend fun saveAll(config: Map<String, String>) = withContext(Dispatchers.IO) {
-        saveEnvConfig(config)
-        saveConfigPy(config)
+        // 本地 .env 写入（best-effort，权限不足则跳过）
+        try {
+            val runtimeDir = getRuntimeDir()
+            if (runtimeDir != null) {
+                val envFile = File(runtimeDir, ENV_FILE)
+                val content = config.filterKeys { it in ENV_KEYS }
+                    .entries.joinToString("\n") { "${it.key}=${it.value}" }
+                envFile.writeText(content + "\n")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Cannot write local .env (storage permission?), syncing to Termux only")
+        }
+
+        // HTTP 同步到 Termux（核心）
         try {
             TermuxServiceClient.syncConfig(config)
         } catch (e: Exception) {
@@ -106,122 +80,23 @@ object ConfigManager {
         }
     }
 
-    suspend fun get(key: String, defaultValue: String = ""): String {
-        val all = loadAll()
-        return all[key] ?: defaultValue
-    }
+    // ─── 路径（安全：权限不足时返回 null） ────────
 
-    suspend fun set(key: String, value: String) {
-        val all = loadAll().toMutableMap()
-        all[key] = value
-        saveAll(all)
-    }
-
-    suspend fun remove(key: String) {
-        val all = loadAll().toMutableMap()
-        all.remove(key)
-        saveAll(all)
-    }
-
-    suspend fun resetToDefaults() {
-        saveAll(loadDefaults())
-    }
-
-    // ─── 分类保存 ─────────────────────────────────
-
-    private suspend fun saveEnvConfig(config: Map<String, String>) {
-        val envFile = getEnvFile() ?: return
-        val content = config.filterKeys { it in ENV_KEYS }
-            .entries.joinToString("\n") { "${it.key}=${it.value}" }
-        envFile.writeText(content + "\n")
-        Log.i(TAG, "Written ${config.count { it.key in ENV_KEYS }} env vars to ${envFile.absolutePath}")
-    }
-
-    private suspend fun saveConfigPy(config: Map<String, String>) {
-        val configPyFile = getConfigPyFile() ?: return
-        if (!configPyFile.exists()) {
-            Log.w(TAG, "agent/config.py not found, skipping config.py write")
-            return
-        }
-
-        val pyVars = config.filterKeys { it in CONFIG_PY_KEYS }
-        if (pyVars.isEmpty()) return
-
-        var content = configPyFile.readText()
-        var changed = false
-
-        for ((key, value) in pyVars) {
-            val pattern = """^($key)\s*=\s*\d+""".toRegex(RegexOption.MULTILINE)
-            if (pattern.containsMatchIn(content)) {
-                content = content.replace(pattern, "$1 = $value")
-                changed = true
-            } else {
-                // 键不存在则追加到文件末尾
-                content += "\n$key = $value\n"
-                changed = true
-            }
-        }
-
-        if (changed) {
-            configPyFile.writeText(content)
-            Log.i(TAG, "Updated config.py vars: ${pyVars.keys}")
+    private fun getRuntimeDir(): File? {
+        return try {
+            // 优先读 /sdcard/Pocket-Agent/（Termux 共享路径）
+            val dir = File("/sdcard/Pocket-Agent")
+            if (!dir.exists()) dir.mkdirs()
+            if (dir.exists() && dir.canWrite()) dir else null
+        } catch (_: Exception) {
+            null
         }
     }
 
-    // ─── 私有方法 ─────────────────────────────────
-
-    private fun getRuntimeDir(): File = File(RUNTIME_DIR).also { it.mkdirs() }
-
-    private fun getEnvFile(): File? {
-        return getRuntimeDir()?.let { File(it, ENV_FILE) }
-    }
-
-    private fun getExampleFile(): File? {
-        return getRuntimeDir()?.let { File(it, ENV_EXAMPLE) }
-    }
-
-    private fun getConfigPyFile(): File? {
-        return getRuntimeDir()?.let { File(it, CONFIG_PY_FILE) }
-    }
-
-    /**
-     * 从 agent/config.py 中读取 MAX_ITERATIONS / RECURSION_LIMIT / MAX_CONTEXT_TOKENS
-     */
-    private fun loadConfigPyValues(): Map<String, String> {
-        val file = getConfigPyFile() ?: return emptyMap()
-        if (!file.exists()) return emptyMap()
-
-        val result = mutableMapOf<String, String>()
-        val pattern = """^(MAX_ITERATIONS|RECURSION_LIMIT|MAX_CONTEXT_TOKENS)\s*=\s*(\d+)""".toRegex(RegexOption.MULTILINE)
-
-        for (match in pattern.findAll(file.readText())) {
-            result[match.groupValues[1]] = match.groupValues[2]
-        }
-        return result
-    }
-
-    private fun parseLine(line: String): Pair<String, String>? {
-        val trimmed = line.trim()
-        if (trimmed.isEmpty() || trimmed.startsWith("#")) return null
-
-        val equalsIndex = trimmed.indexOf('=')
-        if (equalsIndex < 0) return null
-
-        val key = trimmed.substring(0, equalsIndex).trim()
-        var value = trimmed.substring(equalsIndex + 1).trim()
-
-        if (value.startsWith('"') && value.endsWith('"')) {
-            value = value.substring(1, value.length - 1)
-        } else if (value.startsWith('\'') && value.endsWith('\'')) {
-            value = value.substring(1, value.length - 1)
-        }
-
-        return key to value
-    }
+    // ─── 默认值 ─────────────────────────────────
 
     private fun loadDefaults(): Map<String, String> {
         return mapOf(
-            // .env 类
             "DEFAULT_LLM_BASE_URL" to "",
             "LLM_API_KEY" to "",
             "LLM_MODEL" to "",
@@ -233,11 +108,24 @@ object ConfigManager {
             "EXECUTOR_TEMPERATURE" to "",
             "EXECUTOR_MAX_TOKENS" to "",
             "MCP_SERVER_URL" to "http://127.0.0.1:7474/mcp",
-
-            // config.py 类
             "MAX_ITERATIONS" to "300",
             "RECURSION_LIMIT" to "600",
             "MAX_CONTEXT_TOKENS" to "128000",
         )
+    }
+
+    private fun parseLine(line: String): Pair<String, String>? {
+        val trimmed = line.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("#")) return null
+        val equalsIndex = trimmed.indexOf('=')
+        if (equalsIndex < 0) return null
+        val key = trimmed.substring(0, equalsIndex).trim()
+        var value = trimmed.substring(equalsIndex + 1).trim()
+        if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.substring(1, value.length - 1)
+        } else if (value.startsWith('\'') && value.endsWith('\'')) {
+            value = value.substring(1, value.length - 1)
+        }
+        return key to value
     }
 }

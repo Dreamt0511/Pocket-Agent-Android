@@ -9,6 +9,7 @@ object TermuxLauncher {
     private const val TERMUX_PACKAGE = "com.termux"
     private const val TERMUX_RUN_COMMAND = "com.termux.RUN_COMMAND"
     private const val POCKET_AGENT_DIR = "/sdcard/Pocket-Agent"
+    private const val GIT_REPO = "https://github.com/Dreamt0511/Pocket-Agent.git"
 
     fun isTermuxInstalled(context: Context): Boolean {
         return try {
@@ -19,27 +20,31 @@ object TermuxLauncher {
         }
     }
 
+    /**
+     * 启动 FastAPI 服务。由 Termux 执行所有文件操作（git clone/pip install/uvicorn）。
+     * Termux 通过 termux-setup-storage 拥有 /sdcard/ 写权限。
+     */
     fun launchFastAPI(context: Context, mirrorUrl: String = ""): Boolean {
         if (!isTermuxInstalled(context)) {
             Log.w(TAG, "Termux not installed")
             return false
         }
 
-        // 构建 pip install 命令（如果有镜像源则设置 PIP_INDEX_URL）
-        val pipInstall = buildString {
-            if (mirrorUrl.isNotBlank()) {
-                append("PIP_INDEX_URL=$mirrorUrl ")
-            }
-            append("pip install fastapi uvicorn -q")
-            append(" && ")
-            if (mirrorUrl.isNotBlank()) {
-                append("PIP_INDEX_URL=$mirrorUrl ")
-            }
-            append("pip install -r requirements.txt -q")
-        }
+        val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
-        // 启动命令：自动安装依赖 + 启动服务
-        val script = "cd $POCKET_AGENT_DIR && $pipInstall && exec uvicorn app:app --host 0.0.0.0 --port 8000"
+        // Termux 脚本：git clone(首次) 或 git pull(更新) + pip install + 启动 uvicorn
+        val script = buildString {
+            append("if [ ! -d $POCKET_AGENT_DIR/.git ]; then")
+            append(" mkdir -p $POCKET_AGENT_DIR")
+            append(" && git clone $GIT_REPO $POCKET_AGENT_DIR")
+            append("; else")
+            append(" cd $POCKET_AGENT_DIR && git pull origin main")
+            append("; fi")
+            append(" && cd $POCKET_AGENT_DIR")
+            append(" && ${pipEnv}pip install fastapi uvicorn -q")
+            append(" && ${pipEnv}pip install -r requirements.txt -q")
+            append(" && exec uvicorn app:app --host 0.0.0.0 --port 8000")
+        }
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, "$TERMUX_PACKAGE.RunCommandService")
