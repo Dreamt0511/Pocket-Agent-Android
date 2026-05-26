@@ -506,7 +506,8 @@ private fun TermuxStatusCard(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) { Text("测试连接", maxLines = 1, fontSize = 12.sp) }
                 OutlinedButton(
                     onClick = {
@@ -521,7 +522,8 @@ private fun TermuxStatusCard(
                     },
                     enabled = !isLaunching,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                 ) {
                     if (isLaunching) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -554,10 +556,11 @@ private fun TermuxStatusCard(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color(0xFFEF5350)
                     )
-                ) { Text("关闭服务", maxLines = 1, fontSize = 12.sp, color = Color(0xFFEF5350)) }
+                ) { Text("关闭服务", maxLines = 1, fontSize = 12.sp) }
             }
 
             // ─── Termux 权限请求弹窗 ───
