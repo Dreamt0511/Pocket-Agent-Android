@@ -26,12 +26,20 @@ import java.io.FileReader
  *
  * 执行时需要设置 LD_LIBRARY_PATH 指向 python/lib/，
  * 以便动态链接器找到 libpython3.13.so 和 libandroid-support.so。
+ *
+ * ⚠️ 并发安全：
+ *   ensureExtracted() 会在版本不匹配时 deleteRecursively 整个目录。
+ *   安装锁 (INSTALLING_LOCK_FILE) 防止在依赖安装过程中误删。
+ *   所有需要 Python 的组件（PythonRuntime、PythonDependencyManager）
+ *   都应先调用 ensureExtracted() 确保运行时就绪。
  */
 object BundledPythonManager {
     private const val TAG = "BundledPython"
     private const val ASSET_ROOT = "python"
     private const val PYTHON_DIR_NAME = "python"
     private const val EXTRACTED_VERSION_FILE = ".extracted_version"
+    /** 安装锁文件名 — installDependencies 期间创建，阻止并发删除 */
+    private const val INSTALLING_LOCK_FILE = ".installing"
 
     // ─── 公开方法 ─────────────────────────────────
 
@@ -42,6 +50,28 @@ object BundledPythonManager {
         return File(context.filesDir, PYTHON_DIR_NAME)
     }
 
+    // ─── 安装锁 ─────────────────────────────────────
+    // installDependencies 期间创建锁文件，阻止 ensureExtracted 误删
+
+    /** 检查安装锁是否存在 */
+    private fun isInstalling(context: Context): Boolean {
+        return File(getPythonDir(context), INSTALLING_LOCK_FILE).exists()
+    }
+
+    /** 创建安装锁 */
+    fun lockInstalling(context: Context) {
+        try {
+            File(getPythonDir(context), INSTALLING_LOCK_FILE).writeText("")
+        } catch (_: Exception) {}
+    }
+
+    /** 释放安装锁 */
+    fun unlockInstalling(context: Context) {
+        try {
+            File(getPythonDir(context), INSTALLING_LOCK_FILE).delete()
+        } catch (_: Exception) {}
+    }
+
     /**
      * 确保 Python 已解压就绪，版本变化时自动重新解压。
      *
@@ -49,6 +79,8 @@ object BundledPythonManager {
      * - 首次安装：直接解压
      * - 已解压且版本一致：跳过
      * - APK 升级（versionCode 增加）：删除旧文件，重新解压
+     *   ⚠️ 如果安装锁存在（installDependencies 进行中），跳过删除，
+     *      避免并发竞态导致二进制被删。
      *
      * 必须在 IO 线程调用（内部已切到 Dispatchers.IO）。
      */
@@ -64,6 +96,11 @@ object BundledPythonManager {
 
         // APK 升级或文件不完整 → 清理旧数据并重新解压
         if (pythonDir.exists()) {
+            // ⚠️ 安装进行中 + 有锁 → 跳过删除，等下次再重新解压
+            if (isInstalling(context)) {
+                Log.w(TAG, "安装锁存在，跳过重新解压（等下次）")
+                return@withContext isReady(context)
+            }
             Log.i(TAG, "APK 版本变化 ($extractedVersion → $currentVersion) 或文件不完整，重新解压")
             pythonDir.deleteRecursively()
         }

@@ -1,5 +1,8 @@
 package com.pocketagent.app.ui.home
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.*
@@ -548,6 +551,16 @@ private fun SetupDependenciesCard(
                 }
                 is PythonDependencyManager.SetupState.Failed -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clip.setPrimaryClip(ClipData.newPlainText("PocketAgent错误", setupState.error))
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("复制错误")
+                        }
                         OutlinedButton(
                             onClick = onRetry,
                             modifier = Modifier.weight(1f),

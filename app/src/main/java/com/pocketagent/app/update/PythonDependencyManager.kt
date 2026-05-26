@@ -156,13 +156,26 @@ object PythonDependencyManager {
         mirrorUrl: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         FileLogger.init(context)
-        val logDir = context.getExternalFilesDir("logs") ?: File(context.filesDir, "logs")
-        val logPath = File(logDir, "py_setup.log").absolutePath
         _setupState.value = SetupState.EnsuringPip
         Log.i(TAG, "开始安装依赖 (pythonBin=$pythonBin)")
         FileLogger.i(TAG, "开始安装依赖 (pythonBin=$pythonBin, mirrorUrl=$mirrorUrl)")
 
-        // 防御：确认 python 二进制真实存在，避免 CI 构建不完整导致迷惑的 "error=2" 错误
+        // 安装锁：阻止 ensureExtracted 在安装过程中误删 python 目录
+        BundledPythonManager.lockInstalling(context)
+
+        // 确保 Python 运行时已提取就绪（installDependencies 自己管理提取，
+        // 不依赖外部的 PythonRuntime.initialize 等并发调用）
+        if (!BundledPythonManager.ensureExtracted(context)) {
+            val msg = "内置 Python 提取失败，请检查 APK 是否完整\n" +
+                    "当前 assets/python/ 文件列表: ${describePythonAssets(context)}"
+            Log.e(TAG, msg)
+            FileLogger.e(TAG, msg)
+            _setupState.value = SetupState.Failed(msg)
+            BundledPythonManager.unlockInstalling(context)
+            return@withContext false
+        }
+
+        // 防御：确认 python 二进制真实存在
         val pythonFile = File(pythonBin)
         if (!pythonFile.exists()) {
             val msg = "Python 二进制不存在: $pythonBin\n" +
@@ -171,6 +184,7 @@ object PythonDependencyManager {
             Log.e(TAG, msg)
             FileLogger.e(TAG, msg)
             _setupState.value = SetupState.Failed(msg)
+            BundledPythonManager.unlockInstalling(context)
             return@withContext false
         }
 
@@ -321,7 +335,7 @@ sys.stdout.write("pip bootstrap done\n")
 
             // 有任意失败 → 标记失败
             if (errors.isNotEmpty()) {
-                val msg = "部分操作失败:\n${errors.joinToString("\n")}\n\n日志: $logPath"
+                val msg = "部分操作失败:\n${errors.joinToString("\n")}\n\n日志: ${FileLogger.getLogPath()}"
                 Log.e(TAG, msg)
                 FileLogger.e(TAG, "部分操作失败:\n${errors.joinToString("\n")}")
                 _setupState.value = SetupState.Failed(msg)
@@ -367,10 +381,11 @@ sys.stdout.write("pip bootstrap done\n")
         } catch (e: Exception) {
             val msg = "安装异常: ${e.message}"
             Log.e(TAG, msg, e)
-            val fullMsg = "$msg\n\n日志: $logPath"
             FileLogger.saveOutput("crash_${System.currentTimeMillis()}", "${msg}\n${e.stackTraceToString()}")
-            _setupState.value = SetupState.Failed(fullMsg)
+            _setupState.value = SetupState.Failed("$msg\n\n日志: ${FileLogger.getLogPath()}")
             false
+        } finally {
+            BundledPythonManager.unlockInstalling(context)
         }
     }
 
