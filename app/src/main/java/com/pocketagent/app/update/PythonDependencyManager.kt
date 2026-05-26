@@ -305,6 +305,10 @@ sys.stdout.write("pip bootstrap done\n")
 
             writeSnapshot(context, allCurrentReqs)
 
+            // 清理 pip 缓存和 __pycache__，避免磁盘膨胀（LangChain 生态可达数百 MB）
+            cleanPipCache(context)
+            cleanPycache(sitePackages)
+
             val summary = buildString {
                 val parts = mutableListOf<String>()
                 if (diff.toInstall.isNotEmpty()) parts.add("新增 ${diff.toInstall.size}")
@@ -893,6 +897,7 @@ sys.stdout.write("pip bootstrap done\n")
             "--trusted-host", "pypi.org",
             "--trusted-host", "files.pythonhosted.org",
             "--only-binary", ":all:",
+            "--no-cache-dir",
             "--no-input",
             "--upgrade",
             pkg
@@ -906,6 +911,7 @@ sys.stdout.write("pip bootstrap done\n")
             "--target", sitePackages.absolutePath,
             "--trusted-host", "pypi.org",
             "--trusted-host", "files.pythonhosted.org",
+            "--no-cache-dir",
             "--no-input",
             "--upgrade",
             pkg
@@ -976,5 +982,39 @@ sys.stdout.write("pip bootstrap done\n")
             if (va != vb) return va.compareTo(vb)
         }
         return 0
+    }
+
+    // ─── 磁盘清理 ──────────────────────────────────
+
+    /** 清理 pip 下载缓存（$HOME/.cache/pip/），防止磁盘膨胀 */
+    private fun cleanPipCache(context: Context) {
+        try {
+            val pipCache = File(BundledPythonManager.getPythonDir(context), ".cache/pip")
+            if (pipCache.exists()) {
+                val size = pipCache.walkTopDown().sumOf { it.length() }
+                Log.i(TAG, "清理 pip 缓存: ${size / 1024 / 1024}MB")
+                pipCache.deleteRecursively()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "清理 pip 缓存失败: ${e.message}")
+        }
+    }
+
+    /** 递归删除 site-packages 中的 __pycache__ 目录，消除字节码缓存膨胀 */
+    private fun cleanPycache(sitePackages: File) {
+        try {
+            var deleted = 0
+            sitePackages.walkTopDown()
+                .filter { it.isDirectory && it.name == "__pycache__" }
+                .forEach {
+                    it.deleteRecursively()
+                    deleted++
+                }
+            if (deleted > 0) {
+                Log.i(TAG, "清理了 $deleted 个 __pycache__ 目录")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "清理 __pycache__ 失败: ${e.message}")
+        }
     }
 }
