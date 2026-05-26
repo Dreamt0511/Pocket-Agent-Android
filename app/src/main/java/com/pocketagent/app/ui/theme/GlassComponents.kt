@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -26,12 +27,11 @@ import kotlinx.coroutines.delay
 // ─── 液态玻璃卡片 ──────────────────────────────
 
 /**
- * 液态玻璃卡片 — 四层深度结构
+ * 液态玻璃卡片 — 三层深度结构
  *
  * 1. 外层阴影（宽泛柔和）
- * 2. 内层阴影（紧凑深色，增加立体感）
- * 3. 半透明渐变玻璃背景（模拟液态表面曲率）
- * 4. 顶部高光 + 底部辉光（模拟光线折射与透射）
+ * 2. 半透明渐变玻璃背景
+ * 3. 顶部边缘高光（模拟光线折射）
  */
 @Composable
 fun GlassCard(
@@ -39,8 +39,16 @@ fun GlassCard(
     shape: RoundedCornerShape = RoundedCornerShape(14.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
+    val light = isLightTheme()
+
     Box(
         modifier = modifier
+            .shadow(
+                elevation = if (light) 3.dp else 2.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = if (light) 0.05f else 0.4f),
+                spotColor = Color.Black.copy(alpha = if (light) 0.08f else 0.25f)
+            )
             .clip(shape)
             .background(
                 brush = Brush.verticalGradient(colors = glassBackgroundGradient()),
@@ -54,8 +62,7 @@ fun GlassCard(
     ) {
         // 内容层
         content()
-
-        // 顶部边缘高光 — 模拟光线在玻璃顶端折射
+        // 顶部边缘高光 — 在内容之上叠加，模拟玻璃顶端的光线折射
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -64,28 +71,11 @@ fun GlassCard(
                 .background(glassTopHighlight())
                 .align(Alignment.TopCenter)
         )
-
-        // 底部辉光 — 模拟光线穿过玻璃后的漫射
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .clip(shape)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            glassBottomGlow(),
-                            Color.Transparent
-                        )
-                    )
-                )
-                .align(Alignment.BottomCenter)
-        )
     }
 }
 
 /**
- * 玻璃 Surface — 比 GlassCard 更薄更透，适合内嵌使用
+ * 玻璃 Surface — 比 GlassCard 更薄更透
  */
 @Composable
 fun GlassSurface(
@@ -94,15 +84,22 @@ fun GlassSurface(
     content: @Composable BoxScope.() -> Unit
 ) {
     val light = isLightTheme()
+
     Box(
         modifier = modifier
+            .shadow(
+                elevation = if (light) 1.dp else 0.5.dp,
+                shape = shape,
+                ambientColor = Color.Black.copy(alpha = if (light) 0.03f else 0.2f),
+                spotColor = Color.Black.copy(alpha = if (light) 0.04f else 0.1f)
+            )
             .clip(shape)
             .background(
                 brush = Brush.verticalGradient(
                     colors = if (light) {
-                        listOf(Color.White.copy(alpha = 0.45f), Color(0xFFE8F2FC).copy(alpha = 0.25f))
+                        listOf(Color.White.copy(alpha = 0.35f), Color.White.copy(alpha = 0.2f))
                     } else {
-                        listOf(Color.White.copy(alpha = 0.09f), Color.White.copy(alpha = 0.04f))
+                        listOf(Color.White.copy(alpha = 0.07f), Color.White.copy(alpha = 0.04f))
                     }
                 ),
                 shape = shape
@@ -111,25 +108,15 @@ fun GlassSurface(
                 width = (0.5f).dp,
                 brush = Brush.verticalGradient(
                     colors = if (light) {
-                        listOf(Color.White.copy(alpha = 0.8f), Color.White.copy(alpha = 0.3f))
+                        listOf(Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.3f))
                     } else {
-                        listOf(Color.White.copy(alpha = 0.14f), Color.White.copy(alpha = 0.03f))
+                        listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.03f))
                     }
                 ),
                 shape = shape
             )
     ) {
         content()
-
-        // 顶部高光
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .clip(shape)
-                .background(glassTopHighlight())
-                .align(Alignment.TopCenter)
-        )
     }
 }
 
@@ -144,8 +131,7 @@ fun GlassDivider(modifier: Modifier = Modifier) {
             .height(Dp.Hairline)
             .fillMaxWidth()
             .background(
-                if (light) Color(0xFF2C5F8A).copy(alpha = 0.08f)
-                else Color.White.copy(alpha = 0.06f)
+                if (light) Color.Black.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.06f)
             )
     )
 }
@@ -170,10 +156,9 @@ fun AnimatedStaggeredItem(
     val progress by animateFloatAsState(
         targetValue = if (started) 1f else 0f,
         animationSpec = spring(
-            dampingRatio = 0.68f,
+            dampingRatio = 0.72f,
             stiffness = Spring.StiffnessLow
-        ),
-        label = "stagger_progress"
+        )
     )
 
     LaunchedEffect(Unit) {
@@ -185,7 +170,7 @@ fun AnimatedStaggeredItem(
         modifier = modifier
             .graphicsLayer {
                 alpha = progress
-                translationY = (1f - progress) * 20f
+                translationY = (1f - progress) * 24f
             }
     ) {
         content()
@@ -207,8 +192,7 @@ fun PressBounceContainer(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium),
-        label = "bounce_scale"
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
     )
 
     Box(
