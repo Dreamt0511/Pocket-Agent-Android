@@ -11,9 +11,9 @@ import kotlinx.coroutines.flow.map
 val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
 
 data class Settings(
-    val llmBaseUrl: String = "http://127.0.0.1:8080/v1",
+    val llmBaseUrl: String = "",
     val llmApiKey: String = "",
-    val llmModel: String = "gelab-zero-4b-preview",
+    val llmModel: String = "",
     val llmTemperature: Float = 0.7f,
     val llmMaxTokens: Int = 8000,
     val mcpServerUrl: String = "http://127.0.0.1:7474/mcp",
@@ -40,9 +40,9 @@ class SettingsRepository(
     val settingsFlow: Flow<Settings> = dataStore.data
         .map { preferences ->
             Settings(
-                llmBaseUrl = preferences[DEFAULT_LLM_BASE_URL] ?: "http://127.0.0.1:8080/v1",
+                llmBaseUrl = preferences[DEFAULT_LLM_BASE_URL] ?: "",
                 llmApiKey = preferences[LLM_API_KEY] ?: "",
-                llmModel = preferences[LLM_MODEL] ?: "gelab-zero-4b-preview",
+                llmModel = preferences[LLM_MODEL] ?: "",
                 llmTemperature = preferences[LLM_TEMPERATURE] ?: 0.7f,
                 llmMaxTokens = preferences[LLM_MAX_TOKENS] ?: 8000,
                 mcpServerUrl = preferences[MCP_SERVER_URL] ?: "http://127.0.0.1:7474/mcp",
