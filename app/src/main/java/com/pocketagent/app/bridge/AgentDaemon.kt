@@ -3,6 +3,7 @@ package com.pocketagent.app.bridge
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.pocketagent.app.update.PythonDependencyManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +69,11 @@ class AgentDaemon(private val context: Context) {
                 "--config", configPath
             )
             processBuilder.environment()["PYTHONUNBUFFERED"] = "1"
+            // 添加 site-packages 到 PYTHONPATH，否则 daemon 找不到 pip 安装的第三方包
+            val sitePackages = PythonDependencyManager.getSitePackagesDir(context)
+            if (sitePackages.exists()) {
+                processBuilder.environment()["PYTHONPATH"] = sitePackages.absolutePath
+            }
             processBuilder.directory(File(agentScript).parentFile)
 
             process = processBuilder.start()
@@ -191,23 +197,23 @@ class AgentDaemon(private val context: Context) {
                 .redirectErrorStream(true)
                 .start()
             val version = pythonProcess.inputStream.bufferedReader().readText().trim()
-            report.copy(pythonVersion = version)
+            report = report.copy(pythonVersion = version)
 
             // 2. 检测依赖包
             val pipProcess = ProcessBuilder(getPythonPath(), "-m", "pip", "list", "--format=freeze")
                 .redirectErrorStream(true)
                 .start()
             val packages = pipProcess.inputStream.bufferedReader().readLines()
-            report.copy(pipPackages = packages.filter { it.isNotBlank() })
+            report = report.copy(pipPackages = packages.filter { it.isNotBlank() })
 
             // 3. 检测配置文件
             val configFile = File(getConfigPath())
-            report.copy(configValid = configFile.exists() && configFile.readText().isNotBlank())
+            report = report.copy(configValid = configFile.exists() && configFile.readText().isNotBlank())
 
             // 4. 检测 API 连通性
             val apiUrl = prefs.getString("api_base_url", "") ?: ""
             if (apiUrl.isNotBlank()) {
-                report.copy(apiReachable = checkApiReachable(apiUrl))
+                report = report.copy(apiReachable = checkApiReachable(apiUrl))
             }
 
             diagnostics.value = report

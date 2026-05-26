@@ -406,7 +406,7 @@ private fun SetupDependenciesCard(
                         text = when (setupState) {
                             is PythonDependencyManager.SetupState.Idle -> "环境配置"
                             is PythonDependencyManager.SetupState.EnsuringPip -> "准备 pip..."
-                            is PythonDependencyManager.SetupState.Installing -> "安装 ${setupState.pkg}"
+                            is PythonDependencyManager.SetupState.Installing -> setupState.pkg
                             is PythonDependencyManager.SetupState.Completed -> "环境就绪"
                             is PythonDependencyManager.SetupState.Failed -> "配置失败"
                         },
@@ -420,7 +420,10 @@ private fun SetupDependenciesCard(
                             is PythonDependencyManager.SetupState.Idle -> "安装 Python 依赖包后才能使用 Agent"
                             is PythonDependencyManager.SetupState.EnsuringPip -> "正在自举 pip..."
                             is PythonDependencyManager.SetupState.Installing -> "正在从 PyPI 下载并安装..."
-                            is PythonDependencyManager.SetupState.Completed -> "所有依赖已就绪，可以开始使用"
+                            is PythonDependencyManager.SetupState.Completed -> {
+                                if (setupState.summary.isNotEmpty()) setupState.summary
+                                else "所有依赖已就绪，可以开始使用"
+                            }
                             is PythonDependencyManager.SetupState.Failed -> setupState.error
                         },
                         fontSize = 11.5.sp,

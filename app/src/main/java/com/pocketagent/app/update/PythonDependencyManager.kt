@@ -34,6 +34,7 @@ object PythonDependencyManager {
     // 与 python/（内置运行时的解压目录）独立，避免 APK 更新时 ensureExtracted
     // 执行 deleteRecursively() 连带清空已安装的 pip 包
     private const val SITE_PACKAGES_DIR = "python-site-packages"
+    private const val REQUIREMENTS_SNAPSHOT = ".requirements_snapshot"
 
     // ─── Termux 依赖库自愈映射 ──────────────────────
     // soname → Termux .deb 下载 URL
@@ -75,7 +76,7 @@ object PythonDependencyManager {
         /** 正在安装依赖（显示当前包名） */
         class Installing(val pkg: String) : SetupState()
         /** 全部完成 */
-        class Completed(val timestamp: Long) : SetupState()
+        class Completed(val timestamp: Long, val summary: String = "") : SetupState()
         /** 失败 */
         class Failed(val error: String) : SetupState()
     }
@@ -240,88 +241,59 @@ sys.stdout.write("pip bootstrap done\n")
                 return@withContext false
             }
 
-            // Step 3: pip install
-            _setupState.value = SetupState.Installing("准备安装...")
-            Log.i(TAG, "Step 2: pip install -r ${reqFile.absolutePath}")
+            // Step 3: 分析依赖变化（diff 当前 requirements vs 快照 + 已装版本）
+            _setupState.value = SetupState.Installing("分析依赖变化...")
+            Log.i(TAG, "Step 3: 分析依赖变化")
 
-            // 先读取 requirements.txt 列出包名用于进度显示
-            val packages = reqFile.readLines()
-                .filter { it.isNotBlank() && !it.startsWith("#") }
-                .map { it.split(Regex("[>=<\\[;]")).first().trim() }
-                .filter { it.isNotBlank() }
+            val runtimeReqs = parseRequirements(reqFile)
+            val seedReqs = parseSeedRequirements(context)
+            val allCurrentReqs = mergeRequirements(runtimeReqs, seedReqs)
+            Log.i(TAG, "当前依赖: ${allCurrentReqs.size} 个")
 
-            // 合并 agent-seed/requirements.txt 中的额外包（主库可能缺少的关键依赖如 packaging）
-            val seedPackages = try {
-                context.assets.open("agent-seed/requirements.txt")
-                    .bufferedReader().readLines()
-                    .filter { it.isNotBlank() && !it.startsWith("#") }
-                    .map { it.split(Regex("[>=<\\[;]")).first().trim() }
-                    .filter { it.isNotBlank() && it !in packages }
-            } catch (e: Exception) {
-                Log.w(TAG, "读取 seed requirements 失败: ${e.message}")
-                emptyList()
-            }
-            if (seedPackages.isNotEmpty()) {
-                Log.i(TAG, "seed 补充包: $seedPackages")
-            }
-            val allPackages = packages + seedPackages
+            val snapshotReqs = readSnapshot(context)
+            val installed = getInstalledVersions(context, pythonBin, baseEnv, sitePackages)
 
-            var firstError: String? = null
+            val diff = computeDiff(allCurrentReqs, snapshotReqs, installed)
+            Log.i(TAG, "差异: 新增=${diff.toInstall.size}, 升级=${diff.toUpgrade.size}, 移除=${diff.toUninstall.size}, 不变=${diff.unchanged}")
 
-            for (pkg in allPackages) {
-                // 检查是否已安装（dist-info 存在则跳过）
-                val normalizedName = pkg.lowercase().replace("-", "_").replace(".", "_")
-                val alreadyInstalled = sitePackages.listFiles()
-                    ?.any { f -> f.isDirectory && f.name.startsWith("${normalizedName}-") && f.name.endsWith(".dist-info") }
-                    ?: false
-                if (alreadyInstalled) {
-                    Log.i(TAG, "$pkg 已安装，跳过")
-                    continue
-                }
-
-                _setupState.value = SetupState.Installing(pkg)
-                Log.i(TAG, "安装: $pkg")
-
-                val pipArgs = listOf(
-                    "-m", "pip", "install",
-                    "--target", sitePackages.absolutePath,
-                    "--trusted-host", "pypi.org",
-                    "--trusted-host", "files.pythonhosted.org",
-                    "--only-binary", ":all:",
-                    "--no-input",
-                    pkg
-                )
-                val result = runPython(context, pythonBin, baseEnv, pipArgs)
-                if (!result.success) {
-                    Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output}")
-                    val fallbackArgs = listOf(
-                        "-m", "pip", "install",
-                        "--target", sitePackages.absolutePath,
-                        "--trusted-host", "pypi.org",
-                        "--trusted-host", "files.pythonhosted.org",
-                        "--no-input",
-                        pkg
-                    )
-                    val fallbackResult = runPython(context, pythonBin, baseEnv, fallbackArgs)
-                    if (!fallbackResult.success) {
-                        if (firstError == null) {
-                            firstError = "${pkg}: ${fallbackResult.output}"
-                        }
-                        Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output}")
-                    }
-                }
+            // 无任何变化 → 直接完成
+            if (diff.isEmpty) {
+                Log.i(TAG, "所有依赖已是最新")
+                _setupState.value = SetupState.Completed(System.currentTimeMillis(), "所有依赖已是最新")
+                return@withContext true
             }
 
-            // Step 4: 验证
-            _setupState.value = SetupState.Installing("验证中...")
+            // Step 4: 执行变化（先卸载、再安装/升级）
+            val errors = mutableListOf<String>()
 
-            // 有任意包安装失败 → 直接标记失败，不跳过
-            if (firstError != null) {
-                val msg = "部分包安装失败: $firstError"
+            // 4a: 卸载已移除的依赖
+            if (diff.toUninstall.isNotEmpty()) {
+                _setupState.value = SetupState.Installing("移除 ${diff.toUninstall.size} 个旧依赖...")
+                uninstallPackages(context, pythonBin, baseEnv, sitePackages, diff.toUninstall, errors)
+            }
+
+            // 4b: 安装新增 + 升级
+            val toProcess = diff.toInstall + diff.toUpgrade
+            for ((index, entry) in toProcess.withIndex()) {
+                val (name, spec) = entry
+                val label = if (entry in diff.toUpgrade) "升级" else "安装"
+                val progress = if (toProcess.size > 1) " (${index + 1}/${toProcess.size})" else ""
+                _setupState.value = SetupState.Installing("${label}${progress} $name")
+                Log.i(TAG, "$label: $name")
+
+                installPackage(context, pythonBin, baseEnv, sitePackages, name, errors)
+            }
+
+            // 有任意失败 → 标记失败
+            if (errors.isNotEmpty()) {
+                val msg = "部分操作失败:\n${errors.joinToString("\n")}"
                 Log.e(TAG, msg)
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false
             }
+
+            // Step 5: 验证 & 写快照
+            _setupState.value = SetupState.Installing("验证中...")
 
             val ready = checkReady(context)
             if (!ready) {
@@ -331,8 +303,18 @@ sys.stdout.write("pip bootstrap done\n")
                 return@withContext false
             }
 
-            _setupState.value = SetupState.Completed(System.currentTimeMillis())
-            Log.i(TAG, "依赖安装完成")
+            writeSnapshot(context, allCurrentReqs)
+
+            val summary = buildString {
+                val parts = mutableListOf<String>()
+                if (diff.toInstall.isNotEmpty()) parts.add("新增 ${diff.toInstall.size}")
+                if (diff.toUpgrade.isNotEmpty()) parts.add("升级 ${diff.toUpgrade.size}")
+                if (diff.toUninstall.isNotEmpty()) parts.add("移除 ${diff.toUninstall.size}")
+                if (parts.isEmpty()) parts.add("已是最新")
+                append(parts.joinToString(", "))
+            }
+            _setupState.value = SetupState.Completed(System.currentTimeMillis(), summary)
+            Log.i(TAG, "依赖同步完成: $summary")
             true
 
         } catch (e: CancellationException) {
@@ -747,5 +729,252 @@ sys.stdout.write("pip bootstrap done\n")
         return output.contains("error=13") ||
                output.contains("Permission denied") ||
                output.contains("EACCES")
+    }
+
+    // ─── 增量依赖同步 ──────────────────────────────
+
+    private data class DiffResult(
+        val toInstall: List<Pair<String, String>>,
+        val toUpgrade: List<Pair<String, String>>,
+        val toUninstall: List<String>,
+        val unchanged: Int
+    ) {
+        val isEmpty get() = toInstall.isEmpty() && toUpgrade.isEmpty() && toUninstall.isEmpty()
+    }
+
+    /** 解析 requirements.txt，返回 name → version_spec */
+    private fun parseRequirements(file: File): Map<String, String> {
+        return parseRequirementsFromLines(file.readLines())
+    }
+
+    private fun parseSeedRequirements(context: Context): Map<String, String> {
+        return try {
+            val lines = context.assets.open("agent-seed/requirements.txt")
+                .bufferedReader().readLines()
+            parseRequirementsFromLines(lines)
+        } catch (e: Exception) {
+            Log.w(TAG, "读取 seed requirements 失败: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    private fun parseRequirementsFromLines(lines: List<String>): Map<String, String> {
+        return lines
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .mapNotNull { line ->
+                val parts = line.split(Regex("[>=<~!;]")).first().trim()
+                if (parts.isBlank()) return@mapNotNull null
+                val name = parts
+                val spec = line.removePrefix(name).trim()
+                name to spec
+            }
+            .toMap()
+    }
+
+    /** 合并 runtime + seed requirements，seed 补充 runtime 中不存在的包 */
+    private fun mergeRequirements(runtime: Map<String, String>, seed: Map<String, String>): Map<String, String> {
+        val merged = runtime.toMutableMap()
+        for ((name, spec) in seed) {
+            if (name !in merged) merged[name] = spec
+        }
+        return merged
+    }
+
+    /** 通过 pip list --format=json 获取已安装的包及其版本 */
+    private fun getInstalledVersions(
+        context: Context,
+        pythonBin: String,
+        baseEnv: Map<String, String>,
+        sitePackages: File
+    ): Map<String, String> {
+        // 添加 PYTHONPATH 确保 pip 能发现 --target 目录下的包
+        val env = baseEnv.toMutableMap().apply {
+            put("PYTHONPATH", sitePackages.absolutePath)
+        }
+        val result = runPython(context, pythonBin, env,
+            listOf("-m", "pip", "list", "--format=json")
+        )
+        if (!result.success) {
+            Log.w(TAG, "pip list 失败: ${result.output}，回退到空列表")
+            return emptyMap()
+        }
+        return parsePipListJson(result.output)
+    }
+
+    /** 解析 pip list --format=json 输出，返回 name → version */
+    private fun parsePipListJson(json: String): Map<String, String> {
+        // 简单 JSON 解析（不引入额外依赖，该格式结构固定）
+        val result = mutableMapOf<String, String>()
+        val entries = json.split("""{"name":""")
+        for (entry in entries.drop(1)) { // 跳过第一个空分段
+            val name = entry.substringAfter("\"").substringBefore("\"")
+            val version = entry.substringAfter("""version":""").substringAfter("\"").substringBefore("\"")
+            if (name.isNotBlank()) {
+                result[name.lowercase().replace("-", "_")] = version
+            }
+        }
+        return result
+    }
+
+    /** 读取上次成功安装时的依赖快照 */
+    private fun readSnapshot(context: Context): Map<String, String> {
+        val file = File(getSitePackagesDir(context), REQUIREMENTS_SNAPSHOT)
+        if (!file.exists()) return emptyMap()
+        return try {
+            parseRequirementsFromLines(file.readLines())
+        } catch (e: Exception) {
+            Log.w(TAG, "读取快照失败: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /** 写入依赖快照 */
+    private fun writeSnapshot(context: Context, reqs: Map<String, String>) {
+        val file = File(getSitePackagesDir(context), REQUIREMENTS_SNAPSHOT)
+        file.writeText(
+            reqs.entries.joinToString("\n") { (name, spec) -> "$name$spec" }
+        )
+    }
+
+    /** 计算差异：当前 vs 快照 vs 已装版本 */
+    private fun computeDiff(
+        current: Map<String, String>,
+        snapshot: Map<String, String>,
+        installed: Map<String, String>
+    ): DiffResult {
+        val toInstall = mutableListOf<Pair<String, String>>()
+        val toUpgrade = mutableListOf<Pair<String, String>>()
+        val toUninstall = mutableListOf<String>()
+        var unchanged = 0
+
+        for ((name, spec) in current) {
+            val normalizedName = name.lowercase().replace("-", "_")
+            if (name !in snapshot) {
+                // 新增的依赖
+                toInstall.add(name to spec)
+            } else if (snapshot[name] != spec) {
+                // 版本约束变了 → 重新安装（升级）
+                toUpgrade.add(name to spec)
+            } else {
+                // 快照中有，版本约束不变 → 检查是否真正已装
+                val installedVer = installed[normalizedName]
+                if (installedVer != null && versionSatisfies(installedVer, spec)) {
+                    unchanged++
+                } else {
+                    // 已装但版本不满足（上次安装可能中断）→ 重新安装
+                    toUpgrade.add(name to spec)
+                }
+            }
+        }
+
+        // 快照中有但当前没有 → 已移除
+        for (name in snapshot.keys) {
+            if (name !in current) {
+                toUninstall.add(name)
+            }
+        }
+
+        return DiffResult(toInstall, toUpgrade, toUninstall, unchanged)
+    }
+
+    /** 安装单个包（先尝试二进制 wheel，失败则源码安装） */
+    private fun installPackage(
+        context: Context,
+        pythonBin: String,
+        baseEnv: Map<String, String>,
+        sitePackages: File,
+        pkg: String,
+        errors: MutableList<String>
+    ) {
+        // 使用 --upgrade 以同时支持新装和升级
+        val pipArgs = listOf(
+            "-m", "pip", "install",
+            "--target", sitePackages.absolutePath,
+            "--trusted-host", "pypi.org",
+            "--trusted-host", "files.pythonhosted.org",
+            "--only-binary", ":all:",
+            "--no-input",
+            "--upgrade",
+            pkg
+        )
+        val result = runPython(context, pythonBin, baseEnv, pipArgs)
+        if (result.success) return
+
+        Log.w(TAG, "$pkg 二进制安装失败，尝试源码安装: ${result.output}")
+        val fallbackArgs = listOf(
+            "-m", "pip", "install",
+            "--target", sitePackages.absolutePath,
+            "--trusted-host", "pypi.org",
+            "--trusted-host", "files.pythonhosted.org",
+            "--no-input",
+            "--upgrade",
+            pkg
+        )
+        val fallbackResult = runPython(context, pythonBin, baseEnv, fallbackArgs)
+        if (!fallbackResult.success) {
+            errors.add("${pkg}: ${fallbackResult.output}")
+            Log.e(TAG, "安装 $pkg 失败: ${fallbackResult.output}")
+        }
+    }
+
+    /** 批量卸载包 */
+    private fun uninstallPackages(
+        context: Context,
+        pythonBin: String,
+        baseEnv: Map<String, String>,
+        sitePackages: File,
+        packages: List<String>,
+        errors: MutableList<String>
+    ) {
+        val env = baseEnv.toMutableMap().apply {
+            put("PYTHONPATH", sitePackages.absolutePath)
+        }
+        for (pkg in packages) {
+            Log.i(TAG, "卸载: $pkg")
+            val result = runPython(context, pythonBin, env,
+                listOf("-m", "pip", "uninstall", "-y", pkg)
+            )
+            if (!result.success) {
+                Log.w(TAG, "卸载 $pkg 失败: ${result.output}，尝试手动清理")
+                manualUninstall(sitePackages, pkg)
+            }
+        }
+    }
+
+    /** pip uninstall 失败时的兜底方案：直接删除包目录和 .dist-info */
+    private fun manualUninstall(sitePackages: File, pkg: String) {
+        val normalizedName = pkg.lowercase().replace("-", "_")
+        sitePackages.listFiles()?.forEach { f ->
+            if (f.isDirectory) {
+                val name = f.name.lowercase()
+                if (name == normalizedName ||
+                    (name.startsWith("${normalizedName}-") && name.endsWith(".dist-info"))) {
+                    f.deleteRecursively()
+                    Log.i(TAG, "手动删除: ${f.name}")
+                }
+            }
+        }
+    }
+
+    /** 检查已装版本是否满足版本约束（仅支持 >= 运算符） */
+    private fun versionSatisfies(installedVersion: String, spec: String): Boolean {
+        if (spec.isBlank()) return true
+        // 提取 >= 约束版本
+        val requiredVersion = spec.removePrefix(">=").removePrefix(">").trim()
+        if (requiredVersion.isBlank()) return true
+        return compareVersions(installedVersion, requiredVersion) >= 0
+    }
+
+    /** 比较两个版本号字符串 */
+    private fun compareVersions(a: String, b: String): Int {
+        val partsA = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val partsB = b.split(".").map { it.toIntOrNull() ?: 0 }
+        val maxLen = maxOf(partsA.size, partsB.size)
+        for (i in 0 until maxLen) {
+            val va = partsA.getOrElse(i) { 0 }
+            val vb = partsB.getOrElse(i) { 0 }
+            if (va != vb) return va.compareTo(vb)
+        }
+        return 0
     }
 }
