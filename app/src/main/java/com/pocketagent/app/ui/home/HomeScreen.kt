@@ -104,7 +104,7 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                             text = "Pocket Agent",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.3f).sp,
+                            letterSpacing = (-0.5f).sp,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(6.dp))
