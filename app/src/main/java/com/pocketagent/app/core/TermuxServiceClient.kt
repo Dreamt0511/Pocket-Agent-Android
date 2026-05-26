@@ -180,6 +180,22 @@ object TermuxServiceClient {
         }
     }
 
+    // ─── 技能列表获取 ──────────────────
+
+    suspend fun fetchSkills(): SkillsResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/skills").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                SkillsResult.Ok(response.body?.string() ?: "{}")
+            } else {
+                SkillsResult.Error("HTTP ${response.code}")
+            }
+        } catch (e: Exception) {
+            SkillsResult.Error(e.message ?: "连接失败")
+        }
+    }
+
     // ─── 代码同步 ───────────────────────
 
     suspend fun triggerSync(): SyncResult = withContext(Dispatchers.IO) {
@@ -216,5 +232,9 @@ object TermuxServiceClient {
     }
     sealed class ShutdownResult {
         object Ok : ShutdownResult()
+    }
+    sealed class SkillsResult {
+        data class Ok(val body: String) : SkillsResult()
+        data class Error(val message: String) : SkillsResult()
     }
 }

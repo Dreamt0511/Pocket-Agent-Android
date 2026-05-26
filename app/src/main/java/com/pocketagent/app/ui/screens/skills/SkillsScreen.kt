@@ -24,9 +24,11 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.navigation.NavController
 import com.pocketagent.app.core.SkillManager
+import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.ui.theme.GlassCard
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +38,8 @@ fun SkillsScreen(navController: NavController) {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
     var skills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
+    var allSkills by remember { mutableStateOf<List<SkillManager.Skill>>(emptyList()) }
+    var isNetworkLoaded by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
 
     // 详情视图状态
@@ -70,11 +74,55 @@ fun SkillsScreen(navController: NavController) {
         else -> SkillManager.Category.MAIN_SKILLS
     }
 
-    // 加载技能
-    LaunchedEffect(selectedTab) {
+    // 页面初次加载：尝试从后端获取技能
+    LaunchedEffect(Unit) {
         isLoading = true
-        skills = SkillManager.getSkills(currentCategory)
+        when (val r = TermuxServiceClient.fetchSkills()) {
+            is TermuxServiceClient.SkillsResult.Ok -> {
+                try {
+                    val json = JSONObject(r.body)
+                    val loaded = mutableListOf<SkillManager.Skill>()
+                    val categories = mapOf(
+                        "main_skills" to SkillManager.Category.MAIN_SKILLS,
+                        "executor_skills" to SkillManager.Category.EXECUTOR_SKILLS,
+                        "auto_skills" to SkillManager.Category.AUTO_SKILLS,
+                    )
+                    for ((key, category) in categories) {
+                        val arr = json.optJSONArray(key) ?: continue
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.getJSONObject(i)
+                            loaded.add(SkillManager.Skill(
+                                name = obj.optString("name"),
+                                description = obj.optString("description"),
+                                category = category,
+                                path = obj.optString("path"),
+                                content = obj.optString("content")
+                            ))
+                        }
+                    }
+                    allSkills = loaded
+                    isNetworkLoaded = true
+                    skills = loaded.filter { it.category == currentCategory }
+                } catch (_: Exception) {
+                    skills = SkillManager.getSkills(currentCategory)
+                }
+            }
+            is TermuxServiceClient.SkillsResult.Error -> {
+                skills = SkillManager.getSkills(currentCategory)
+            }
+        }
         isLoading = false
+    }
+
+    // Tab 切换：从网络缓存过滤或本地加载
+    LaunchedEffect(selectedTab) {
+        if (isNetworkLoaded) {
+            skills = allSkills.filter { it.category == currentCategory }
+        } else {
+            isLoading = true
+            skills = SkillManager.getSkills(currentCategory)
+            isLoading = false
+        }
     }
 
     // 单技能导出
@@ -165,6 +213,7 @@ fun SkillsScreen(navController: NavController) {
                         IconButton(onClick = {
                             scope.launch {
                                 isLoading = true
+                                isNetworkLoaded = false
                                 skills = SkillManager.getSkills(currentCategory)
                                 isLoading = false
                             }
@@ -304,6 +353,7 @@ fun SkillsScreen(navController: NavController) {
                     }
                     showSkillDialog = false
                     editSkill = null
+                    isNetworkLoaded = false
                     skills = SkillManager.getSkills(currentCategory)
                 }
             }
@@ -336,6 +386,7 @@ fun SkillsScreen(navController: NavController) {
                         scope.launch {
                             SkillManager.deleteSkill(showDeleteConfirm!!.path)
                             showDeleteConfirm = null
+                            isNetworkLoaded = false
                             skills = SkillManager.getSkills(currentCategory)
                         }
                     },
