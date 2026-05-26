@@ -182,10 +182,13 @@ class AgentService : Service() {
     private suspend fun executeTask(task: TaskItem): String {
         if (agentDaemon == null) {
             agentDaemon = AgentDaemon(this@AgentService)
-            agentDaemon?.initialize()
         }
-
-        return agentDaemon?.executeCommand(task.prompt) ?: throw IllegalStateException("Agent 未初始化")
+        val result = agentDaemon!!.execute(task.prompt)
+        return when (result) {
+            is com.pocketagent.app.update.TaskResult.Success -> result.message
+            is com.pocketagent.app.update.TaskResult.Failure -> throw Exception(result.error)
+            is com.pocketagent.app.update.TaskResult.Cancelled -> "已取消"
+        }
     }
 
     fun enqueueTask(prompt: String) {
@@ -199,7 +202,7 @@ class AgentService : Service() {
     override fun onDestroy() {
         healthCheckJob?.cancel()
         serviceScope.cancel()
-        agentDaemon?.shutdown()
+        agentDaemon?.destroy()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -208,7 +211,7 @@ class AgentService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         healthCheckJob?.cancel()
         serviceScope.cancel()
-        agentDaemon?.shutdown()
+        agentDaemon?.destroy()
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         stopSelf()

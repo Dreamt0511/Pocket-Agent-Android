@@ -113,14 +113,14 @@ class AgentDaemon(
             _status.value = DaemonStatus.Ready
             StreamBridge.status("空闲")
             StreamBridge.done(output.toString())
-            TaskResult.Success(output.toString())
+            return TaskResult.Success(output.toString())
         } catch (e: Exception) {
             Log.e(TAG, "Execute failed", e)
             taskQueueManager.onTaskComplete(task, false, "错误: ${e.message}")
             _status.value = DaemonStatus.Ready
             StreamBridge.status("空闲")
             StreamBridge.error(e.message ?: "Unknown error")
-            TaskResult.Failure(e.message ?: "执行失败")
+            return TaskResult.Failure(e.message ?: "执行失败")
         }
     }
 

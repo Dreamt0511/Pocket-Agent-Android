@@ -148,7 +148,11 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
             if (true) {
                 AnimatedStaggeredItem(delayMs = 80) {
                     TermuxStatusCard(
-                        onLaunch = { TermuxLauncher.launchFastAPI(context) }
+                        currentMirrorUrl = settings?.pypiMirrorUrl ?: "",
+                        settingsRepo = settingsRepo,
+                        onLaunch = { mirrorUrl ->
+                            TermuxLauncher.launchFastAPI(context, mirrorUrl)
+                        }
                     )
                 }
                 Spacer(Modifier.height(16.dp))
@@ -316,11 +320,28 @@ private fun perimeterPosToPoint(pos: Float, w: Float, h: Float): Offset {
     }
 }
 
+private val pypiMirrors = listOf(
+    "官方 PyPI" to "",
+    "清华" to "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/",
+    "阿里云" to "https://mirrors.aliyun.com/pypi/simple/",
+    "中科大" to "https://pypi.mirrors.ustc.edu.cn/simple/",
+    "豆瓣" to "https://pypi.doubanio.com/simple/",
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TermuxStatusCard(onLaunch: () -> Unit) {
+private fun TermuxStatusCard(
+    currentMirrorUrl: String,
+    settingsRepo: SettingsRepository,
+    onLaunch: (mirrorUrl: String) -> Unit
+) {
     var isChecking by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
     val scope = rememberCoroutineScope()
+    var mirrorCustom by remember { mutableStateOf(
+        currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
+    ) }
+    var mirrorCustomUrl by remember { mutableStateOf(if (mirrorCustom) currentMirrorUrl else "") }
 
     GlassCard(
         shape = RoundedCornerShape(16.dp),
@@ -366,6 +387,84 @@ private fun TermuxStatusCard(onLaunch: () -> Unit) {
                 }
             }
 
+            // ─── PyPI 镜像选择 ───
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            Spacer(Modifier.height(8.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Cloud,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "PyPI 镜像源",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                pypiMirrors.forEach { (label, url) ->
+                    FilterChip(
+                        selected = if (url.isEmpty()) currentMirrorUrl.isEmpty() else currentMirrorUrl == url,
+                        onClick = {
+                            scope.launch {
+                                val s = settingsRepo.getSettings()
+                                settingsRepo.saveSettings(s.copy(pypiMirrorUrl = url))
+                            }
+                            mirrorCustom = false
+                        },
+                        label = { Text(label, fontSize = 11.sp) },
+                        modifier = Modifier.height(30.dp)
+                    )
+                }
+                FilterChip(
+                    selected = mirrorCustom,
+                    onClick = { mirrorCustom = !mirrorCustom },
+                    label = { Text("自定义", fontSize = 11.sp) },
+                    modifier = Modifier.height(30.dp)
+                )
+            }
+
+            if (mirrorCustom) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = mirrorCustomUrl,
+                    onValueChange = { mirrorCustomUrl = it },
+                    placeholder = { Text("https://...", fontSize = 12.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        scope.launch {
+                            val s = settingsRepo.getSettings()
+                            settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                        }
+                    }),
+                    trailingIcon = {
+                        if (mirrorCustomUrl.isNotBlank()) {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    val s = settingsRepo.getSettings()
+                                    settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                                }
+                            }) {
+                                Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -386,7 +485,7 @@ private fun TermuxStatusCard(onLaunch: () -> Unit) {
                 ) { Text("测试连接", fontSize = 12.sp) }
                 OutlinedButton(
                     onClick = {
-                        onLaunch()
+                        onLaunch(currentMirrorUrl)
                         statusText = "已发送启动指令"
                     },
                     modifier = Modifier.weight(1f),

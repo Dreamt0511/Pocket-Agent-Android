@@ -19,19 +19,27 @@ object TermuxLauncher {
         }
     }
 
-    fun launchFastAPI(context: Context): Boolean {
+    fun launchFastAPI(context: Context, mirrorUrl: String = ""): Boolean {
         if (!isTermuxInstalled(context)) {
             Log.w(TAG, "Termux not installed")
             return false
         }
 
-        // 启动命令：自动安装 fastapi/uvicorn + 项目依赖 + 启动服务
-        val script = buildString {
-            append("cd $POCKET_AGENT_DIR")
-            append(" && pip install fastapi uvicorn -q")           // 基础依赖
-            append(" && pip install -r requirements.txt -q")      // 项目依赖
-            append(" && exec uvicorn app:app --host 0.0.0.0 --port 8000")
+        // 构建 pip install 命令（如果有镜像源则设置 PIP_INDEX_URL）
+        val pipInstall = buildString {
+            if (mirrorUrl.isNotBlank()) {
+                append("PIP_INDEX_URL=$mirrorUrl ")
+            }
+            append("pip install fastapi uvicorn -q")
+            append(" && ")
+            if (mirrorUrl.isNotBlank()) {
+                append("PIP_INDEX_URL=$mirrorUrl ")
+            }
+            append("pip install -r requirements.txt -q")
         }
+
+        // 启动命令：自动安装依赖 + 启动服务
+        val script = "cd $POCKET_AGENT_DIR && $pipInstall && exec uvicorn app:app --host 0.0.0.0 --port 8000"
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, "$TERMUX_PACKAGE.RunCommandService")
