@@ -83,7 +83,6 @@ class AgentDaemon(
         val task = taskQueueManager.enqueue(command, sessionId)
         _status.value = DaemonStatus.Executing
         StreamBridge.status("执行中")
-        StreamBridge.out("$ $command\n")
 
         val output = StringBuilder()
         try {
