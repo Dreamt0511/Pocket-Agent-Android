@@ -87,7 +87,7 @@ fun SkillsScreen(navController: NavController) {
             ).also { it.mkdirs() }
             val result = SkillManager.exportSkill(skill.path, dest.absolutePath)
             if (result != null) {
-                snackbarHostState.showSnackbar("已导出: ${skill.name}")
+                snackbarHostState.showSnackbar("已导出: Downloads/PocketAgent_Skills/${skill.name}")
             } else {
                 snackbarHostState.showSnackbar("导出失败: ${skill.name}")
             }
