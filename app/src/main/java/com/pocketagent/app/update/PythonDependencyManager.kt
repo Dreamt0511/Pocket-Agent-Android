@@ -677,7 +677,7 @@ if os.path.exists(linker) and os.path.exists(python_bin):
         pass
 """.trimStart()
 
-        for loc in locations {
+        for (loc in locations) {
             loc.parentFile.mkdirs()
             loc.writeText(script)
             Log.i(TAG, "SELinux compat: ${loc.absolutePath}")
