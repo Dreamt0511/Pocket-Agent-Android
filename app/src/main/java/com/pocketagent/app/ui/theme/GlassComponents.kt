@@ -86,7 +86,7 @@ fun GlassCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(shape.bottomStart)
+                .height(24.dp)
                 .clip(shape)
                 .background(
                     Brush.verticalGradient(
