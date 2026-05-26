@@ -58,7 +58,7 @@ object TermuxLauncher {
             append("  fi &&\n")
             append("  echo \"[uvicorn] Starting...\";\n")
             append("  # 先杀旧进程再启动，避免重复\n")
-            append("  pkill -f \"uvicorn app:app\" 2>/dev/null || true;\n")
+            append("  fuser -k 8000/tcp 2>/dev/null; true\n")
             append("  nohup uvicorn app:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &\n")
             append("  echo \"[ok] Uvicorn started PID=\$!\";\n")
             append("} >~/startup.log 2>&1")
