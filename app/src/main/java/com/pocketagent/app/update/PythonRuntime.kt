@@ -344,6 +344,11 @@ class PythonRuntime(
                     "/system/bin:/system/xbin"
             env["LD_LIBRARY_PATH"] = TermuxBootstrap.termuxUsr + "/lib"
             env["TMPDIR"] = TermuxBootstrap.termuxRoot + "/tmp"
+            // 添加 site-packages（pip 安装的第三方包）
+            val sitePackages = PythonDependencyManager.getSitePackagesDir(context)
+            if (sitePackages.exists()) {
+                env["PYTHONPATH"] = sitePackages.absolutePath
+            }
         }
     }
 

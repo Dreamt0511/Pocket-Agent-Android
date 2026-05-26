@@ -290,13 +290,18 @@ sys.stdout.write("pip bootstrap done\n")
 
             // Step 4: 验证
             _setupState.value = SetupState.Installing("验证中...")
+
+            // 有任意包安装失败 → 直接标记失败，不跳过
+            if (firstError != null) {
+                val msg = "部分包安装失败: $firstError"
+                Log.e(TAG, msg)
+                _setupState.value = SetupState.Failed(msg)
+                return@withContext false
+            }
+
             val ready = checkReady(context)
             if (!ready) {
-                val msg = if (firstError != null) {
-                    "安装失败: $firstError"
-                } else {
-                    "依赖验证失败: site-packages 中没有已安装的包"
-                }
+                val msg = "依赖验证失败: site-packages 中没有已安装的包"
                 Log.e(TAG, msg)
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false
