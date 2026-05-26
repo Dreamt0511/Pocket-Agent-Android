@@ -93,6 +93,7 @@ fun GlassSurface(
     shape: RoundedCornerShape = RoundedCornerShape(14.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
+    val light = isLightTheme()
     Box(
         modifier = modifier
             .clip(shape)
