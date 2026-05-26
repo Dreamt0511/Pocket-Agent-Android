@@ -160,6 +160,25 @@ object TermuxServiceClient {
         }
     }
 
+    // ─── 关闭服务 ───────────────────────
+
+    /**
+     * HTTP 关闭 FastAPI 服务（比 TermuxLauncher.stopFastAPI 更可靠）
+     */
+    suspend fun shutdown(): ShutdownResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/shutdown")
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            ShutdownResult.Ok
+        } catch (e: Exception) {
+            // 服务已关闭或无法连接也算成功
+            ShutdownResult.Ok
+        }
+    }
+
     // ─── 代码同步 ───────────────────────
 
     suspend fun triggerSync(): SyncResult = withContext(Dispatchers.IO) {
@@ -193,5 +212,8 @@ object TermuxServiceClient {
     sealed class SyncResult {
         data class Ok(val body: String) : SyncResult()
         data class Error(val message: String) : SyncResult()
+    }
+    sealed class ShutdownResult {
+        object Ok : ShutdownResult()
     }
 }

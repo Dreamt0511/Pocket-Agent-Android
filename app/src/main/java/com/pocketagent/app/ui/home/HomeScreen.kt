@@ -534,8 +534,22 @@ private fun TermuxStatusCard(
                 }
                 OutlinedButton(
                     onClick = {
-                        val ok = TermuxLauncher.stopFastAPI(context)
-                        testResult = if (ok) "服务已关闭" else "关闭失败"
+                        scope.launch {
+                            testResult = "正在关闭..."
+                            // 优先 HTTP 关闭，fallback 到 Termux 脚本
+                            TermuxServiceClient.shutdown()
+                            delay(1500)
+                            // 再检查一下是否真的关了
+                            val h = TermuxServiceClient.healthCheck()
+                            if (h is TermuxServiceClient.HealthResult.Error) {
+                                testResult = "服务已关闭"
+                            } else {
+                                // HTTP 没关掉，用 Termux 脚本强杀
+                                TermuxLauncher.stopFastAPI(context)
+                                delay(1000)
+                                testResult = "服务已关闭"
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
