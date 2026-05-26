@@ -139,7 +139,7 @@ object TermuxServiceClient {
             }
         }
         reader.close()
-    }
+    }.flowOn(Dispatchers.IO)
 
     // ─── 配置同步 ───────────────────────
 
