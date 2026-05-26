@@ -70,15 +70,15 @@ fun ConfigScreen(navController: NavController) {
         ConfigManager.ensureEnvFile()
         try {
             val ds = settingsRepo.getSettings()
-            val fromDataStore = mapOf(
-                "DEFAULT_LLM_BASE_URL" to (ds.llmBaseUrl),
-                "LLM_API_KEY" to (ds.llmApiKey),
-                "LLM_MODEL" to (ds.llmModel),
+            // 只覆盖非空值，避免 DataStore 默认空值清掉 .env 中的配置
+            val fromDataStore = mutableMapOf(
                 "LLM_TEMPERATURE" to ds.llmTemperature.toString(),
                 "LLM_MAX_TOKENS" to ds.llmMaxTokens.toString(),
-                "MCP_SERVER_URL" to (ds.mcpServerUrl),
             )
-            // 从 .env 读取 executor/高级字段，DataStore 值覆盖同名字段
+            if (ds.llmBaseUrl.isNotBlank()) fromDataStore["DEFAULT_LLM_BASE_URL"] = ds.llmBaseUrl
+            if (ds.llmApiKey.isNotBlank()) fromDataStore["LLM_API_KEY"] = ds.llmApiKey
+            if (ds.llmModel.isNotBlank()) fromDataStore["LLM_MODEL"] = ds.llmModel
+            if (ds.mcpServerUrl.isNotBlank()) fromDataStore["MCP_SERVER_URL"] = ds.mcpServerUrl
             configMap = ConfigManager.loadAll() + fromDataStore
         } catch (_: Exception) {
             configMap = ConfigManager.loadAll()
