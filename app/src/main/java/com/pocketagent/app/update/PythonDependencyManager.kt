@@ -200,6 +200,10 @@ object PythonDependencyManager {
                 return@withContext false
             }
 
+            // Step 0.5: 提取预编译 C 扩展包（aiohttp、PIL、psutil、yaml 等 .so 模块）
+            // 需在 ensureTermuxLibraries 之后（tarfile 解压需要 libz.so.1）
+            extractBundledCExtensions(context, pythonBin, baseEnv, sitePackages, pythonDir)
+
             // Step 1: 检查 pip 是否可用（CI 已预装）
             // assets 的 site-packages 已经通过 sitecustomize.py 加入 sys.path
             // 如果 pip 还不可用，说明预装失败，尝试用 ensurepip 兜底
@@ -454,6 +458,95 @@ sys.stdout.write("pip bootstrap done\n")
             if (i < retries - 1) delay(500)
         }
         return false
+    }
+
+    // ─── 预编译 C 扩展包提取 ─────────────────────────
+    // 从 APK assets/python-ext/ 提取预编译的 Python C 扩展包和系统库，
+    // 避免 pip 从源码编译时被 SELinux exec 阻止。
+
+    /**
+     * 提取预编译 C 扩展包和系统库。
+     *
+     * 从 assets/python-ext/packages.tar.gz 提取到 site-packages，
+     * 从 assets/python-ext/libs.tar.gz 提取到 python/lib/。
+     *
+     * 提取后验证关键 marker 文件，缺失时抛出异常让调用方感知。
+     * assets 不存在时静默跳过（旧版 APK 兼容）。
+     *
+     * @throws java.io.FileNotFoundException assets/python-ext/ 不存在时抛出（被调用方捕获）
+     * @throws RuntimeException Python tarfile 提取失败时抛出
+     */
+    private suspend fun extractBundledCExtensions(
+        context: Context,
+        pythonBin: String,
+        baseEnv: Map<String, String>,
+        sitePackages: File,
+        pythonDir: File
+    ) {
+        // 探测 assets 是否存在
+        if (context.assets.list("python-ext") == null) {
+            Log.i(TAG, "assets/python-ext/ 不存在，跳过预编译提取")
+            return
+        }
+
+        // 1. 提取 Python 包到 site-packages
+        Log.i(TAG, "提取预编译 C 扩展包到 site-packages...")
+        extractAssetTarGz(context, "python-ext/packages.tar.gz", sitePackages, pythonBin, baseEnv)
+
+        // 验证：检查一个已知 marker 文件
+        val marker = File(sitePackages, "aiohttp/__init__.py")
+        if (!marker.exists()) {
+            throw RuntimeException("预编译包提取不完整: aiohttp/__init__.py 未找到")
+        }
+
+        // 2. 提取系统库到 python/lib/
+        val libDir = File(pythonDir, "lib")
+        Log.i(TAG, "提取预编译系统库到 $libDir ...")
+        extractAssetTarGz(context, "python-ext/libs.tar.gz", libDir, pythonBin, baseEnv)
+
+        // 验证：检查一个关键系统库
+        val libMarker = File(libDir, "libjpeg.so.8")
+        if (!libMarker.exists()) {
+            throw RuntimeException("预编译系统库提取不完整: libjpeg.so.8 未提取到 $libDir")
+        }
+
+        Log.i(TAG, "预编译 C 扩展提取完成")
+    }
+
+    /**
+     * 将 assets 中的 tar.gz 文件提取到目标目录。
+     *
+     * 使用 Python 的 tarfile 模块（通过已就绪的 Python 运行时）而不是
+     * 引入额外的 Java tar 库。流程：复制 asset 到临时文件 → Python 提取 →
+     * 删除临时文件。
+     *
+     * @throws RuntimeException Python 提取命令失败时抛出，携带详细输出
+     */
+    private suspend fun extractAssetTarGz(
+        context: Context,
+        assetPath: String,
+        targetDir: File,
+        pythonBin: String,
+        baseEnv: Map<String, String>
+    ) {
+        val tempFile = File(context.cacheDir, "extract_${assetPath.replace('/', '_')}.tar.gz")
+        try {
+            context.assets.open(assetPath).use { input ->
+                tempFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            targetDir.mkdirs()
+            val result = runPython(context, pythonBin, baseEnv, listOf(
+                "-c", "import tarfile,sys;tarfile.open(sys.argv[1]).extractall(sys.argv[2])",
+                tempFile.absolutePath, targetDir.absolutePath
+            ))
+            if (!result.success) {
+                throw RuntimeException("提取 $assetPath 失败: ${result.output}")
+            }
+        } finally {
+            if (tempFile.exists()) tempFile.delete()
+        }
     }
 
     /**
