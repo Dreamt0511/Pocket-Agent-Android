@@ -531,6 +531,14 @@ private fun TermuxStatusCard(
                         Text("启动服务", fontSize = 12.sp)
                     }
                 }
+                OutlinedButton(
+                    onClick = { TermuxLauncher.stopFastAPI(context) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color(0xFFEF5350)
+                    )
+                ) { Text("关闭服务", fontSize = 12.sp, color = Color(0xFFEF5350)) }
             }
 
             // ─── Termux 权限请求弹窗 ───

@@ -57,11 +57,43 @@ object TermuxLauncher {
             append("    cd ~/$POCKET_AGENT_DIR;\n")
             append("  fi &&\n")
             append("  echo \"[uvicorn] Starting...\";\n")
+            append("  # 先杀旧进程再启动，避免重复\n")
+            append("  pkill -f \"uvicorn app:app\" 2>/dev/null || true;\n")
             append("  nohup uvicorn app:app --host 0.0.0.0 --port 8000 >/dev/null 2>&1 &\n")
             append("  echo \"[ok] Uvicorn started PID=\$!\";\n")
             append("} >~/startup.log 2>&1")
         }
 
+        return sendScript(context, script)
+    }
+
+    /**
+     * 关闭 FastAPI 服务（杀掉 uvicorn 进程）
+     */
+    fun stopFastAPI(context: Context): Boolean {
+        if (!isTermuxInstalled(context)) {
+            Log.w(TAG, "Termux not installed")
+            return false
+        }
+
+        val script = buildString {
+            append("{\n")
+            append("  echo \"=== Stop Pocket-Agent \$(date) ===\";\n")
+            append("  PID=\$(pgrep -f \"uvicorn app:app\" 2>/dev/null);\n")
+            append("  if [ -n \"\$PID\" ]; then\n")
+            append("    kill \"\$PID\" 2>/dev/null;\n")
+            append("    echo \"[ok] Uvicorn PID=\$PID stopped\";\n")
+            append("  else\n")
+            append("    echo \"[info] No uvicorn process found\";\n")
+            append("  fi\n")
+            append("} >~/stop.log 2>&1")
+        }
+
+        return sendScript(context, script)
+    }
+
+    /** 抽取的公共方法：发送 bash 脚本到 Termux 执行 */
+    private fun sendScript(context: Context, script: String): Boolean {
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
             setClassName(TERMUX_PACKAGE, TERMUX_SERVICE)
             action = TERMUX_RUN_COMMAND
@@ -72,10 +104,10 @@ object TermuxLauncher {
 
         return try {
             context.startService(intent)
-            Log.i(TAG, "Termux FastAPI launch intent sent")
+            Log.i(TAG, "Termux intent sent")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch Termux", e)
+            Log.e(TAG, "Failed to send Termux intent", e)
             false
         }
     }
