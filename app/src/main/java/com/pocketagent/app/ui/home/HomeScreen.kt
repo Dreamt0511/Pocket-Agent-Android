@@ -336,6 +336,7 @@ private fun TermuxStatusCard(
     onLaunch: (mirrorUrl: String) -> Unit
 ) {
     var isChecking by remember { mutableStateOf(false) }
+    var isLaunching by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("点击测试连接 Termux 服务") }
     val scope = rememberCoroutineScope()
     var mirrorCustom by remember { mutableStateOf(
@@ -356,7 +357,7 @@ private fun TermuxStatusCard(
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isChecking) {
+                    if (isChecking || isLaunching) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(18.dp),
                             strokeWidth = 2.dp
@@ -486,11 +487,39 @@ private fun TermuxStatusCard(
                 OutlinedButton(
                     onClick = {
                         onLaunch(currentMirrorUrl)
-                        statusText = "已发送启动指令"
+                        isLaunching = true
+                        scope.launch {
+                            statusText = "正在拉取代码..."
+                            delay(4000)
+                            if (!isLaunching) return@launch
+                            statusText = "正在安装 Python 依赖..."
+                            delay(8000)
+                            if (!isLaunching) return@launch
+                            statusText = "正在启动服务..."
+                            delay(6000)
+                            if (!isLaunching) return@launch
+                            statusText = "等待服务就绪..."
+                            when (val r = TermuxServiceClient.healthCheck()) {
+                                is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
+                                is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
+                            }
+                            isLaunching = false
+                        }
                     },
+                    enabled = !isLaunching,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("启动服务", fontSize = 12.sp) }
+                ) {
+                    if (isLaunching) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text("启动中", fontSize = 12.sp)
+                        }
+                    } else {
+                        Text("启动服务", fontSize = 12.sp)
+                    }
+                }
             }
         }
     }
