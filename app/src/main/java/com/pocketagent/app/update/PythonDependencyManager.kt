@@ -272,12 +272,16 @@ sys.stdout.write("pip bootstrap done\n")
                 uninstallPackages(context, pythonBin, baseEnv, sitePackages, diff.toUninstall, errors)
             }
 
-            // 4b: 安装新增 + 升级（批量安装，一次 pip 调用装完所有包，大幅减少进程启动和依赖重解析开销）
+            // 4b: 安装新增 + 升级（逐一安装，pip 缓存复用已下载的 wheel，装完后 cleanPipCache 清理）
             val toProcess = diff.toInstall + diff.toUpgrade
-            if (toProcess.isNotEmpty()) {
-                _setupState.value = SetupState.Installing("安装 ${toProcess.size} 个依赖...")
-                Log.i(TAG, "批量安装 ${toProcess.size} 个依赖")
-                installPackages(context, pythonBin, baseEnv, sitePackages, toProcess, errors)
+            for ((index, entry) in toProcess.withIndex()) {
+                val (name, spec) = entry
+                val label = if (entry in diff.toUpgrade) "升级" else "安装"
+                val progress = if (toProcess.size > 1) " (${index + 1}/${toProcess.size})" else ""
+                _setupState.value = SetupState.Installing("${label}${progress} $name")
+                Log.i(TAG, "$label: $name")
+                val pkgSpec = if (spec.isNotBlank()) "$name$spec" else name
+                installPackage(context, pythonBin, baseEnv, sitePackages, pkgSpec, errors)
             }
 
             // 有任意失败 → 标记失败
@@ -877,61 +881,8 @@ sys.stdout.write("pip bootstrap done\n")
         return DiffResult(toInstall, toUpgrade, toUninstall, unchanged)
     }
 
-    /** 批量安装包（先单次 pip 安装全部，回退到逐一安装） */
-    private fun installPackages(
-        context: Context,
-        pythonBin: String,
-        baseEnv: Map<String, String>,
-        sitePackages: File,
-        packages: List<Pair<String, String>>,
-        errors: MutableList<String>
-    ) {
-        if (packages.isEmpty()) return
-
-        // 构建包参列表
-        val pkgArgs = packages.map { (name, spec) ->
-            if (spec.isNotBlank()) "$name$spec" else name
-        }
-
-        // 尝试 1: 二进制批量安装（--only-binary :all:）
-        val binaryArgs = listOf(
-            "-m", "pip", "install",
-            "--target", sitePackages.absolutePath,
-            "--trusted-host", "pypi.org",
-            "--trusted-host", "files.pythonhosted.org",
-            "--only-binary", ":all:",
-            "--no-input",
-            "--upgrade"
-        ) + pkgArgs
-
-        val binaryResult = runPython(context, pythonBin, baseEnv, binaryArgs)
-        if (binaryResult.success) return
-
-        Log.w(TAG, "二进制批量安装失败，尝试源码批量安装: ${binaryResult.output}")
-
-        // 尝试 2: 源码批量安装（不带 --only-binary）
-        val sourceArgs = listOf(
-            "-m", "pip", "install",
-            "--target", sitePackages.absolutePath,
-            "--trusted-host", "pypi.org",
-            "--trusted-host", "files.pythonhosted.org",
-            "--no-input",
-            "--upgrade"
-        ) + pkgArgs
-
-        val sourceResult = runPython(context, pythonBin, baseEnv, sourceArgs)
-        if (sourceResult.success) return
-
-        Log.w(TAG, "批量安装失败，回退到逐一安装: ${sourceResult.output}")
-
-        // 回退: 逐一安装（处理部分包有特殊编译需求的情况）
-        for (pkgSpec in pkgArgs) {
-            installSinglePackage(context, pythonBin, baseEnv, sitePackages, pkgSpec, errors)
-        }
-    }
-
     /** 安装单个包（先尝试二进制 wheel，失败则源码安装） */
-    private fun installSinglePackage(
+    private fun installPackage(
         context: Context,
         pythonBin: String,
         baseEnv: Map<String, String>,
