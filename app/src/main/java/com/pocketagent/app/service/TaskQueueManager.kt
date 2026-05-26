@@ -16,6 +16,7 @@ class TaskQueueManager {
 
     data class ManagedTask(
         val id: String,
+        val sessionId: String = "",
         val prompt: String,
         val status: MutableStateFlow<TaskStatus> = MutableStateFlow(TaskStatus.PENDING),
         val output: MutableStateFlow<String> = MutableStateFlow(""),
@@ -39,9 +40,10 @@ class TaskQueueManager {
         executionCallback = callback
     }
 
-    fun enqueue(prompt: String): ManagedTask {
+    fun enqueue(prompt: String, sessionId: String = ""): ManagedTask {
         val task = ManagedTask(
             id = "task_${System.currentTimeMillis()}_${(Math.random() * 10000).toInt()}",
+            sessionId = sessionId,
             prompt = prompt
         )
         queue.add(task)

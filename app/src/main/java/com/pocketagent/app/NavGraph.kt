@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
+import com.pocketagent.app.service.SessionManager
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.ui.home.HomeScreen
 import com.pocketagent.app.ui.chat.ChatScreen
@@ -28,14 +29,15 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun AppNavGraph(navController: NavHostController) {
+    val context = LocalContext.current
     val taskQueueManager = remember { TaskQueueManager() }
+    val sessionManager = remember { SessionManager(context) }
 
     NavHost(
         navController = navController,
         startDestination = Screen.Home.route
     ) {
         composable(Screen.Home.route) {
-            val context = LocalContext.current
             val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
             val settings by settingsRepo.settingsFlow.collectAsState(initial = null)
             val modelConfigured = settings?.let {
@@ -48,10 +50,10 @@ fun AppNavGraph(navController: NavHostController) {
             )
         }
         composable(Screen.Execute.route) {
-            ChatScreen(navController = navController)
+            ChatScreen(navController = navController, sessionManager = sessionManager)
         }
         composable(Screen.History.route) {
-            HistoryScreen(navController = navController, taskQueueManager = taskQueueManager)
+            HistoryScreen(navController = navController, sessionManager = sessionManager)
         }
         composable(Screen.Skills.route) {
             SkillsScreen(navController = navController)

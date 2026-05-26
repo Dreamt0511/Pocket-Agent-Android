@@ -6,6 +6,7 @@ import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.termux.TermuxBridge
 import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.PythonRuntime
+import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.SyncResult
 import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.ActionResult
@@ -24,7 +25,10 @@ import kotlinx.coroutines.flow.StateFlow
  * 生命周期：
  *   init(context) → checkUpdates() → initRuntime() → execute(command) → cancel()
  */
-class AgentDaemonV2(private val context: Context) {
+class AgentDaemonV2(
+    private val context: Context,
+    private val taskQueueManager: TaskQueueManager = TaskQueueManager()
+) {
 
     companion object {
         private const val TAG = "AgentDaemonV2"
@@ -115,7 +119,7 @@ class AgentDaemonV2(private val context: Context) {
      * 集成流式输出：
      *  每步输出 → StreamBridge.out() → 悬浮窗 + 终端
      */
-    suspend fun execute(command: String): TaskResult {
+    suspend fun execute(command: String, sessionId: String = ""): TaskResult {
         val s = _status.value
 
         // Python 运行时模式
@@ -123,12 +127,19 @@ class AgentDaemonV2(private val context: Context) {
             return TaskResult.Failure("Agent 未就绪，请等待初始化完成")
         }
 
+        // 记录任务到队列
+        val task = taskQueueManager.enqueue(command, sessionId)
+
         _status.value = DaemonStatus.Executing
         StreamBridge.status("执行中")
         StreamBridge.out("$ $command\n")
 
         // 注册输出回调
-        pythonRuntime.setOnOutput { line -> StreamBridge.out(line) }
+        pythonRuntime.setOnOutput { line ->
+            StreamBridge.out(line)
+            // 实时更新任务输出
+            task.output.value = task.output.value + line
+        }
         pythonRuntime.setOnStatus { status -> StreamBridge.status(status) }
 
         // 注册 Android 能力回调（无障碍操作信号）
@@ -155,6 +166,15 @@ class AgentDaemonV2(private val context: Context) {
 
         // 执行
         val result = pythonRuntime.execute(command)
+
+        // 更新任务结果
+        val success = result is TaskResult.Success
+        val output = when (result) {
+            is TaskResult.Success -> result.message
+            is TaskResult.Failure -> "错误: ${result.error}"
+            is TaskResult.Cancelled -> "任务已取消"
+        }
+        taskQueueManager.onTaskComplete(task, success, output)
 
         _status.value = DaemonStatus.Ready
         StreamBridge.status("空闲")

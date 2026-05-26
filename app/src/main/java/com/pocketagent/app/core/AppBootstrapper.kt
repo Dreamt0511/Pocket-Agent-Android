@@ -6,6 +6,7 @@ import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.termux.TermuxBootstrap
 import com.pocketagent.app.update.CodeSyncManager
+import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.TaskResult
 import com.pocketagent.app.update.UpdateChecker
 import com.pocketagent.app.core.SkillManager
@@ -34,6 +35,9 @@ object AppBootstrapper {
     private lateinit var daemon: AgentDaemonV2
     private var repoUrl: String = ""
 
+    /** 任务队列管理器（供历史页面使用） */
+    val taskQueueManager: TaskQueueManager = TaskQueueManager()
+
     /** 暴露 daemon 状态供 UI 层收集 */
     val daemonStatus: StateFlow<AgentDaemonV2.DaemonStatus>
         get() = daemon.status
@@ -54,8 +58,8 @@ object AppBootstrapper {
         // 3. 更新检查器
         UpdateChecker.init(context, repoUrl)
 
-        // 4. Agent 守护进程
-        daemon = AgentDaemonV2(context)
+        // 4. Agent 守护进程（共享 taskQueueManager）
+        daemon = AgentDaemonV2(context, taskQueueManager)
 
         // 5. 技能管理器（数据目录就绪后初始化）
         SkillManager.init(context)
@@ -90,8 +94,8 @@ object AppBootstrapper {
     /**
      * 执行用户指令
      */
-    suspend fun executeCommand(command: String): TaskResult {
-        return daemon.execute(command)
+    suspend fun executeCommand(command: String, sessionId: String = ""): TaskResult {
+        return daemon.execute(command, sessionId)
     }
 
     /**

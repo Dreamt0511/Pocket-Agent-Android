@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemonV2
 import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.overlay.OverlayService
+import com.pocketagent.app.service.SessionManager
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.launch
@@ -32,15 +33,23 @@ import java.util.*
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(navController: NavController) {
+fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var sessionId by remember { mutableStateOf("") }
+    var sessionTitle by remember { mutableStateOf("新会话") }
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     val isDaemonReady = daemonStatus is AgentDaemonV2.DaemonStatus.Ready
+
+    // 进入页面时创建一个新会话
+    LaunchedEffect(Unit) {
+        val session = sessionManager.createSession("新会话")
+        sessionId = session.id
+    }
 
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
@@ -61,7 +70,18 @@ fun ChatScreen(navController: NavController) {
         modifier = Modifier.imePadding(),
         topBar = {
             TopAppBar(
-                title = { Text("执行任务") },
+                title = {
+                    Column {
+                        Text(sessionTitle, fontSize = 16.sp, maxLines = 1)
+                        if (sessionId.isNotBlank()) {
+                            Text(
+                                text = formatDateShort(System.currentTimeMillis()),
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Text("←")
@@ -89,6 +109,8 @@ fun ChatScreen(navController: NavController) {
                             // 清空流式输出，准备接收新任务的实时输出
                             OverlayService.streamText.value = ""
 
+                            val isFirstMessage = messages.isEmpty()
+
                             messages = messages + ChatMessage(
                                 text = inputText,
                                 isUser = true,
@@ -101,11 +123,18 @@ fun ChatScreen(navController: NavController) {
                                 timestamp = System.currentTimeMillis()
                             )
 
+                            // 首条消息自动设为会话标题
+                            if (isFirstMessage) {
+                                val title = inputText.take(30)
+                                sessionManager.updateSession(sessionId, title = title)
+                                sessionTitle = title
+                            }
+
                             val cmd = inputText
                             inputText = ""
 
                             // 执行指令（suspend 函数，执行期间 streamText 会实时变化）
-                            val result = AppBootstrapper.executeCommand(cmd)
+                            val result = AppBootstrapper.executeCommand(cmd, sessionId)
 
                             // 执行完成后用最终结果更新最后一条消息
                             val finalText = when (result) {
@@ -122,6 +151,22 @@ fun ChatScreen(navController: NavController) {
                                     ))
                                 }
                             }
+
+                            // 保存任务到会话
+                            val outputText = if (streamText.isNotEmpty()) streamText else finalText
+                            sessionManager.addTask(SessionManager.StoredTask(
+                                id = "task_${System.currentTimeMillis()}_${(Math.random() * 10000).toInt()}",
+                                sessionId = sessionId,
+                                prompt = cmd,
+                                status = when (result) {
+                                    is TaskResult.Success -> "completed"
+                                    is TaskResult.Failure -> "failed"
+                                    is TaskResult.Cancelled -> "cancelled"
+                                },
+                                output = outputText,
+                                createdAt = System.currentTimeMillis(),
+                                completedAt = System.currentTimeMillis()
+                            ))
 
                             isProcessing = false
 
@@ -329,6 +374,11 @@ private fun ChatInputBar(
 
 private fun formatTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
+
+private fun formatDateShort(timestamp: Long): String {
+    val sdf = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
 }
 

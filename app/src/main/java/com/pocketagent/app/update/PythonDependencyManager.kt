@@ -226,9 +226,25 @@ sys.stdout.write("pip bootstrap done\n")
                 .map { it.split(Regex("[>=<\\[;]")).first().trim() }
                 .filter { it.isNotBlank() }
 
+            // 合并 agent-seed/requirements.txt 中的额外包（主库可能缺少的关键依赖如 packaging）
+            val seedPackages = try {
+                context.assets.open("agent-seed/requirements.txt")
+                    .bufferedReader().readLines()
+                    .filter { it.isNotBlank() && !it.startsWith("#") }
+                    .map { it.split(Regex("[>=<\\[;]")).first().trim() }
+                    .filter { it.isNotBlank() && it !in packages }
+            } catch (e: Exception) {
+                Log.w(TAG, "读取 seed requirements 失败: ${e.message}")
+                emptyList()
+            }
+            if (seedPackages.isNotEmpty()) {
+                Log.i(TAG, "seed 补充包: $seedPackages")
+            }
+            val allPackages = packages + seedPackages
+
             var firstError: String? = null
 
-            for (pkg in packages) {
+            for (pkg in allPackages) {
                 _setupState.value = SetupState.Installing(pkg)
                 Log.i(TAG, "安装: $pkg")
 
