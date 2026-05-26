@@ -2,6 +2,8 @@ package com.pocketagent.app.core
 
 import android.content.Context
 import android.util.Log
+import com.pocketagent.app.data.SettingsRepository
+import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.TaskResult
@@ -18,6 +20,7 @@ class AgentDaemon(
     }
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val settingsRepo = SettingsRepository(context.settingsDataStore)
 
     private val _status = MutableStateFlow<DaemonStatus>(DaemonStatus.Idle)
     val status: StateFlow<DaemonStatus> = _status
@@ -84,7 +87,16 @@ class AgentDaemon(
 
         val output = StringBuilder()
         try {
-            TermuxServiceClient.chatStream(command).collect { data ->
+            // 读取配置随请求发送，确保 Termux 侧使用用户配置的 LLM
+            val settings = settingsRepo.getSettings()
+            val config = mutableMapOf<String, String>()
+            if (settings.llmBaseUrl.isNotBlank()) config["base_url"] = settings.llmBaseUrl
+            if (settings.llmApiKey.isNotBlank()) config["api_key"] = settings.llmApiKey
+            if (settings.llmModel.isNotBlank()) config["model"] = settings.llmModel
+            config["temperature"] = settings.llmTemperature.toString()
+            config["max_tokens"] = settings.llmMaxTokens.toString()
+
+            TermuxServiceClient.chatStream(command, config).collect { data ->
                 StreamBridge.out(data)
                 output.append(data)
                 task.output.value = output.toString()

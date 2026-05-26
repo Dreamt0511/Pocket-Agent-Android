@@ -108,9 +108,16 @@ object TermuxServiceClient {
 
     // ─── SSE 流式执行 ───────────────────
 
-    fun chatStream(command: String): Flow<String> = flow {
+    fun chatStream(command: String, config: Map<String, String> = emptyMap()): Flow<String> = flow {
         val escaped = command.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-        val json = """{"message": "$escaped"}"""
+        val configJson = if (config.isNotEmpty()) {
+            val inner = config.entries.joinToString(",") {
+                "\"${it.key}\": \"${it.value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+            }
+            """"config": {$inner}"""
+        } else ""
+        val sep = if (configJson.isNotEmpty()) "," else ""
+        val json = """{"message": "$escaped"$sep$configJson}"""
         val body = json.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$BASE_URL/chat")
