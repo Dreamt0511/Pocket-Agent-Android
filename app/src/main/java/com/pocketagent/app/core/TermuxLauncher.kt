@@ -33,11 +33,8 @@ object TermuxLauncher {
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
         // Termux 脚本：git clone/pull → pip install → uvicorn
-        // 输出重定向到 /sdcard/Pocket-Agent/startup.log 以便调试
+        // RUN_COMMAND_SESSION_ACTION=2 使 Termux 弹窗可见，输出直接显示在终端
         val script = buildString {
-            append("mkdir -p /sdcard/Pocket-Agent 2>/dev/null; ")
-            append("{ echo \"[Pocket-Agent] \$(date) starting...\"; ")
-            append("set -x; ")
             append("cd && ")
             append("if [ ! -d ~/$POCKET_AGENT_DIR/.git ]; then ")
             append("  git clone $GIT_REPO ~/$POCKET_AGENT_DIR; ")
@@ -47,9 +44,7 @@ object TermuxLauncher {
             append("cd ~/$POCKET_AGENT_DIR && ")
             append("${pipEnv}pip install fastapi uvicorn -q && ")
             append("${pipEnv}pip install -r requirements.txt -q && ")
-            append("echo \"[Pocket-Agent] starting uvicorn...\" && ")
-            append("exec uvicorn app:app --host 0.0.0.0 --port 8000; ")
-            append("} >/sdcard/Pocket-Agent/startup.log 2>&1")
+            append("exec uvicorn app:app --host 0.0.0.0 --port 8000")
         }
 
         val intent = Intent(TERMUX_RUN_COMMAND).apply {
