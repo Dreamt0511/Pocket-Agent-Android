@@ -506,7 +506,7 @@ private fun TermuxStatusCard(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("测试连接", maxLines = 1) }
+                ) { Text("测试连接", maxLines = 1, fontSize = 12.sp) }
                 OutlinedButton(
                     onClick = {
                         val hasPerm = ContextCompat.checkSelfPermission(
@@ -529,7 +529,7 @@ private fun TermuxStatusCard(
                             Text("启动中", maxLines = 1)
                         }
                     } else {
-                        Text("启动服务", maxLines = 1)
+                        Text("启动服务", maxLines = 1, fontSize = 12.sp)
                     }
                 }
                 OutlinedButton(
@@ -542,7 +542,7 @@ private fun TermuxStatusCard(
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color(0xFFEF5350)
                     )
-                ) { Text("关闭服务", maxLines = 1, color = Color(0xFFEF5350)) }
+                ) { Text("关闭服务", maxLines = 1, fontSize = 12.sp, color = Color(0xFFEF5350)) }
             }
 
             // ─── Termux 权限请求弹窗 ───
