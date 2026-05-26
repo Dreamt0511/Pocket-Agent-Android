@@ -42,11 +42,12 @@ object ScriptProgress {
                 maxAttempts = 60,
                 intervalMs = 5000L,
                 onAttempt = { attempt, total, error, sec ->
-                    if (!isLaunching.value) return@onAttempt
-                    status.value = if (error.isEmpty()) {
-                        "第 ${attempt}/${total} 次尝试（已等待 ${sec} 秒）"
-                    } else {
-                        "第 ${attempt}/${total} 次（${sec} 秒）上次错误: $error"
+                    if (isLaunching.value) {
+                        status.value = if (error.isEmpty()) {
+                            "第 ${attempt}/${total} 次尝试（已等待 ${sec} 秒）"
+                        } else {
+                            "第 ${attempt}/${total} 次（${sec} 秒）上次错误: $error"
+                        }
                     }
                 }
             )
