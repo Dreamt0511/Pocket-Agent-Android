@@ -4,7 +4,6 @@ import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -507,7 +506,7 @@ private fun TermuxStatusCard(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("测试连接", fontSize = 12.sp) }
+                ) { Text("测试连接", maxLines = 1) }
                 OutlinedButton(
                     onClick = {
                         val hasPerm = ContextCompat.checkSelfPermission(
@@ -527,23 +526,23 @@ private fun TermuxStatusCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(6.dp))
-                            Text("启动中", fontSize = 12.sp)
+                            Text("启动中", maxLines = 1)
                         }
                     } else {
-                        Text("启动服务", fontSize = 12.sp)
+                        Text("启动服务", maxLines = 1)
                     }
                 }
                 OutlinedButton(
                     onClick = {
                         val ok = TermuxLauncher.stopFastAPI(context)
-                        Toast.makeText(context, if (ok) "关闭指令已发送" else "关闭失败", Toast.LENGTH_SHORT).show()
+                        testResult = if (ok) "服务已关闭" else "关闭失败"
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color(0xFFEF5350)
                     )
-                ) { Text("关闭服务", fontSize = 12.sp, color = Color(0xFFEF5350)) }
+                ) { Text("关闭服务", maxLines = 1, color = Color(0xFFEF5350)) }
             }
 
             // ─── Termux 权限请求弹窗 ───

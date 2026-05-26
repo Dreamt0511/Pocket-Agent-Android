@@ -54,7 +54,7 @@ object TermuxLauncher {
             append("    echo \"[init] Done — ready for future starts\";\n")
             append("  else\n")
             append("    echo \"[start] Environment ready, launching uvicorn...\";\n")
-            append("    cd ~/$POCKET_AGENT_DIR;\n")
+            append("    cd ~/$POCKET_AGENT_DIR && git pull origin main 2>/dev/null || true;\n")
             append("  fi &&\n")
             append("  echo \"[uvicorn] Starting...\";\n")
             append("  # 先杀旧进程再启动，避免重复\n")
@@ -79,13 +79,8 @@ object TermuxLauncher {
         val script = buildString {
             append("{\n")
             append("  echo \"=== Stop Pocket-Agent \$(date) ===\";\n")
-            append("  PID=\$(pgrep -f \"uvicorn app:app\" 2>/dev/null);\n")
-            append("  if [ -n \"\$PID\" ]; then\n")
-            append("    kill \"\$PID\" 2>/dev/null;\n")
-            append("    echo \"[ok] Uvicorn PID=\$PID stopped\";\n")
-            append("  else\n")
-            append("    echo \"[info] No uvicorn process found\";\n")
-            append("  fi\n")
+            append("  fuser -k 8000/tcp 2>/dev/null; true\n")
+            append("  echo \"[ok] Uvicorn on port 8000 stopped\";\n")
             append("} >~/stop.log 2>&1")
         }
 

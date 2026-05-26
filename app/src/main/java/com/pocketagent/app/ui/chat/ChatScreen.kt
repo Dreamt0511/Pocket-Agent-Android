@@ -246,7 +246,7 @@ private fun DaemonStatusBar(
 
     Surface(modifier = Modifier.fillMaxWidth(), color = bgColor) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -278,7 +278,7 @@ private fun ChatMessageItem(message: ChatMessage) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
         horizontalArrangement = if (message.isUser) Arrangement.End else Arrangement.Start
     ) {
         if (message.isUser) {
@@ -343,9 +343,9 @@ private fun ChatInputBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 输入框
             OutlinedTextField(
@@ -353,8 +353,7 @@ private fun ChatInputBar(
                 onValueChange = onInputChange,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("输入指令或问题...") },
-                singleLine = false,
-                maxLines = 3,
+                singleLine = true,
                 enabled = enabled
             )
 
@@ -362,10 +361,9 @@ private fun ChatInputBar(
             Button(
                 onClick = onSend,
                 enabled = inputText.isNotBlank() && enabled,
-                modifier = Modifier.height(56.dp)
+                modifier = Modifier.height(40.dp)
             ) {
                 Text("发送")
-            }
         }
     }
 }
