@@ -15,7 +15,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -40,24 +39,8 @@ fun GlassCard(
     shape: RoundedCornerShape = RoundedCornerShape(14.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    val light = isLightTheme()
-
     Box(
         modifier = modifier
-            // 外层阴影（宽泛柔和）
-            .shadow(
-                elevation = if (light) 4.dp else 3.dp,
-                shape = shape,
-                ambientColor = Color(0xFF2C5F8A).copy(alpha = if (light) 0.06f else 0.3f),
-                spotColor = Color(0xFF2C5F8A).copy(alpha = if (light) 0.10f else 0.20f)
-            )
-            // 内层阴影（紧凑深色，模拟玻璃厚度）
-            .shadow(
-                elevation = if (light) 1.5.dp else 1.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = if (light) 0.04f else 0.4f),
-                spotColor = Color.Black.copy(alpha = if (light) 0.06f else 0.25f)
-            )
             .clip(shape)
             .background(
                 brush = Brush.verticalGradient(colors = glassBackgroundGradient()),
@@ -110,16 +93,8 @@ fun GlassSurface(
     shape: RoundedCornerShape = RoundedCornerShape(14.dp),
     content: @Composable BoxScope.() -> Unit
 ) {
-    val light = isLightTheme()
-
     Box(
         modifier = modifier
-            .shadow(
-                elevation = if (light) 1.5.dp else 1.dp,
-                shape = shape,
-                ambientColor = Color.Black.copy(alpha = if (light) 0.03f else 0.3f),
-                spotColor = Color.Black.copy(alpha = if (light) 0.05f else 0.15f)
-            )
             .clip(shape)
             .background(
                 brush = Brush.verticalGradient(
