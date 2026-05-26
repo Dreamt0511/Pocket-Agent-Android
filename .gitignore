@@ -37,3 +37,7 @@ venv/
 # OS
 Thumbs.db
 .DS_Storetest_ssl.deb
+
+# Claude Code
+.claude/worktrees/
+.superpowers/
