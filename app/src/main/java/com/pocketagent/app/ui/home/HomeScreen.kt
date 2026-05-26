@@ -432,6 +432,22 @@ private fun SetupDependenciesCard(
                         Text("开始配置")
                     }
                 }
+                is PythonDependencyManager.SetupState.Completed -> {
+                    // 已完成，但保留一个轻量的"更新依赖"入口
+                    OutlinedButton(
+                        onClick = {
+                            PythonDependencyManager.resetState()
+                            onStartSetup()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        Text("更新依赖", fontSize = 12.sp)
+                    }
+                }
                 is PythonDependencyManager.SetupState.Failed -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
@@ -443,7 +459,7 @@ private fun SetupDependenciesCard(
                         }
                     }
                 }
-                else -> {} // 安装中或已完成，不显示按钮
+                else -> {} // 安装中，不显示按钮
             }
         }
     }
