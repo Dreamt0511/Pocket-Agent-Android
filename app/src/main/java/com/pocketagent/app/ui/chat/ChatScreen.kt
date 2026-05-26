@@ -386,7 +386,10 @@ private fun formatDateShort(timestamp: Long): String {
 @Composable
 private fun ChatScreenLightPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
-        ChatScreen(navController = rememberNavController())
+        ChatScreen(
+            navController = rememberNavController(),
+            sessionManager = SessionManager(androidx.compose.ui.platform.LocalContext.current)
+        )
     }
 }
 
@@ -394,6 +397,9 @@ private fun ChatScreenLightPreview() {
 @Composable
 private fun ChatScreenDarkPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
-        ChatScreen(navController = rememberNavController())
+        ChatScreen(
+            navController = rememberNavController(),
+            sessionManager = SessionManager(androidx.compose.ui.platform.LocalContext.current)
+        )
     }
 }

@@ -653,12 +653,11 @@ private fun formatDuration(start: Long, end: Long): String {
 @Preview(showBackground = true, showSystemUi = true, name = "历史记录亮色")
 @Composable
 private fun HistoryScreenLightPreview() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     PocketAgentTheme(darkTheme = false) {
         HistoryScreen(
             navController = rememberNavController(),
-            sessionManager = androidx.compose.runtime.remember {
-                SessionManager(androidx.compose.ui.platform.LocalContext.current)
-            }
+            sessionManager = remember { SessionManager(ctx) }
         )
     }
 }
@@ -666,12 +665,11 @@ private fun HistoryScreenLightPreview() {
 @Preview(showBackground = true, showSystemUi = true, name = "历史记录暗色")
 @Composable
 private fun HistoryScreenDarkPreview() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     PocketAgentTheme(darkTheme = true) {
         HistoryScreen(
             navController = rememberNavController(),
-            sessionManager = androidx.compose.runtime.remember {
-                SessionManager(androidx.compose.ui.platform.LocalContext.current)
-            }
+            sessionManager = remember { SessionManager(ctx) }
         )
     }
 }
