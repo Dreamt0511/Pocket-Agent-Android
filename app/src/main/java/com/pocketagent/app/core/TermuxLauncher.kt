@@ -1,10 +1,7 @@
 package com.pocketagent.app.core
 
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import android.util.Log
 
 object TermuxLauncher {
@@ -13,26 +10,6 @@ object TermuxLauncher {
     private const val TERMUX_RUN_COMMAND = "com.termux.RUN_COMMAND"
     private const val POCKET_AGENT_DIR = "Pocket-Agent"
     private const val GIT_REPO = "https://github.com/Dreamt0511/Pocket-Agent.git"
-
-    /**
-     * 尝试打开 Termux 内部设置页，用于引导用户开启「允许外部应用执行命令」权限。
-     * 如果 Termux 内部设置页不可用，回退到 Android 应用详情页。
-     */
-    fun openTermuxSettings(context: Context) {
-        val intent = Intent().apply {
-            setClassName(TERMUX_PACKAGE, "com.termux.app.activities.SettingsActivity")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try {
-            context.startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
-            // 回退到 Android 应用详情页，用户需手动找到权限开关
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:$TERMUX_PACKAGE")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }.also { context.startActivity(it) }
-        }
-    }
 
     fun isTermuxInstalled(context: Context): Boolean {
         return try {

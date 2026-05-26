@@ -38,6 +38,8 @@ import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.core.TermuxServiceClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -341,7 +343,37 @@ private fun TermuxStatusCard(
     var showPermDialog by remember { mutableStateOf(false) }
     var permPrompted by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val termuxContext = LocalContext.current
+    val launchService: () -> Unit = {
+        onLaunch(currentMirrorUrl)
+        isLaunching = true
+        scope.launch {
+            statusText = "正在拉取代码..."
+            delay(4000)
+            if (!isLaunching) return@launch
+            statusText = "正在安装 Python 依赖..."
+            delay(8000)
+            if (!isLaunching) return@launch
+            statusText = "正在启动服务..."
+            delay(6000)
+            if (!isLaunching) return@launch
+            statusText = "等待服务就绪..."
+            when (val r = TermuxServiceClient.healthCheck()) {
+                is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
+                is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
+            }
+            isLaunching = false
+        }
+    }
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            permPrompted = true
+            launchService()
+        } else {
+            statusText = "Termux 权限被拒绝"
+        }
+    }
     var mirrorCustom by remember { mutableStateOf(
         currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
     ) }
@@ -492,25 +524,7 @@ private fun TermuxStatusCard(
                         if (!permPrompted) {
                             showPermDialog = true
                         } else {
-                            onLaunch(currentMirrorUrl)
-                            isLaunching = true
-                            scope.launch {
-                                statusText = "正在拉取代码..."
-                                delay(4000)
-                                if (!isLaunching) return@launch
-                                statusText = "正在安装 Python 依赖..."
-                                delay(8000)
-                                if (!isLaunching) return@launch
-                                statusText = "正在启动服务..."
-                                delay(6000)
-                                if (!isLaunching) return@launch
-                                statusText = "等待服务就绪..."
-                                when (val r = TermuxServiceClient.healthCheck()) {
-                                    is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
-                                    is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
-                                }
-                                isLaunching = false
-                            }
+                            launchService()
                         }
                     },
                     enabled = !isLaunching,
@@ -529,25 +543,19 @@ private fun TermuxStatusCard(
                 }
             }
 
-            // ─── Termux 权限引导弹窗（仅首次启动时弹出） ───
+            // ─── Termux 权限请求弹窗 ───
             if (showPermDialog) {
                 AlertDialog(
                     onDismissRequest = { showPermDialog = false },
                     title = { Text("需要 Termux 权限") },
                     text = {
-                        Text(
-                            "首次使用需要开启 Termux 的「允许外部应用执行命令」权限:\n\n" +
-                            "① 点击下方「去设置」\n" +
-                            "② 在 Termux 设置中开启「允许外部应用执行命令」\n" +
-                            "③ 返回本应用，再次点击「启动服务」"
-                        )
+                        Text("Pocket Agent 需要 Termux 的「RUN_COMMAND」权限来启动服务。")
                     },
                     confirmButton = {
                         Button(onClick = {
                             showPermDialog = false
-                            permPrompted = true
-                            TermuxLauncher.openTermuxSettings(termuxContext)
-                        }) { Text("去设置") }
+                            permLauncher.launch("com.termux.permission.RUN_COMMAND")
+                        }) { Text("授权") }
                     },
                     dismissButton = {
                         TextButton(onClick = { showPermDialog = false }) {
