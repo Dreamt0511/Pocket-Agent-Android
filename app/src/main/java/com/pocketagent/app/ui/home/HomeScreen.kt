@@ -360,6 +360,7 @@ private fun SetupDependenciesCard(
             setupState !is PythonDependencyManager.SetupState.Completed &&
             setupState !is PythonDependencyManager.SetupState.Failed
 
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var mirrorCustom by remember { mutableStateOf(
         currentMirrorUrl.isNotEmpty() && pypiMirrors.none { it.second == currentMirrorUrl }
