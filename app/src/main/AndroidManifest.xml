@@ -70,6 +70,11 @@
             android:stopWithTask="true"
             android:foregroundServiceType="specialUse" />
 
+        <!-- Termux 脚本状态广播接收器（am broadcast → 实时进度） -->
+        <receiver
+            android:name=".core.ScriptStatusReceiver"
+            android:exported="true" />
+
         </application>
 
 </manifest>

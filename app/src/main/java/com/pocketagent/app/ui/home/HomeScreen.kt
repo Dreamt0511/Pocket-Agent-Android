@@ -38,9 +38,9 @@ import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.core.TermuxServiceClient
+import com.pocketagent.app.core.ScriptProgress
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class NavEntry(
@@ -346,22 +346,34 @@ private fun TermuxStatusCard(
     val launchService: () -> Unit = {
         onLaunch(currentMirrorUrl)
         isLaunching = true
+        ScriptProgress.reset()
+        statusText = "已发送启动指令，等待 Termux 脚本上报进度..."
         scope.launch {
-            statusText = "正在拉取代码..."
-            delay(4000)
-            if (!isLaunching) return@launch
-            statusText = "正在安装 Python 依赖..."
-            delay(8000)
-            if (!isLaunching) return@launch
-            statusText = "正在启动服务..."
-            delay(6000)
-            if (!isLaunching) return@launch
-            statusText = "等待服务就绪..."
-            when (val r = TermuxServiceClient.healthCheck()) {
-                is TermuxServiceClient.HealthResult.Ok -> statusText = "服务已就绪! ${r.body}"
-                is TermuxServiceClient.HealthResult.Error -> statusText = "启动超时，点「测试连接」手动检查"
+            ScriptProgress.status.collect { msg ->
+                if (msg != null) {
+                    statusText = msg
+                    if (msg == "服务已启动！") {
+                        // 收到了启动成功，做一次最终确认
+                        when (TermuxServiceClient.healthCheck()) {
+                            is TermuxServiceClient.HealthResult.Ok -> {
+                                statusText = "服务已就绪!"
+                            }
+                            is TermuxServiceClient.HealthResult.Error -> {
+                                statusText = "$msg（但 HTTP 连接暂未就绪，稍后重试「测试连接」）"
+                            }
+                        }
+                        isLaunching = false
+                    }
+                }
             }
-            isLaunching = false
+        }
+        // 5 分钟超时保护
+        scope.launch {
+            kotlinx.coroutines.delay(300_000L)
+            if (isLaunching) {
+                statusText = "启动超时（5 分钟），脚本可能执行失败，请检查 Termux 的 ~/startup.log"
+                isLaunching = false
+            }
         }
     }
     val permLauncher = rememberLauncherForActivityResult(

@@ -46,17 +46,20 @@ class AgentDaemon(
             is TermuxServiceClient.HealthResult.Error -> {
                 StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
                 TermuxLauncher.launchFastAPI(context)
-                // git clone + pip install 需要较长时间，等待 15 秒
-                delay(15000)
-                when (TermuxServiceClient.healthCheck()) {
-                    is TermuxServiceClient.HealthResult.Ok -> {
-                        StreamBridge.out("[done] Termux 服务已启动\n")
+                val r = TermuxServiceClient.waitForService(
+                    maxAttempts = 60,
+                    intervalMs = 5000L,
+                    onAttempt = { attempt, total, error, sec ->
+                        StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
+                        Log.d(TAG, "waitForService attempt $attempt/$total: $error")
                     }
-                    is TermuxServiceClient.HealthResult.Error -> {
-                        StreamBridge.error("Termux 服务启动失败，请检查 Termux 是否已安装并运行过 termux-setup-storage")
-                        _status.value = DaemonStatus.Error("Termux 服务不可用")
-                        return false
-                    }
+                )
+                if (r.success) {
+                    StreamBridge.out("[done] Termux 服务已启动\n")
+                } else {
+                    StreamBridge.error("Termux 服务启动失败: ${r.message}")
+                    _status.value = DaemonStatus.Error("Termux 服务不可用")
+                    return false
                 }
             }
         }

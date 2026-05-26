@@ -30,6 +30,11 @@ object TermuxServiceClient {
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    private val longPollClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .build()
+
     // ─── 健康检查 ───────────────────────
 
     suspend fun healthCheck(): HealthResult = withContext(Dispatchers.IO) {
@@ -44,6 +49,42 @@ object TermuxServiceClient {
         } catch (e: Exception) {
             HealthResult.Error(e.message ?: "连接失败")
         }
+    }
+
+    // ─── 轮询等待服务就绪 ─────────────────
+    // pip install 在手机上可能耗时 2-5 分钟，持续重试直到 uvicorn 响应
+
+    data class WaitResult(val success: Boolean, val message: String)
+
+    suspend fun waitForService(
+        maxAttempts: Int = 60,
+        intervalMs: Long = 5000L,
+        onAttempt: (attempt: Int, total: Int, lastError: String, elapsedSec: Long) -> Unit = { _, _, _, _ -> }
+    ): WaitResult = withContext(Dispatchers.IO) {
+        var lastError = ""
+        val startMs = System.currentTimeMillis()
+        for (i in 1..maxAttempts) {
+            val elapsed = (System.currentTimeMillis() - startMs) / 1000
+            try {
+                val request = Request.Builder().url("$BASE_URL/health").build()
+                val response = longPollClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    onAttempt(i, maxAttempts, "已就绪", elapsed)
+                    return@withContext WaitResult(true, response.body?.string() ?: "ok")
+                } else {
+                    lastError = "HTTP ${response.code}"
+                }
+            } catch (e: Exception) {
+                lastError = e.message ?: "连接失败"
+            }
+            if (i < maxAttempts) {
+                onAttempt(i, maxAttempts, lastError, elapsed)
+                kotlinx.coroutines.delay(intervalMs)
+            } else {
+                onAttempt(i, maxAttempts, lastError, elapsed)
+            }
+        }
+        return@withContext WaitResult(false, lastError)
     }
 
     // ─── 安装依赖 ───────────────────────
