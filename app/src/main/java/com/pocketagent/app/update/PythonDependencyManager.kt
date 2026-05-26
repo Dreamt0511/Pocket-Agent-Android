@@ -467,8 +467,8 @@ sys.stdout.write("pip bootstrap done\n")
     /**
      * 提取预编译 C 扩展包和系统库。
      *
-     * 从 assets/python-ext/packages.tar.gz 提取到 site-packages，
-     * 从 assets/python-ext/libs.tar.gz 提取到 python/lib/。
+     * 从 assets/python-ext/packages.dat 提取到 site-packages，
+     * 从 assets/python-ext/libs.dat 提取到 python/lib/。
      *
      * 提取后验证关键 marker 文件，缺失时抛出异常让调用方感知。
      * assets 不存在时静默跳过（旧版 APK 兼容）。
@@ -493,7 +493,7 @@ sys.stdout.write("pip bootstrap done\n")
         // 1. 提取 Python 包到 site-packages
         Log.i(TAG, "提取预编译 C 扩展包到 site-packages...")
         try {
-            extractAssetTarGz(context, "python-ext/packages.tar.gz", sitePackages, pythonBin, baseEnv)
+            extractAssetTarGz(context, "python-ext/packages.dat", sitePackages, pythonBin, baseEnv)
         } catch (e: java.io.FileNotFoundException) {
             throw RuntimeException("预编译包文件未打包进 APK（assets list 有内容但 open 失败），请执行 clean 构建: ${e.message}")
         }
@@ -508,7 +508,7 @@ sys.stdout.write("pip bootstrap done\n")
         val libDir = File(pythonDir, "lib")
         Log.i(TAG, "提取预编译系统库到 $libDir ...")
         try {
-            extractAssetTarGz(context, "python-ext/libs.tar.gz", libDir, pythonBin, baseEnv)
+            extractAssetTarGz(context, "python-ext/libs.dat", libDir, pythonBin, baseEnv)
         } catch (e: java.io.FileNotFoundException) {
             throw RuntimeException("预编译系统库文件未打包进 APK，请执行 clean 构建: ${e.message}")
         }
@@ -526,8 +526,9 @@ sys.stdout.write("pip bootstrap done\n")
      * 将 assets 中的 tar.gz 文件提取到目标目录。
      *
      * 使用 Python 的 tarfile 模块（通过已就绪的 Python 运行时）而不是
-     * 引入额外的 Java tar 库。流程：复制 asset 到临时文件 → Python 提取 →
-     * 删除临时文件。
+     * 引入额外的 Java tar 库。文件在 assets 中以 .dat 扩展名存储
+     * （避免 AAPT2 的扩展名特殊处理），Python tarfile 自动检测格式。
+     * 流程：复制 asset 到临时文件 → Python 提取 → 删除临时文件。
      *
      * @throws RuntimeException Python 提取命令失败时抛出，携带详细输出
      */
