@@ -64,10 +64,25 @@ fun ConfigScreen(navController: NavController) {
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<String?>(null) }
 
-    // 加载配置（首次访问时确保 .env 文件存在）
+    // 加载配置：优先从 DataStore 读取（可靠持久化），
+    // ConfigManager 补充 .env 文件中的 executor/高级字段
     LaunchedEffect(Unit) {
         ConfigManager.ensureEnvFile()
-        configMap = ConfigManager.loadAll()
+        try {
+            val ds = settingsRepo.getSettings()
+            val fromDataStore = mapOf(
+                "DEFAULT_LLM_BASE_URL" to (ds.llmBaseUrl),
+                "LLM_API_KEY" to (ds.llmApiKey),
+                "LLM_MODEL" to (ds.llmModel),
+                "LLM_TEMPERATURE" to ds.llmTemperature.toString(),
+                "LLM_MAX_TOKENS" to ds.llmMaxTokens.toString(),
+                "MCP_SERVER_URL" to (ds.mcpServerUrl),
+            )
+            // 从 .env 读取 executor/高级字段，DataStore 值覆盖同名字段
+            configMap = ConfigManager.loadAll() + fromDataStore
+        } catch (_: Exception) {
+            configMap = ConfigManager.loadAll()
+        }
         isLoading = false
     }
 
