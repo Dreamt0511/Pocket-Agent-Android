@@ -1134,12 +1134,14 @@ if os.path.exists(linker) and os.path.exists(python_bin):
         errors: MutableList<String>
     ) {
         // 必须加 PYTHONPATH 指向 site-packages，否则 pip 解析器看不到预编译的 C 扩展包
+        // --find-links 让 pip 在解析依赖时也检查 site-packages，优先使用已安装的 wheel
         val env = baseEnv.toMutableMap().apply {
             put("PYTHONPATH", sitePackages.absolutePath)
         }
         val pipArgs = listOf(
             "-m", "pip", "install",
             "--target", sitePackages.absolutePath,
+            "--find-links", sitePackages.absolutePath,
             "--trusted-host", "pypi.org",
             "--trusted-host", "files.pythonhosted.org",
             "--only-binary", ":all:",
@@ -1154,6 +1156,7 @@ if os.path.exists(linker) and os.path.exists(python_bin):
         val fallbackArgs = listOf(
             "-m", "pip", "install",
             "--target", sitePackages.absolutePath,
+            "--find-links", sitePackages.absolutePath,
             "--trusted-host", "pypi.org",
             "--trusted-host", "files.pythonhosted.org",
             "--no-build-isolation",
