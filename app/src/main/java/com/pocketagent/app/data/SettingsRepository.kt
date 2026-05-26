@@ -12,7 +12,7 @@ val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
 
 data class Settings(
     val llmBaseUrl: String = "http://127.0.0.1:8080/v1",
-    val llmApiKey: String = "dummy",
+    val llmApiKey: String = "",
     val llmModel: String = "gelab-zero-4b-preview",
     val llmTemperature: Float = 0.7f,
     val llmMaxTokens: Int = 8000,
@@ -41,7 +41,7 @@ class SettingsRepository(
         .map { preferences ->
             Settings(
                 llmBaseUrl = preferences[DEFAULT_LLM_BASE_URL] ?: "http://127.0.0.1:8080/v1",
-                llmApiKey = preferences[LLM_API_KEY] ?: "dummy",
+                llmApiKey = preferences[LLM_API_KEY] ?: "",
                 llmModel = preferences[LLM_MODEL] ?: "gelab-zero-4b-preview",
                 llmTemperature = preferences[LLM_TEMPERATURE] ?: 0.7f,
                 llmMaxTokens = preferences[LLM_MAX_TOKENS] ?: 8000,
