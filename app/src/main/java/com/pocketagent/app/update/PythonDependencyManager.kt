@@ -155,8 +155,12 @@ object PythonDependencyManager {
         pythonBin: String,
         mirrorUrl: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
+        FileLogger.init(context)
+        val logDir = context.getExternalFilesDir("logs") ?: File(context.filesDir, "logs")
+        val logPath = File(logDir, "py_setup.log").absolutePath
         _setupState.value = SetupState.EnsuringPip
         Log.i(TAG, "开始安装依赖 (pythonBin=$pythonBin)")
+        FileLogger.i(TAG, "开始安装依赖 (pythonBin=$pythonBin, mirrorUrl=$mirrorUrl)")
 
         // 防御：确认 python 二进制真实存在，避免 CI 构建不完整导致迷惑的 "error=2" 错误
         val pythonFile = File(pythonBin)
@@ -165,6 +169,7 @@ object PythonDependencyManager {
                     "内置 Python 可能未正确打包进 APK，请检查 CI 构建日志中 'Download bundled Python' 步骤\n" +
                     "当前 assets/python/ 文件列表: ${describePythonAssets(context)}"
             Log.e(TAG, msg)
+            FileLogger.e(TAG, msg)
             _setupState.value = SetupState.Failed(msg)
             return@withContext false
         }
@@ -177,6 +182,12 @@ object PythonDependencyManager {
             val pythonDir = BundledPythonManager.getPythonDir(context)
             val sitePackages = getSitePackagesDir(context)
             sitePackages.mkdirs()
+
+            // Step -1: SELinux 兼容层 — 安装 sitecustomize.py
+            // Python 通过 linker64 加载时 pip 子进程直接 exec 会被 SELinux 阻止。
+            // sitecustomize.py 在 Python 启动时自动 patch subprocess.Popen，
+            // 使 Python 子进程也通过 linker64 间接加载。
+            installSelinuxCompat(context, pythonBin, pythonDir)
 
             // 获取已同步的代码目录（需要先完成代码同步）
             val runtimeDir = try {
@@ -207,13 +218,17 @@ object PythonDependencyManager {
             // Step 0: 自愈 — 确保 Termux 依赖共享库就绪
             // 若 assets 解压遗漏或本地构建缺少 .so 文件，自动从 Termux 仓库下载
             if (!ensureTermuxLibraries(context, pythonBin, baseEnv)) {
+                val failMsg = "Termux 依赖库自愈失败"
+                FileLogger.e(TAG, failMsg)
                 // ensureTermuxLibraries 内部已设置 Failed 状态（含详细诊断信息）
                 return@withContext false
             }
+            FileLogger.i(TAG, "Step 0: Termux 依赖库就绪")
 
             // Step 0.5: 提取预编译 C 扩展包（aiohttp、PIL、psutil、yaml 等 .so 模块）
             // 需在 ensureTermuxLibraries 之后（tarfile 解压需要 libz.so.1）
             extractBundledCExtensions(context, pythonBin, baseEnv, sitePackages, pythonDir)
+            FileLogger.i(TAG, "Step 0.5: 预编译 C 扩展提取完成")
 
             // Step 1: 检查 pip 是否可用（CI 已预装）
             // assets 的 site-packages 已经通过 sitecustomize.py 加入 sys.path
@@ -240,12 +255,15 @@ sys.stdout.write("pip bootstrap done\n")
                 if (!pipCheck.success) {
                     val msg = "pip 安装失败: ${pipCheck.output}"
                     Log.e(TAG, msg)
+                    FileLogger.e(TAG, msg)
                     _setupState.value = SetupState.Failed(msg)
                     return@withContext false
                 }
                 Log.i(TAG, "pip 就绪: ${pipCheck.output}")
+                FileLogger.i(TAG, "pip 就绪: ${pipCheck.output}")
             } else {
                 Log.i(TAG, "pip 已预装: ${pipVersion.output}")
+                FileLogger.i(TAG, "pip 已预装: ${pipVersion.output}")
             }
 
             // Step 2: 检查 requirements.txt
@@ -270,10 +288,12 @@ sys.stdout.write("pip bootstrap done\n")
 
             val diff = computeDiff(allCurrentReqs, snapshotReqs, installed)
             Log.i(TAG, "差异: 新增=${diff.toInstall.size}, 升级=${diff.toUpgrade.size}, 移除=${diff.toUninstall.size}, 不变=${diff.unchanged}")
+            FileLogger.i(TAG, "差异: 新增=${diff.toInstall.size}, 升级=${diff.toUpgrade.size}, 移除=${diff.toUninstall.size}, 不变=${diff.unchanged}")
 
             // 无任何变化 → 直接完成
             if (diff.isEmpty) {
                 Log.i(TAG, "所有依赖已是最新")
+                FileLogger.i(TAG, "完成: 所有依赖已是最新")
                 _setupState.value = SetupState.Completed(System.currentTimeMillis(), "所有依赖已是最新")
                 return@withContext true
             }
@@ -301,8 +321,9 @@ sys.stdout.write("pip bootstrap done\n")
 
             // 有任意失败 → 标记失败
             if (errors.isNotEmpty()) {
-                val msg = "部分操作失败:\n${errors.joinToString("\n")}"
+                val msg = "部分操作失败:\n${errors.joinToString("\n")}\n\n日志: $logPath"
                 Log.e(TAG, msg)
+                FileLogger.e(TAG, "部分操作失败:\n${errors.joinToString("\n")}")
                 _setupState.value = SetupState.Failed(msg)
                 return@withContext false
             }
@@ -334,17 +355,21 @@ sys.stdout.write("pip bootstrap done\n")
             }
             _setupState.value = SetupState.Completed(System.currentTimeMillis(), summary)
             Log.i(TAG, "依赖同步完成: $summary")
+            FileLogger.i(TAG, "依赖同步完成: $summary")
             true
 
         } catch (e: CancellationException) {
             // 协程被取消（如 installScope 关闭），重置为 Idle
             Log.i(TAG, "安装被取消")
+            FileLogger.i(TAG, "安装被取消")
             _setupState.value = SetupState.Idle
             false
         } catch (e: Exception) {
             val msg = "安装异常: ${e.message}"
             Log.e(TAG, msg, e)
-            _setupState.value = SetupState.Failed(msg)
+            val fullMsg = "$msg\n\n日志: $logPath"
+            FileLogger.saveOutput("crash_${System.currentTimeMillis()}", "${msg}\n${e.stackTraceToString()}")
+            _setupState.value = SetupState.Failed(fullMsg)
             false
         }
     }
@@ -578,6 +603,55 @@ sys.stdout.write("pip bootstrap done\n")
         } catch (e: Exception) {
             "读取失败: ${e.message}"
         }
+    }
+
+    /**
+     * 安装 SELinux 兼容层 — 生成 sitecustomize.py 到 Python 标准库 site-packages。
+     *
+     * Python 通过 linker64 加载时，sys.executable 指向 linker64 而非 python3.13。
+     * pip 使用 subprocess.Popen([sys.executable, ...]) 创建构建子进程，
+     * 这会导致直接 exec python3.13，被 SELinux 阻止（error=13）。
+     *
+     * sitecustomize.py 在 Python 启动时自动导入，在不修改 pip 源码的前提下
+     * patch subprocess.Popen 将 Python 子进程改为通过 linker64 间接加载。
+     *
+     * 写入路径为 python/lib/python3.13/site-packages/sitecustomize.py，
+     * APK 升级时 ensureExtracted 的 deleteRecursively 会清除此文件，
+     * 但 installDependencies 每次运行都会重新生成，因此不受影响。
+     */
+    private fun installSelinuxCompat(context: Context, pythonBin: String, pythonDir: File) {
+        val pySitePackages = File(pythonDir, "lib/python3.13/site-packages")
+        pySitePackages.mkdirs()
+        val sitecustomize = File(pySitePackages, "sitecustomize.py")
+        val linker = BundledPythonManager.getLinkerPath()
+
+        sitecustomize.writeText("""
+import sys, os
+
+# SELinux compat: when loaded via linker64 on Android, direct exec of
+# python binary in subprocesses is blocked by SELinux (EACCES).
+# This is loaded at Python startup via sitecustomize mechanism.
+# It monkey-patches subprocess.Popen to route through linker64.
+linker = "${linker}"
+python_bin = "${pythonBin}"
+
+if os.path.exists(linker) and os.path.exists(python_bin):
+    try:
+        import subprocess
+        _orig_init = subprocess.Popen.__init__
+
+        def _patched_init(self, args, **kwargs):
+            if isinstance(args, (list, tuple)) and len(args) > 0:
+                a0 = args[0]
+                if isinstance(a0, str) and python_bin in a0:
+                    args = [linker, a0] + list(args[1:])
+            _orig_init(self, args, **kwargs)
+
+        subprocess.Popen.__init__ = _patched_init
+    except Exception:
+        pass
+""".trimIndent())
+        Log.i(TAG, "SELinux compat 已安装: ${sitecustomize.absolutePath}")
     }
 
     /**
@@ -821,15 +895,23 @@ sys.stdout.write("pip bootstrap done\n")
         baseEnv: Map<String, String>,
         args: List<String>
     ): PipResult {
+        val cmdLabel = args.joinToString(" ").take(120)
+
         // Try 1: 直接执行
         val directResult = tryExec(pythonBin, args, baseEnv)
         if (directResult.success || !isExecError(directResult.output)) {
+            if (!directResult.success) {
+                FileLogger.saveOutput("run_${cmdLabel.replace("[^a-zA-Z0-9]".toRegex(), "_")}", directResult.output)
+            }
             return directResult
         }
         // Try 2: 通过 linker64 间接加载（绕过 SELinux exec 检查）
         Log.w(TAG, "直接 exec 被 SELinux 阻止，通过 linker64 重试...")
+        FileLogger.w(TAG, "直接 exec 被 SELinux 阻止，通过 linker64 重试... cmd=$cmdLabel")
         val linker = BundledPythonManager.getLinkerPath()
-        return tryExec(linker, listOf(pythonBin) + args, baseEnv)
+        val retryResult = tryExec(linker, listOf(pythonBin) + args, baseEnv)
+        FileLogger.saveOutput("linker_${cmdLabel.replace("[^a-zA-Z0-9]".toRegex(), "_")}", retryResult.output)
+        return retryResult
     }
 
     /** 尝试执行命令，返回 PipResult */
@@ -980,8 +1062,13 @@ sys.stdout.write("pip bootstrap done\n")
         for ((name, spec) in current) {
             val normalizedName = name.lowercase().replace("-", "_")
             if (name !in snapshot) {
-                // 新增的依赖
-                toInstall.add(name to spec)
+                // 新增的依赖 — 但先检查是否已预编译安装（如 aiohttp、pillow 等 C 扩展）
+                val installedVer = installed[normalizedName]
+                if (installedVer != null && versionSatisfies(installedVer, spec)) {
+                    unchanged++
+                } else {
+                    toInstall.add(name to spec)
+                }
             } else if (snapshot[name] != spec) {
                 // 版本约束变了 → 重新安装（升级）
                 toUpgrade.add(name to spec)
