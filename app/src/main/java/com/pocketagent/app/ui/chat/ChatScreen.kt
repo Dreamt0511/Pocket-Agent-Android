@@ -18,8 +18,9 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemon
 import com.pocketagent.app.core.AppBootstrapper
+import com.pocketagent.app.data.AppDatabase
+import com.pocketagent.app.data.ChatRepository
 import com.pocketagent.app.overlay.OverlayService
-import com.pocketagent.app.service.SessionManager
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.launch
@@ -30,25 +31,47 @@ import java.util.*
  * 执行任务页面 - 主 Agent 功能入口
  *
  * 在这里给 AI 下达任务指令，由 Agent 规划并操控手机完成。
+ * 所有消息持久化到 Room 数据库。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
+fun ChatScreen(navController: NavController, conversationId: Long? = null) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
-    var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
-    var sessionId by remember { mutableStateOf("") }
+    val messages = remember { mutableStateListOf<ChatMessage>() }
+    var currentConvId by remember { mutableStateOf<Long?>(null) }
     var sessionTitle by remember { mutableStateOf("新会话") }
 
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
 
-    // 进入页面时创建一个新会话
-    LaunchedEffect(Unit) {
-        val session = sessionManager.createSession("新会话")
-        sessionId = session.id
+    // 进入页面时创建新会话或加载已有会话
+    LaunchedEffect(conversationId) {
+        val repo = ChatRepository(AppDatabase.getInstance(context))
+        if (conversationId == null) {
+            val conv = repo.createConversation("新会话")
+            currentConvId = conv.id
+        } else {
+            val conv = repo.getConversation(conversationId)
+            if (conv != null) {
+                currentConvId = conv.id
+                sessionTitle = conv.title
+                val history = repo.getMessages(conv.id)
+                messages.clear()
+                history.forEach { msg ->
+                    messages.add(
+                        ChatMessage(text = msg.content, isUser = msg.role == "user", timestamp = msg.timestamp)
+                    )
+                }
+            } else {
+                // 如果会话不存在，新建一个
+                val conv = repo.createConversation("新会话")
+                currentConvId = conv.id
+            }
+        }
     }
 
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
@@ -59,9 +82,7 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
             val lastIdx = messages.size - 1
             val lastMsg = messages[lastIdx]
             if (!lastMsg.isUser && streamText.isNotEmpty() && lastMsg.text != streamText) {
-                messages = messages.toMutableList().apply {
-                    set(lastIdx, get(lastIdx).copy(text = streamText))
-                }
+                messages[lastIdx] = messages[lastIdx].copy(text = streamText)
             }
         }
     }
@@ -73,7 +94,7 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
                 title = {
                     Column {
                         Text(sessionTitle, fontSize = 16.sp, maxLines = 1)
-                        if (sessionId.isNotBlank()) {
+                        if (currentConvId != null) {
                             Text(
                                 text = formatDateShort(System.currentTimeMillis()),
                                 fontSize = 10.sp,
@@ -102,31 +123,38 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
                 inputText = inputText,
                 onInputChange = { inputText = it },
                 onSend = {
-                    if (inputText.isNotBlank() && !isProcessing && isDaemonReady) {
+                    if (inputText.isNotBlank() && !isProcessing && isDaemonReady && currentConvId != null) {
                         scope.launch {
                             isProcessing = true
+                            val convId = currentConvId!!
+                            val repo = ChatRepository(AppDatabase.getInstance(context))
 
                             // 清空流式输出，准备接收新任务的实时输出
                             OverlayService.streamText.value = ""
 
                             val isFirstMessage = messages.isEmpty()
 
-                            messages = messages + ChatMessage(
+                            val userMsg = ChatMessage(
                                 text = inputText,
                                 isUser = true,
                                 timestamp = System.currentTimeMillis()
                             )
+                            messages.add(userMsg)
+                            // 保存用户消息到 Room
+                            repo.addMessage(convId, "user", inputText)
+
                             // 添加占位 AI 消息，由 LaunchedEffect(streamText) 实时更新
-                            messages = messages + ChatMessage(
+                            val placeholderMsg = ChatMessage(
                                 text = "",
                                 isUser = false,
                                 timestamp = System.currentTimeMillis()
                             )
+                            messages.add(placeholderMsg)
 
                             // 首条消息自动设为会话标题
                             if (isFirstMessage) {
                                 val title = inputText.take(30)
-                                sessionManager.updateSession(sessionId, title = title)
+                                repo.updateConversationTitle(convId, title)
                                 sessionTitle = title
                             }
 
@@ -134,7 +162,7 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
                             inputText = ""
 
                             // 执行指令（suspend 函数，执行期间 streamText 会实时变化）
-                            val result = AppBootstrapper.executeCommand(cmd, sessionId)
+                            val result = AppBootstrapper.executeCommand(cmd, convId.toString())
 
                             // 执行完成后用最终结果更新最后一条消息
                             val finalText = when (result) {
@@ -144,29 +172,14 @@ fun ChatScreen(navController: NavController, sessionManager: SessionManager) {
                             }
                             val lastIdx = messages.size - 1
                             if (lastIdx >= 0) {
-                                messages = messages.toMutableList().apply {
-                                    set(lastIdx, get(lastIdx).copy(
-                                        text = if (streamText.isNotEmpty()) streamText else finalText,
-                                        timestamp = System.currentTimeMillis()
-                                    ))
-                                }
+                                val displayText = if (streamText.isNotEmpty()) streamText else finalText
+                                messages[lastIdx] = messages[lastIdx].copy(
+                                    text = displayText,
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                // 保存 AI 回复到 Room
+                                repo.addMessage(convId, "assistant", displayText)
                             }
-
-                            // 保存任务到会话
-                            val outputText = if (streamText.isNotEmpty()) streamText else finalText
-                            sessionManager.addTask(SessionManager.StoredTask(
-                                id = "task_${System.currentTimeMillis()}_${(Math.random() * 10000).toInt()}",
-                                sessionId = sessionId,
-                                prompt = cmd,
-                                status = when (result) {
-                                    is TaskResult.Success -> "completed"
-                                    is TaskResult.Failure -> "failed"
-                                    is TaskResult.Cancelled -> "cancelled"
-                                },
-                                output = outputText,
-                                createdAt = System.currentTimeMillis(),
-                                completedAt = System.currentTimeMillis()
-                            ))
 
                             isProcessing = false
 
@@ -386,8 +399,7 @@ private fun formatDateShort(timestamp: Long): String {
 private fun ChatScreenLightPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
         ChatScreen(
-            navController = rememberNavController(),
-            sessionManager = SessionManager(androidx.compose.ui.platform.LocalContext.current)
+            navController = rememberNavController()
         )
     }
 }
@@ -397,8 +409,7 @@ private fun ChatScreenLightPreview() {
 private fun ChatScreenDarkPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
         ChatScreen(
-            navController = rememberNavController(),
-            sessionManager = SessionManager(androidx.compose.ui.platform.LocalContext.current)
+            navController = rememberNavController()
         )
     }
 }

@@ -3,11 +3,12 @@ package com.pocketagent.app
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
-import com.pocketagent.app.service.SessionManager
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.ui.home.HomeScreen
 import com.pocketagent.app.ui.chat.ChatScreen
@@ -19,7 +20,7 @@ import com.pocketagent.app.ui.screens.skills.SkillsScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object Execute : Screen("execute")
+    object Execute : Screen("execute/{conversationId}")
     object History : Screen("history")
     object Skills : Screen("skills")
     object Terminal : Screen("terminal")
@@ -31,7 +32,6 @@ sealed class Screen(val route: String) {
 fun AppNavGraph(navController: NavHostController) {
     val context = LocalContext.current
     val taskQueueManager = remember { TaskQueueManager() }
-    val sessionManager = remember { SessionManager(context) }
 
     NavHost(
         navController = navController,
@@ -49,11 +49,23 @@ fun AppNavGraph(navController: NavHostController) {
                 settingsRepo = settingsRepo
             )
         }
-        composable(Screen.Execute.route) {
-            ChatScreen(navController = navController, sessionManager = sessionManager)
+        composable(
+            route = Screen.Execute.route,
+            arguments = listOf(
+                navArgument("conversationId") {
+                    type = NavType.LongType
+                    defaultValue = -1L
+                }
+            )
+        ) { backStackEntry ->
+            val convId = backStackEntry.arguments?.getLong("conversationId") ?: -1L
+            ChatScreen(
+                navController = navController,
+                conversationId = if (convId == -1L) null else convId
+            )
         }
         composable(Screen.History.route) {
-            HistoryScreen(navController = navController, sessionManager = sessionManager)
+            HistoryScreen(navController = navController)
         }
         composable(Screen.Skills.route) {
             SkillsScreen(navController = navController)
