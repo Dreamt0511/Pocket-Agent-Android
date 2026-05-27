@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalView
+import android.view.ViewTreeObserver
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
@@ -93,11 +95,29 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
 
-    // 新消息或消息数变化时自动滚动到底部（配合 imePadding 处理键盘弹起）
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            delay(50)
-            listState.scrollToItem(messages.size - 1)
+    // 键盘弹起时自动滚动到底部（通过 ViewTreeObserver 检测窗口可视区域变化）
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        val rootView = view.rootView
+        var wasKeyboardVisible = false
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            val rect = android.graphics.Rect()
+            rootView.getWindowVisibleDisplayFrame(rect)
+            val heightDiff = rootView.height - rect.bottom
+            val isKeyboardVisible = heightDiff > rootView.height * 0.15
+            if (isKeyboardVisible && !wasKeyboardVisible && messages.isNotEmpty()) {
+                scope.launch {
+                    delay(280) // 等键盘动画完成
+                    try {
+                        listState.scrollToItem(messages.size - 1)
+                    } catch (_: Exception) {}
+                }
+            }
+            wasKeyboardVisible = isKeyboardVisible
+        }
+        rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        onDispose {
+            rootView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
         }
     }
 
@@ -142,16 +162,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             ChatInputBar(
                 inputText = inputText,
                 onInputChange = { inputText = it },
-                onFocusChange = { focused ->
-                    if (focused && messages.isNotEmpty()) {
-                        scope.launch {
-                            delay(150)
-                            try {
-                                listState.scrollToItem(messages.size - 1)
-                            } catch (_: Exception) {}
-                        }
-                    }
-                },
+                onFocusChange = { },
                 onSend = {
                     if (inputText.isNotBlank() && !isProcessing && isDaemonReady && currentConvId != null) {
                         scope.launch {
