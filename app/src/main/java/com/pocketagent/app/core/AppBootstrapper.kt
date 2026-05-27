@@ -2,7 +2,9 @@ package com.pocketagent.app.core
 
 import android.content.Context
 import android.util.Log
+import android.content.Intent
 import com.pocketagent.app.overlay.OverlayManager
+import com.pocketagent.app.service.AgentService
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.CodeSyncManager
@@ -38,6 +40,11 @@ object AppBootstrapper {
         daemon = AgentDaemon(context, taskQueueManager)
         SkillManager.init(context)
         CodeSyncManager.init(context)
+
+        // 启动前台服务，确保清除 App 时 onTaskRemoved 被触发以关闭 uvicorn
+        try {
+            context.startService(Intent(context, AgentService::class.java))
+        } catch (_: Exception) {}
 
         Log.i(TAG, "All subsystems initialized")
     }
