@@ -76,6 +76,10 @@ object AppBootstrapper {
         daemon.cancel()
     }
 
+    fun markDisconnected() {
+        daemon.markDisconnected()
+    }
+
     suspend fun forceSync() {
         daemon.forceSync()
     }

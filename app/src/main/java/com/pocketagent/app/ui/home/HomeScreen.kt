@@ -604,11 +604,13 @@ private fun TermuxStatusCard(
                             val h = TermuxServiceClient.healthCheck()
                             if (h is TermuxServiceClient.HealthResult.Error) {
                                 testResult = "服务已关闭"
+                                AppBootstrapper.markDisconnected()
                             } else {
                                 // HTTP 没关掉，用 Termux 脚本强杀
                                 TermuxLauncher.stopFastAPI(context)
                                 delay(1000)
                                 testResult = "服务已关闭"
+                                AppBootstrapper.markDisconnected()
                             }
                         }
                     },
