@@ -76,6 +76,8 @@ class AgentDaemon(
         _status.value = DaemonStatus.Ready
         StreamBridge.status("就绪")
         StreamBridge.out("$ Pocket Agent 就绪 — 等待指令\n")
+        // 标记初始化完成，后续隐藏 PyPI 镜像源 UI
+        withContext(Dispatchers.IO) { settingsRepo.setInitialSetupDone(true) }
         Log.i(TAG, "=== Bootstrap complete ===")
         return true
     }
@@ -157,7 +159,8 @@ class AgentDaemon(
     suspend fun forceSync(): Boolean {
         StreamBridge.status("同步代码...")
         StreamBridge.out("[info] 通知 Termux 执行 git pull...\n")
-        return when (val r = TermuxServiceClient.triggerSync()) {
+        val settings = withContext(Dispatchers.IO) { settingsRepo.getSettings() }
+        return when (val r = TermuxServiceClient.triggerSync(settings.pypiMirrorUrl)) {
             is TermuxServiceClient.SyncResult.Ok -> {
                 StreamBridge.done("代码已同步")
                 true

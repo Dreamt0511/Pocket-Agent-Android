@@ -36,6 +36,7 @@ class SettingsRepository(
         private val SHOW_STATUS = booleanPreferencesKey("show_status")
         private val PYPI_MIRROR_URL = stringPreferencesKey("pypi_mirror_url")
         private val SERVICE_STOP_REQUESTED = booleanPreferencesKey("service_stop_requested")
+        private val INITIAL_SETUP_DONE = booleanPreferencesKey("initial_setup_done")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -77,5 +78,13 @@ class SettingsRepository(
 
     suspend fun setServiceStopRequested(value: Boolean) {
         dataStore.edit { it[SERVICE_STOP_REQUESTED] = value }
+    }
+
+    suspend fun isInitialSetupDone(): Boolean {
+        return dataStore.data.first()[INITIAL_SETUP_DONE] ?: false
+    }
+
+    suspend fun setInitialSetupDone(value: Boolean) {
+        dataStore.edit { it[INITIAL_SETUP_DONE] = value }
     }
 }

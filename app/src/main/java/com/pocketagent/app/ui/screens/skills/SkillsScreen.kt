@@ -347,14 +347,57 @@ fun SkillsScreen(navController: NavController) {
             onSave = { name, description, content ->
                 scope.launch {
                     if (editSkill != null) {
-                        SkillManager.updateSkill(editSkill!!.path, name, description, content)
-                        // 更新内存中的技能
-                        val updated = editSkill!!.copy(name = name, description = description, content = content)
-                        allSkills = allSkills.map { if (it.path == updated.path) updated else it }
+                        when (val r = TermuxServiceClient.updateSkill(editSkill!!.path, name, description, content)) {
+                            is TermuxServiceClient.SkillCrudResult.Ok -> {
+                                val updated = editSkill!!.copy(name = name, description = description, content = content)
+                                allSkills = allSkills.map { if (it.path == updated.path) updated else it }
+                            }
+                            is TermuxServiceClient.SkillCrudResult.Error -> {
+                                // fallback 到本地
+                                SkillManager.updateSkill(editSkill!!.path, name, description, content)
+                                val updated = editSkill!!.copy(name = name, description = description, content = content)
+                                allSkills = allSkills.map { if (it.path == updated.path) updated else it }
+                            }
+                        }
                     } else {
-                        val created = SkillManager.createSkill(name, description, content, currentCategory)
-                        if (created != null) {
-                            allSkills = allSkills + created
+                        val catDirName = currentCategory.dirName
+                        when (val r = TermuxServiceClient.createSkill(name, description, content, catDirName)) {
+                            is TermuxServiceClient.SkillCrudResult.Ok -> {
+                                // 重新从后端获取以得到完整数据
+                                val refreshed = TermuxServiceClient.fetchSkills()
+                                if (refreshed is TermuxServiceClient.SkillsResult.Ok) {
+                                    val json = org.json.JSONObject(refreshed.body)
+                                    val loaded = mutableListOf<SkillManager.Skill>()
+                                    val categories = mapOf(
+                                        "main_skills" to SkillManager.Category.MAIN_SKILLS,
+                                        "executor_skills" to SkillManager.Category.EXECUTOR_SKILLS,
+                                        "auto_skills" to SkillManager.Category.AUTO_SKILLS,
+                                    )
+                                    for ((key, category) in categories) {
+                                        val arr = json.optJSONArray(key) ?: continue
+                                        for (i in 0 until arr.length()) {
+                                            val obj = arr.getJSONObject(i)
+                                            loaded.add(SkillManager.Skill(
+                                                name = obj.optString("name"),
+                                                description = obj.optString("description"),
+                                                category = category,
+                                                path = obj.optString("path"),
+                                                content = obj.optString("content")
+                                            ))
+                                        }
+                                    }
+                                    allSkills = loaded
+                                } else {
+                                    // 后端获取失败，用本地创建兜底
+                                    val created = SkillManager.createSkill(name, description, content, currentCategory)
+                                    if (created != null) allSkills = allSkills + created
+                                }
+                            }
+                            is TermuxServiceClient.SkillCrudResult.Error -> {
+                                // fallback 到本地
+                                val created = SkillManager.createSkill(name, description, content, currentCategory)
+                                if (created != null) allSkills = allSkills + created
+                            }
                         }
                     }
                     skills = allSkills.filter { it.category == currentCategory }
@@ -390,9 +433,14 @@ fun SkillsScreen(navController: NavController) {
                     onClick = {
                         val toDelete = showDeleteConfirm!!
                         scope.launch {
-                            SkillManager.deleteSkill(toDelete.path)
+                            when (val r = TermuxServiceClient.deleteSkill(toDelete.path)) {
+                                is TermuxServiceClient.SkillCrudResult.Ok -> {}
+                                is TermuxServiceClient.SkillCrudResult.Error -> {
+                                    // fallback 到本地删除
+                                    SkillManager.deleteSkill(toDelete.path)
+                                }
+                            }
                             showDeleteConfirm = null
-                            // 从内存列表中移除，不依赖本地文件系统
                             allSkills = allSkills.filter { it.path != toDelete.path }
                             skills = allSkills.filter { it.category == currentCategory }
                         }

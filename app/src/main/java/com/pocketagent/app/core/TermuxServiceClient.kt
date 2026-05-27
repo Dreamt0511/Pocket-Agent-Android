@@ -207,7 +207,7 @@ object TermuxServiceClient {
         }
     }
 
-    // ─── 技能列表获取 ──────────────────
+    // ─── 技能 CRUD ──────────────────────
 
     suspend fun fetchSkills(): SkillsResult = withContext(Dispatchers.IO) {
         try {
@@ -223,13 +223,81 @@ object TermuxServiceClient {
         }
     }
 
+    suspend fun createSkill(name: String, description: String, content: String, category: String): SkillCrudResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = org.json.JSONObject().apply {
+                    put("name", name)
+                    put("description", description)
+                    put("content", content)
+                    put("category", category)
+                }
+                val body = json.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder().url("$BASE_URL/skills").post(body).build()
+                val response = shortTimeoutClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val respBody = org.json.JSONObject(response.body?.string() ?: "{}")
+                    SkillCrudResult.Ok(respBody.optString("path", ""))
+                } else {
+                    val err = try { org.json.JSONObject(response.body?.string() ?: "{}").optString("error") } catch (_: Exception) { "HTTP ${response.code}" }
+                    SkillCrudResult.Error(err)
+                }
+            } catch (e: Exception) {
+                SkillCrudResult.Error(e.message ?: "连接失败")
+            }
+        }
+
+    suspend fun updateSkill(path: String, name: String, description: String, content: String): SkillCrudResult =
+        withContext(Dispatchers.IO) {
+            try {
+                val json = org.json.JSONObject().apply {
+                    put("name", name)
+                    put("description", description)
+                    put("content", content)
+                }
+                val body = json.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder().url("$BASE_URL/skills/$path").put(body).build()
+                val response = shortTimeoutClient.newCall(request).execute()
+                if (response.isSuccessful) SkillCrudResult.Ok("")
+                else {
+                    val err = try { org.json.JSONObject(response.body?.string() ?: "{}").optString("error") } catch (_: Exception) { "HTTP ${response.code}" }
+                    SkillCrudResult.Error(err)
+                }
+            } catch (e: Exception) {
+                SkillCrudResult.Error(e.message ?: "连接失败")
+            }
+        }
+
+    suspend fun deleteSkill(path: String): SkillCrudResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/skills/$path").delete().build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) SkillCrudResult.Ok("")
+            else {
+                val err = try { org.json.JSONObject(response.body?.string() ?: "{}").optString("error") } catch (_: Exception) { "HTTP ${response.code}" }
+                SkillCrudResult.Error(err)
+            }
+        } catch (e: Exception) {
+            SkillCrudResult.Error(e.message ?: "连接失败")
+        }
+    }
+
+    sealed class SkillCrudResult {
+        data class Ok(val path: String) : SkillCrudResult()
+        data class Error(val message: String) : SkillCrudResult()
+    }
+
     // ─── 代码同步 ───────────────────────
 
-    suspend fun triggerSync(): SyncResult = withContext(Dispatchers.IO) {
+    suspend fun triggerSync(mirrorUrl: String = ""): SyncResult = withContext(Dispatchers.IO) {
         try {
+            val json = org.json.JSONObject().apply {
+                put("mirror", mirrorUrl)
+            }
+            val body = json.toString().toRequestBody("application/json".toMediaType())
             val request = Request.Builder()
                 .url("$BASE_URL/sync")
-                .post("{}".toRequestBody("application/json".toMediaType()))
+                .post(body)
                 .build()
             val response = shortTimeoutClient.newCall(request).execute()
             if (response.isSuccessful) SyncResult.Ok(response.body?.string() ?: "")

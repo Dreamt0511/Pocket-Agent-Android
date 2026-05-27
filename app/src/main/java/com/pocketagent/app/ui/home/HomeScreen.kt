@@ -3,6 +3,8 @@ package com.pocketagent.app.ui.home
 import android.content.pm.PackageManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.ui.res.painterResource
+import com.pocketagent.app.R
 import android.net.Uri
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -35,6 +37,8 @@ import androidx.navigation.NavController
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.ui.components.AnimatedBackground
 import com.pocketagent.app.ui.theme.*
+import com.pocketagent.app.core.AgentDaemon
+import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.core.ScriptProgress
@@ -65,6 +69,12 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
     val context = LocalContext.current
     val isPythonReady = remember { mutableStateOf(false) } // 不再使用内嵌 Python
     val settings by settingsRepo.settingsFlow.collectAsState(initial = null)
+    val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
+    var initialSetupDone by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        initialSetupDone = settingsRepo.isInitialSetupDone()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ─── 液态玻璃动态背景 ───
@@ -126,12 +136,11 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = "GH",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_github),
+                                        contentDescription = "GitHub",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -147,12 +156,23 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
 
             Spacer(Modifier.height(24.dp))
 
+            // ─── Agent 状态总览 ───
+            AnimatedStaggeredItem(delayMs = 60) {
+                AgentOverviewCard(
+                    daemonStatus = daemonStatus,
+                    modelConfigured = modelConfigured,
+                    initialSetupDone = initialSetupDone
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+
             // ─── 环境配置卡片（常驻首页） ───
             if (true) {
                 AnimatedStaggeredItem(delayMs = 80) {
                     TermuxStatusCard(
                         currentMirrorUrl = settings?.pypiMirrorUrl ?: "",
                         settingsRepo = settingsRepo,
+                        initialSetupDone = initialSetupDone,
                         onLaunch = { mirrorUrl ->
                             TermuxLauncher.launchFastAPI(context, mirrorUrl)
                         }
@@ -169,14 +189,6 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-            }
-
-            // 底部 Agent 状态
-            if (modelConfigured) {
-                Spacer(Modifier.height(8.dp))
-                AnimatedStaggeredItem(delayMs = 100 + navEntries.size * 80) {
-                    AgentStatusBadge()
-                }
             }
 
             Spacer(Modifier.height(32.dp))
@@ -245,34 +257,78 @@ private fun NavCard(entry: NavEntry) {
     }
 }
 
-// ─── Agent 就绪徽章 ────────────────────────────
+// ─── Agent 状态总览卡片 ────────────────────────
 
 @Composable
-private fun AgentStatusBadge() {
-    GlassSurface(shape = RoundedCornerShape(12.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            // 绿点指示灯
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF4CAF50))
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = "Agent 就绪",
-                fontSize = 12.5.sp,
-                letterSpacing = (0.3f).sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                textAlign = TextAlign.Center
-            )
+private fun AgentOverviewCard(
+    daemonStatus: AgentDaemon.DaemonStatus,
+    modelConfigured: Boolean,
+    initialSetupDone: Boolean
+) {
+    val serviceReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
+    val allReady = initialSetupDone && serviceReady && modelConfigured
+
+    val statusColor = if (allReady) Color(0xFF4CAF50) else Color(0xFFFF9800)
+    val statusText = when {
+        !initialSetupDone -> "环境未初始化"
+        !serviceReady -> "服务未连接"
+        !modelConfigured -> "模型未配置"
+        else -> "Agent 已就绪"
+    }
+
+    GlassCard(
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(statusColor)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = statusText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Spacer(Modifier.height(8.dp))
+            // 三项检查
+            CheckItem(label = "环境依赖", ok = initialSetupDone)
+            Spacer(Modifier.height(4.dp))
+            CheckItem(label = "服务连接", ok = serviceReady)
+            Spacer(Modifier.height(4.dp))
+            CheckItem(label = "模型配置", ok = modelConfigured)
         }
+    }
+}
+
+@Composable
+private fun CheckItem(label: String, ok: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = if (ok) "●" else "○",
+            fontSize = 10.sp,
+            color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (ok) 0.7f else 0.4f)
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = if (ok) "完成" else "待完成",
+            fontSize = 11.sp,
+            color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+        )
     }
 }
 
@@ -336,6 +392,7 @@ private val pypiMirrors = listOf(
 private fun TermuxStatusCard(
     currentMirrorUrl: String,
     settingsRepo: SettingsRepository,
+    initialSetupDone: Boolean,
     onLaunch: (mirrorUrl: String) -> Unit
 ) {
     val context = LocalContext.current
@@ -413,82 +470,84 @@ private fun TermuxStatusCard(
                 }
             }
 
-            // ─── PyPI 镜像选择 ───
-            Spacer(Modifier.height(10.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-            Spacer(Modifier.height(8.dp))
+            // ─── PyPI 镜像选择（仅首次初始化前显示） ───
+            if (!initialSetupDone) {
+                Spacer(Modifier.height(10.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                Spacer(Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Cloud,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "PyPI 镜像源",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-            }
-            Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "PyPI 镜像源",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
 
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                pypiMirrors.forEach { (label, url) ->
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    pypiMirrors.forEach { (label, url) ->
+                        FilterChip(
+                            selected = if (url.isEmpty()) currentMirrorUrl.isEmpty() else currentMirrorUrl == url,
+                            onClick = {
+                                scope.launch {
+                                    val s = settingsRepo.getSettings()
+                                    settingsRepo.saveSettings(s.copy(pypiMirrorUrl = url))
+                                }
+                                mirrorCustom = false
+                            },
+                            label = { Text(label, fontSize = 11.sp) },
+                            modifier = Modifier.height(30.dp)
+                        )
+                    }
                     FilterChip(
-                        selected = if (url.isEmpty()) currentMirrorUrl.isEmpty() else currentMirrorUrl == url,
-                        onClick = {
-                            scope.launch {
-                                val s = settingsRepo.getSettings()
-                                settingsRepo.saveSettings(s.copy(pypiMirrorUrl = url))
-                            }
-                            mirrorCustom = false
-                        },
-                        label = { Text(label, fontSize = 11.sp) },
+                        selected = mirrorCustom,
+                        onClick = { mirrorCustom = !mirrorCustom },
+                        label = { Text("自定义", fontSize = 11.sp) },
                         modifier = Modifier.height(30.dp)
                     )
                 }
-                FilterChip(
-                    selected = mirrorCustom,
-                    onClick = { mirrorCustom = !mirrorCustom },
-                    label = { Text("自定义", fontSize = 11.sp) },
-                    modifier = Modifier.height(30.dp)
-                )
-            }
 
-            if (mirrorCustom) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = mirrorCustomUrl,
-                    onValueChange = { mirrorCustomUrl = it },
-                    placeholder = { Text("https://...", fontSize = 12.sp) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = {
-                        scope.launch {
-                            val s = settingsRepo.getSettings()
-                            settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
-                        }
-                    }),
-                    trailingIcon = {
-                        if (mirrorCustomUrl.isNotBlank()) {
-                            IconButton(onClick = {
-                                scope.launch {
-                                    val s = settingsRepo.getSettings()
-                                    settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                if (mirrorCustom) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = mirrorCustomUrl,
+                        onValueChange = { mirrorCustomUrl = it },
+                        placeholder = { Text("https://...", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = {
+                            scope.launch {
+                                val s = settingsRepo.getSettings()
+                                settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                            }
+                        }),
+                        trailingIcon = {
+                            if (mirrorCustomUrl.isNotBlank()) {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        val s = settingsRepo.getSettings()
+                                        settingsRepo.saveSettings(s.copy(pypiMirrorUrl = mirrorCustomUrl))
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
                                 }
-                            }) {
-                                Icon(Icons.Default.Check, contentDescription = "确认", modifier = Modifier.size(18.dp))
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             Spacer(Modifier.height(12.dp))

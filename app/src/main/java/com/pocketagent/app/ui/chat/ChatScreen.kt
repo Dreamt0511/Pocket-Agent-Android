@@ -28,6 +28,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -92,6 +93,16 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
 
+    // 监听键盘弹起，自动滚动到底部
+    val imeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(imeVisible) {
+        if (imeVisible && messages.isNotEmpty()) {
+            // 键盘弹起动画完成后滚动
+            delay(100)
+            listState.scrollToItem(messages.size - 1)
+        }
+    }
+
     LaunchedEffect(streamText) {
         if (isProcessing && messages.isNotEmpty()) {
             val lastIdx = messages.size - 1
@@ -136,14 +147,10 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 onFocusChange = { focused ->
                     if (focused && messages.isNotEmpty()) {
                         scope.launch {
-                            // 多次滚动以适配不同设备的键盘动画时长
-                            val delays = listOf(100L, 300L, 500L, 800L)
-                            for (d in delays) {
-                                kotlinx.coroutines.delay(d)
-                                try {
-                                    listState.scrollToItem(messages.size - 1)
-                                } catch (_: Exception) {}
-                            }
+                            delay(150)
+                            try {
+                                listState.scrollToItem(messages.size - 1)
+                            } catch (_: Exception) {}
                         }
                     }
                 },
