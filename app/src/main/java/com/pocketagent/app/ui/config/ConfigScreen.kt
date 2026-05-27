@@ -1,6 +1,7 @@
 package com.pocketagent.app.ui.config
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -26,6 +27,7 @@ import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.update.CodeSyncManager
+import com.pocketagent.app.update.SyncResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -400,13 +402,19 @@ fun ConfigScreen(navController: NavController) {
 
                 // ===== 代码更新 =====
                 SectionCard(title = "代码更新") {
-                    val codeVersion = try {
-                        CodeSyncManager.getInstance().getLocalVersion()
-                    } catch (_: Exception) { "未知" }
+                    val syncManager = try { CodeSyncManager.getInstance() } catch (_: Exception) { null }
+                    val codeVersion = syncManager?.getLocalVersion() ?: "未知"
+                    val lastUpdate = syncManager?.getLastUpdateTime() ?: 0
+                    val versionHistory = syncManager?.getVersionHistory() ?: emptyList()
+
                     Text("当前版本: $codeVersion", fontSize = 14.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Text("从 GitHub 主仓库同步最新 Agent 代码", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    if (lastUpdate > 0) {
+                        Text(
+                            "上次更新: ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastUpdate))}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
 
                     if (remoteVersion != null) {
@@ -477,6 +485,50 @@ fun ConfigScreen(navController: NavController) {
                     updateInfo?.let {
                         Text(it, fontSize = 12.sp,
                             modifier = Modifier.padding(top = 4.dp))
+                    }
+
+                    // 版本历史
+                    if (versionHistory.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        Spacer(Modifier.height(8.dp))
+                        Text("版本历史（点击回退）", fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                        Spacer(Modifier.height(4.dp))
+                        for (entry in versionHistory) {
+                            val timeStr = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(entry.timestamp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        scope.launch {
+                                            updating = true
+                                            updateInfo = null
+                                            when (val r = syncManager?.rollbackTo(entry.sha)) {
+                                                is SyncResult.Synced -> {
+                                                    updateInfo = "已回退到 ${entry.sha}，请重启服务"
+                                                }
+                                                is SyncResult.Failed -> {
+                                                    updateInfo = "回退失败: ${r.error}"
+                                                }
+                                                else -> {}
+                                            }
+                                            updating = false
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(entry.sha, fontSize = 13.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text(timeStr, fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                            }
+                        }
                     }
                 }
 

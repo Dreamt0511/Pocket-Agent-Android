@@ -72,11 +72,92 @@ class CodeSyncManager(private val context: Context) {
     /** 获取本地版本号（commit SHA 前 7 位） */
     fun getLocalVersion(): String {
         val file = getLocalVersionFile()
-        if (!file.exists()) return "0.0.0"
+        if (!file.exists()) return "未安装"
         return try {
-            JSONObject(file.readText()).optString("version", "0.0.0")
+            val v = JSONObject(file.readText()).optString("version", "")
+            if (v.isBlank()) "未安装" else v.take(7)
         } catch (_: Exception) {
-            "0.0.0"
+            "未安装"
+        }
+    }
+
+    /** 获取最近一次更新时间戳（毫秒），0 表示未更新过 */
+    fun getLastUpdateTime(): Long {
+        val file = getLocalVersionFile()
+        if (!file.exists()) return 0
+        return try {
+            JSONObject(file.readText()).optLong("timestamp", 0)
+        } catch (_: Exception) { 0 }
+    }
+
+    /** 获取版本历史列表（最新在前） */
+    fun getVersionHistory(): List<VersionEntry> {
+        val file = getLocalVersionFile()
+        if (!file.exists()) return emptyList()
+        return try {
+            val arr = JSONObject(file.readText()).optJSONArray("history") ?: return emptyList()
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                VersionEntry(
+                    sha = obj.optString("version", "").take(7),
+                    timestamp = obj.optLong("timestamp", 0)
+                )
+            }.reversed()
+        } catch (_: Exception) { emptyList() }
+    }
+
+    data class VersionEntry(val sha: String, val timestamp: Long)
+
+    /** 回退到指定版本（从 history 中找到并重新解压） */
+    suspend fun rollbackTo(sha: String): SyncResult = withContext(Dispatchers.IO) {
+        try {
+            _syncState.value = SyncState.Downloading
+            // 下载指定版本的 ZIP
+            val zipUrl = "https://api.github.com/repos/$GITHUB_REPO/zipball/$sha"
+            val zipFile = File(context.cacheDir, "repo_$sha.zip")
+            downloadFile(zipUrl, zipFile)
+
+            _syncState.value = SyncState.Extracting
+            extractAgentDir(zipFile, getRuntimeDir())
+
+            // 更新版本文件（保留历史）
+            saveVersion(sha)
+            zipFile.delete()
+
+            _syncState.value = SyncState.Ready(sha)
+            SyncResult.Synced(sha)
+        } catch (e: Exception) {
+            _syncState.value = SyncState.Error(e.message ?: "回退失败")
+            SyncResult.Failed(e.message ?: "回退失败")
+        }
+    }
+
+    /** 保存版本信息（维护历史记录，最多保留 10 条） */
+    private fun saveVersion(sha: String) {
+        val file = getLocalVersionFile()
+        val now = System.currentTimeMillis()
+        try {
+            val existing = if (file.exists()) JSONObject(file.readText()) else JSONObject()
+            // 将当前版本加入历史
+            val history = existing.optJSONArray("history") ?: org.json.JSONArray()
+            val currentSha = existing.optString("version", "")
+            if (currentSha.isNotBlank()) {
+                history.put(JSONObject().apply {
+                    put("version", currentSha)
+                    put("timestamp", existing.optLong("timestamp", now))
+                })
+            }
+            // 只保留最近 10 条
+            while (history.length() > 10) history.remove(0)
+
+            val obj = JSONObject().apply {
+                put("version", sha)
+                put("timestamp", now)
+                put("history", history)
+            }
+            file.writeText(obj.toString(2))
+        } catch (_: Exception) {
+            file.writeText("""{"version":"$sha","timestamp":$now,"history":[]}""")
         }
     }
 
@@ -112,8 +193,8 @@ class CodeSyncManager(private val context: Context) {
             _syncState.value = SyncState.Extracting
             extractAgentDir(zipFile, getRuntimeDir())
 
-            // 4. 保存版本号
-            getLocalVersionFile().writeText("""{"version":"$remoteSha"}""")
+            // 4. 保存版本号（含历史记录）
+            saveVersion(remoteSha)
 
             // 5. 清理缓存
             zipFile.delete()
