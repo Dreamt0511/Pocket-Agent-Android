@@ -38,6 +38,8 @@ class SettingsRepository(
         private val SERVICE_STOP_REQUESTED = booleanPreferencesKey("service_stop_requested")
         private val INITIAL_SETUP_DONE = booleanPreferencesKey("initial_setup_done")
         private val ACTIVE_CONVERSATION_ID = stringPreferencesKey("active_conversation_id")
+        private val DELETED_SKILLS = stringPreferencesKey("deleted_skills")
+        private val MODIFIED_SKILLS = stringPreferencesKey("modified_skills")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -98,5 +100,41 @@ class SettingsRepository(
             if (value.isNullOrBlank()) it.remove(ACTIVE_CONVERSATION_ID)
             else it[ACTIVE_CONVERSATION_ID] = value
         }
+    }
+
+    /** 获取已删除的技能路径集合（防止后端重新返回已删除的技能） */
+    suspend fun getDeletedSkills(): Set<String> {
+        val json = dataStore.data.first()[DELETED_SKILLS] ?: return emptySet()
+        return try {
+            org.json.JSONArray(json).let { arr ->
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            }
+        } catch (_: Exception) { emptySet() }
+    }
+
+    /** 记录技能已删除 */
+    suspend fun addDeletedSkill(path: String) {
+        val current = getDeletedSkills().toMutableSet()
+        current.add(path)
+        val json = org.json.JSONArray(current.toList()).toString()
+        dataStore.edit { it[DELETED_SKILLS] = json }
+    }
+
+    /** 获取已修改的技能路径集合（主库更新时保留本地修改） */
+    suspend fun getModifiedSkills(): Set<String> {
+        val json = dataStore.data.first()[MODIFIED_SKILLS] ?: return emptySet()
+        return try {
+            org.json.JSONArray(json).let { arr ->
+                (0 until arr.length()).map { arr.getString(it) }.toSet()
+            }
+        } catch (_: Exception) { emptySet() }
+    }
+
+    /** 记录技能已修改 */
+    suspend fun addModifiedSkill(path: String) {
+        val current = getModifiedSkills().toMutableSet()
+        current.add(path)
+        val json = org.json.JSONArray(current.toList()).toString()
+        dataStore.edit { it[MODIFIED_SKILLS] = json }
     }
 }
