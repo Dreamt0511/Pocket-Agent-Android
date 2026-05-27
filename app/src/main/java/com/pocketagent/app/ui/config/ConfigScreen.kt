@@ -24,6 +24,7 @@ import com.pocketagent.app.core.NeuralBridgeHelper
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
+import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.update.CodeSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -63,6 +64,8 @@ fun ConfigScreen(navController: NavController) {
     // 更新状态
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<String?>(null) }
+    var remoteVersion by remember { mutableStateOf<String?>(null) }
+    var updating by remember { mutableStateOf(false) }
 
     // 加载配置：优先从 DataStore 读取（可靠持久化），
     // ConfigManager 补充 .env 文件中的 executor/高级字段
@@ -405,30 +408,71 @@ fun ConfigScreen(navController: NavController) {
                     Text("从 GitHub 主仓库同步最新 Agent 代码", fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                checkingUpdate = true
-                                updateInfo = null
-                                try {
-                                    val result = AppBootstrapper.checkAllUpdates()
-                                    // 简单反馈
-                                    updateInfo = "检查完成"
-                                } catch (e: Exception) {
-                                    updateInfo = "检查失败: ${e.message}"
+
+                    if (remoteVersion != null) {
+                        // 发现新版本，显示确认按钮
+                        Text("发现新版本: ${remoteVersion}", fontSize = 14.sp,
+                            color = Color(0xFF16A34A))
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    updating = true
+                                    updateInfo = null
+                                    when (val r = TermuxServiceClient.triggerSync()) {
+                                        is TermuxServiceClient.SyncResult.Ok -> {
+                                            updateInfo = "更新成功，请重启服务"
+                                            remoteVersion = null
+                                        }
+                                        is TermuxServiceClient.SyncResult.Error -> {
+                                            updateInfo = "更新失败: ${r.message}"
+                                        }
+                                    }
+                                    updating = false
                                 }
-                                checkingUpdate = false
+                            },
+                            enabled = !updating,
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                        ) {
+                            if (updating) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                                Spacer(Modifier.width(8.dp))
                             }
-                        },
-                        enabled = !checkingUpdate,
-                        modifier = Modifier.fillMaxWidth().height(40.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        if (checkingUpdate) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
-                            Spacer(Modifier.width(8.dp))
+                            Text(if (updating) "更新中..." else "确认更新", fontSize = 14.sp)
                         }
-                        Text(if (checkingUpdate) "检查中..." else "检查更新", fontSize = 14.sp)
+                    } else {
+                        // 检查更新按钮
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    checkingUpdate = true
+                                    updateInfo = null
+                                    try {
+                                        val localVer = CodeSyncManager.getInstance().getLocalVersion()
+                                        val remoteSha = fetchRemoteVersion()
+                                        if (remoteSha != localVer) {
+                                            remoteVersion = remoteSha
+                                        } else {
+                                            updateInfo = "已是最新版本"
+                                        }
+                                    } catch (e: Exception) {
+                                        updateInfo = "检查失败: ${e.message}"
+                                    }
+                                    checkingUpdate = false
+                                }
+                            },
+                            enabled = !checkingUpdate,
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            if (checkingUpdate) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (checkingUpdate) "检查中..." else "检查更新", fontSize = 14.sp)
+                        }
                     }
                     updateInfo?.let {
                         Text(it, fontSize = 12.sp,
@@ -611,6 +655,27 @@ private fun ConfigField(
             } else null,
             shape = RoundedCornerShape(8.dp)
         )
+    }
+}
+
+// ─── 获取远程版本 ───────────────────────────────
+
+private suspend fun fetchRemoteVersion(): String = withContext(Dispatchers.IO) {
+    val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .build()
+    val url = "https://api.github.com/repos/Dreamt0511/Pocket-Agent/commits/main"
+    val request = Request.Builder()
+        .url(url)
+        .addHeader("Accept", "application/vnd.github.v3+json")
+        .build()
+    val response = client.newCall(request).execute()
+    if (response.isSuccessful) {
+        val json = JSONObject(response.body?.string() ?: "")
+        json.optString("sha", "").take(7)
+    } else {
+        throw Exception("HTTP ${response.code}")
     }
 }
 

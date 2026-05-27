@@ -5,6 +5,7 @@ import android.util.Log
 import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
+import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,7 @@ object AppBootstrapper {
         OverlayManager.init(context)
         daemon = AgentDaemon(context, taskQueueManager)
         SkillManager.init(context)
+        CodeSyncManager.init(context)
 
         Log.i(TAG, "All subsystems initialized")
     }
