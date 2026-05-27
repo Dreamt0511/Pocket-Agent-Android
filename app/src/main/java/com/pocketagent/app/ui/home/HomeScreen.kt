@@ -64,7 +64,7 @@ private val navEntries = listOf(
     NavEntry("技能库", "Agent 已掌握的技能与工具", Icons.Default.Psychology, "skills"),
     NavEntry("悬浮窗", "后台执行与状态监控", Icons.Default.PictureInPicture, "overlay"),
     NavEntry("历史记录", "查看过往任务与执行结果", Icons.Default.History, "history"),
-    NavEntry("终端", "命令行与调试控制台", Icons.Default.Terminal, "terminal"),
+
 )
 
 @Composable
