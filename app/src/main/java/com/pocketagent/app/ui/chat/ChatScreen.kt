@@ -37,7 +37,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * 执行任务页面 - 主 Agent 功能入口
+ * 智能对话页面 - 主 Agent 功能入口
  *
  * 在这里给 AI 下达任务指令，由 Agent 规划并操控手机完成。
  * 所有消息持久化到 Python 后端 SQLite。
@@ -580,7 +580,7 @@ private fun formatDateShort(timestamp: Long): String {
     return sdf.format(Date(timestamp))
 }
 
-@Preview(showBackground = true, showSystemUi = true, name = "执行任务亮色")
+@Preview(showBackground = true, showSystemUi = true, name = "智能对话亮色")
 @Composable
 private fun ChatScreenLightPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = false) {
@@ -590,7 +590,7 @@ private fun ChatScreenLightPreview() {
     }
 }
 
-@Preview(showBackground = true, showSystemUi = true, name = "执行任务暗色")
+@Preview(showBackground = true, showSystemUi = true, name = "智能对话暗色")
 @Composable
 private fun ChatScreenDarkPreview() {
     com.pocketagent.app.ui.theme.PocketAgentTheme(darkTheme = true) {
