@@ -114,7 +114,7 @@ class AgentDaemon(
                                     val toolName = event.optString("name", "工具")
                                     val toolArgs = event.optJSONObject("args")
                                     val argsStr = toolArgs?.toString() ?: ""
-                                    val display = if (argsStr.length > 60) argsStr.take(60) + "..." else argsStr
+                                    val display = if (argsStr.length > 150) argsStr.take(150) + "..." else argsStr
                                     StreamBridge.status("⚡ $toolName")
                                     val toolLine = "\n\n[__TOOL_CALL__]${toolName}: ${display}[__TOOL_CALL_END__]\n"
                                     StreamBridge.stream(toolLine)
