@@ -72,6 +72,10 @@ object AppBootstrapper {
         return daemon.execute(command, sessionId)
     }
 
+    fun cancelCommand() {
+        daemon.cancel()
+    }
+
     suspend fun forceSync() {
         daemon.forceSync()
     }

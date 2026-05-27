@@ -153,7 +153,8 @@ class AgentDaemon(
     }
 
     fun cancel() {
-        StreamBridge.info("中断信号已发送")
+        TermuxServiceClient.cancelChat()
+        StreamBridge.info("已中断执行")
     }
 
     suspend fun forceSync(): Boolean {

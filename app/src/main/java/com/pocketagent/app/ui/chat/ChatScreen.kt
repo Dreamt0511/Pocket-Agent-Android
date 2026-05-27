@@ -29,6 +29,7 @@ import com.pocketagent.app.update.TaskResult
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,6 +122,22 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
+    // 退出页面时终止后台执行（仅页面销毁，不包括切换后台应用）
+    DisposableEffect(Unit) {
+        onDispose {
+            if (isProcessing) {
+                AppBootstrapper.cancelCommand()
+            }
+        }
+    }
+
+    // 处理返回键：执行中时先取消再退出
+    BackHandler(enabled = isProcessing) {
+        AppBootstrapper.cancelCommand()
+        isProcessing = false
+        navController.popBackStack()
+    }
+
     LaunchedEffect(streamText) {
         if (isProcessing && messages.isNotEmpty()) {
             val lastIdx = messages.size - 1
@@ -163,6 +180,11 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 inputText = inputText,
                 onInputChange = { inputText = it },
                 onFocusChange = { },
+                onStop = {
+                    AppBootstrapper.cancelCommand()
+                    isProcessing = false
+                },
+                isProcessing = isProcessing,
                 onSend = {
                     if (inputText.isNotBlank() && !isProcessing && isDaemonReady && currentConvId != null) {
                         scope.launch {
@@ -422,8 +444,10 @@ private fun ChatInputBar(
     inputText: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     onFocusChange: (Boolean) -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    isProcessing: Boolean = false
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -450,13 +474,25 @@ private fun ChatInputBar(
                 enabled = enabled
             )
 
-            // 发送按钮
-            Button(
-                onClick = onSend,
-                enabled = inputText.isNotBlank() && enabled,
-                modifier = Modifier.height(40.dp)
-            ) {
-                Text("发送")
+            // 发送/停止按钮
+            if (isProcessing) {
+                Button(
+                    onClick = onStop,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Text("停止")
+                }
+            } else {
+                Button(
+                    onClick = onSend,
+                    enabled = inputText.isNotBlank() && enabled,
+                    modifier = Modifier.height(40.dp)
+                ) {
+                    Text("发送")
+                }
             }
         }
     }

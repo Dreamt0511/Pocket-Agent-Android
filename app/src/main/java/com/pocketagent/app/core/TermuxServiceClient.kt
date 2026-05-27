@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -36,6 +37,16 @@ object TermuxServiceClient {
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .build()
+
+    // 当前 SSE 请求，用于取消
+    @Volatile
+    private var currentCall: Call? = null
+
+    /** 取消当前正在进行的 SSE 请求 */
+    fun cancelChat() {
+        currentCall?.cancel()
+        currentCall = null
+    }
 
     // ─── 健康检查 ───────────────────────
 
@@ -127,46 +138,58 @@ object TermuxServiceClient {
             .post(body)
             .build()
 
-        val response = client.newCall(request).execute()
+        val call = client.newCall(request)
+        currentCall = call
+        val response = try {
+            call.execute()
+        } catch (e: Exception) {
+            currentCall = null
+            throw e
+        }
         if (!response.isSuccessful) {
+            currentCall = null
             emit("[ERROR] HTTP ${response.code}")
             return@flow
         }
         val reader = BufferedReader(InputStreamReader(response.body?.byteStream()))
-        var line: String?
-        var dataBuffer = StringBuilder()
-        var inData = false
-        while (reader.readLine().also { line = it } != null) {
-            val l = line ?: continue
-            if (l.startsWith("data: ")) {
-                // 新的 data 行开始，先 emit 之前累积的数据
-                if (inData && dataBuffer.isNotEmpty()) {
-                    val data = dataBuffer.toString()
-                    if (data == "[DONE]") break
-                    emit(data)
-                }
-                dataBuffer = StringBuilder(l.removePrefix("data: "))
-                inData = true
-            } else if (inData && l.isNotEmpty()) {
-                // SSE 数据中的续行（JSON 内含换行符时会被 readLine 拆成多行）
-                dataBuffer.append("\n").append(l)
-            } else if (l.isEmpty()) {
-                // 空行 = SSE 事件结束
-                if (inData && dataBuffer.isNotEmpty()) {
-                    val data = dataBuffer.toString()
-                    if (data == "[DONE]") break
-                    emit(data)
-                    dataBuffer = StringBuilder()
-                    inData = false
+        try {
+            var line: String?
+            var dataBuffer = StringBuilder()
+            var inData = false
+            while (reader.readLine().also { line = it } != null) {
+                val l = line ?: continue
+                if (l.startsWith("data: ")) {
+                    // 新的 data 行开始，先 emit 之前累积的数据
+                    if (inData && dataBuffer.isNotEmpty()) {
+                        val data = dataBuffer.toString()
+                        if (data == "[DONE]") break
+                        emit(data)
+                    }
+                    dataBuffer = StringBuilder(l.removePrefix("data: "))
+                    inData = true
+                } else if (inData && l.isNotEmpty()) {
+                    // SSE 数据中的续行（JSON 内含换行符时会被 readLine 拆成多行）
+                    dataBuffer.append("\n").append(l)
+                } else if (l.isEmpty()) {
+                    // 空行 = SSE 事件结束
+                    if (inData && dataBuffer.isNotEmpty()) {
+                        val data = dataBuffer.toString()
+                        if (data == "[DONE]") break
+                        emit(data)
+                        dataBuffer = StringBuilder()
+                        inData = false
+                    }
                 }
             }
+            // 处理最后一条未以空行结束的数据
+            if (inData && dataBuffer.isNotEmpty()) {
+                val data = dataBuffer.toString()
+                if (data != "[DONE]") emit(data)
+            }
+        } finally {
+            reader.close()
+            currentCall = null
         }
-        // 处理最后一条未以空行结束的数据
-        if (inData && dataBuffer.isNotEmpty()) {
-            val data = dataBuffer.toString()
-            if (data != "[DONE]") emit(data)
-        }
-        reader.close()
     }.flowOn(Dispatchers.IO)
 
     // ─── 配置同步 ───────────────────────
