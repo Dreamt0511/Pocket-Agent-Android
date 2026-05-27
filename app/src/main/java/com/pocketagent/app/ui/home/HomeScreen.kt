@@ -350,6 +350,7 @@ private fun TermuxStatusCard(
     val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
 
     val launchService: () -> Unit = {
+        scope.launch { settingsRepo.setServiceStopRequested(false) }
         onLaunch(currentMirrorUrl)
         testResult = null
         ScriptProgress.startLaunch()
@@ -539,6 +540,7 @@ private fun TermuxStatusCard(
                     onClick = {
                         scope.launch {
                             testResult = "正在关闭..."
+                            settingsRepo.setServiceStopRequested(true)
                             // 优先 HTTP 关闭，fallback 到 Termux 脚本
                             TermuxServiceClient.shutdown()
                             delay(1500)

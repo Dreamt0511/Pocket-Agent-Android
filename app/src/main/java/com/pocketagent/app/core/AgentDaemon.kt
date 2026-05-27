@@ -47,6 +47,12 @@ class AgentDaemon(
                 StreamBridge.out("[done] Termux 服务已连接\n")
             }
             is TermuxServiceClient.HealthResult.Error -> {
+                // 用户主动关闭过服务，则不自动启动
+                if (settingsRepo.isServiceStopRequested()) {
+                    StreamBridge.out("[info] 服务已被用户关闭，请手动启动\n")
+                    _status.value = DaemonStatus.Idle
+                    return false
+                }
                 StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
                 TermuxLauncher.launchFastAPI(context)
                 val r = TermuxServiceClient.waitForService(
@@ -108,7 +114,7 @@ class AgentDaemon(
                                     val argsStr = toolArgs?.toString() ?: ""
                                     val display = if (argsStr.length > 60) argsStr.take(60) + "..." else argsStr
                                     StreamBridge.status("⚡ $toolName")
-                                    val toolLine = "\n\n[__TOOL_CALL__]${toolName}: ${display}\n"
+                                    val toolLine = "\n\n[__TOOL_CALL__]${toolName}: ${display}[__TOOL_CALL_END__]\n"
                                     StreamBridge.stream(toolLine)
                                     output.append(toolLine)
                                     task.output.value = output.toString()

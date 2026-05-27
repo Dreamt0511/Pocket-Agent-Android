@@ -26,7 +26,7 @@ import androidx.navigation.NavController
 import com.pocketagent.app.core.SkillManager
 import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.ui.theme.GlassCard
-import com.mikepenz.markdown.m3.Markdown
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
@@ -586,8 +586,8 @@ private fun SkillDetailView(
                     .verticalScroll(rememberScrollState())
             ) {
                 if (fullMarkdown.isNotBlank()) {
-                    Markdown(
-                        content = fullMarkdown,
+                    MarkdownText(
+                        markdown = fullMarkdown,
                         modifier = Modifier.fillMaxWidth()
                     )
                 } else {

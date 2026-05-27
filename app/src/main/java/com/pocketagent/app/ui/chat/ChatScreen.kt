@@ -15,7 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.onFocusChanged
-import com.mikepenz.markdown.m3.Markdown
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemon
@@ -98,6 +98,10 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             val lastMsg = messages[lastIdx]
             if (!lastMsg.isUser && streamText.isNotEmpty() && lastMsg.text != streamText) {
                 messages[lastIdx] = messages[lastIdx].copy(text = streamText)
+                // 流式文本增长时自动滚动到底部
+                try {
+                    listState.animateScrollToItem(lastIdx)
+                } catch (_: Exception) {}
             }
         }
     }
@@ -132,16 +136,14 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 onFocusChange = { focused ->
                     if (focused && messages.isNotEmpty()) {
                         scope.launch {
-                            // 第一次滚动：键盘动画进行中
-                            kotlinx.coroutines.delay(500)
-                            try {
-                                listState.animateScrollToItem(messages.size - 1)
-                            } catch (_: Exception) {}
-                            // 第二次滚动：键盘动画结束后确保到达底部
-                            kotlinx.coroutines.delay(400)
-                            try {
-                                listState.scrollToItem(messages.size - 1)
-                            } catch (_: Exception) {}
+                            // 多次滚动以适配不同设备的键盘动画时长
+                            val delays = listOf(100L, 300L, 500L, 800L)
+                            for (d in delays) {
+                                kotlinx.coroutines.delay(d)
+                                try {
+                                    listState.scrollToItem(messages.size - 1)
+                                } catch (_: Exception) {}
+                            }
                         }
                     }
                 },
@@ -364,26 +366,23 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                         ThinkingDots()
                     } else {
                         // 解析工具调用标记，分段渲染
-                        val toolMarker = "[__TOOL_CALL__]"
-                        val parts = message.text.split(toolMarker)
-                        // 第一段是普通文本（可能为空）
-                        val mainText = parts.first().trim()
-                        if (mainText.isNotEmpty()) {
-                            androidx.compose.material3.ProvideTextStyle(
-                                value = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp)
-                            ) {
-                                Markdown(content = mainText, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-                        // 后续段是工具调用
-                        for (i in 1 until parts.size) {
-                            val toolLine = parts[i].trim()
-                            if (toolLine.isNotEmpty()) {
+                        // 兼容新旧格式：新格式用 [__TOOL_CALL__]...[__TOOL_CALL_END__]，旧格式只有 [__TOOL_CALL__]
+                        val segments = parseMessageSegments(message.text)
+                        for ((index, seg) in segments.withIndex()) {
+                            val text = seg.second.trim()
+                            if (text.isEmpty()) continue
+                            if (seg.first == "text") {
+                                androidx.compose.material3.ProvideTextStyle(
+                                    value = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp)
+                                ) {
+                                    MarkdownText(markdown = text, modifier = Modifier.fillMaxWidth())
+                                }
+                            } else {
                                 Text(
-                                    text = toolLine,
+                                    text = text,
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    modifier = Modifier.padding(top = if (i == 1 && mainText.isEmpty()) 0.dp else 4.dp)
+                                    modifier = Modifier.padding(top = if (index > 0) 4.dp else 0.dp)
                                 )
                             }
                         }
@@ -480,6 +479,48 @@ private fun ThinkingDots() {
 private fun formatTime(timestamp: Long): String {
     val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+/**
+ * 解析消息文本，将工具调用和正常文本分离
+ * 返回 List<Pair<type, content>>，type 为 "text" 或 "tool"
+ * 兼容新旧格式：新格式 [__TOOL_CALL__]...[__TOOL_CALL_END__]，旧格式只有 [__TOOL_CALL__]
+ */
+private fun parseMessageSegments(text: String): List<Pair<String, String>> {
+    val result = mutableListOf<Pair<String, String>>()
+    val toolStart = "[__TOOL_CALL__]"
+    val toolEnd = "[__TOOL_CALL_END__]"
+    var pos = 0
+    while (pos < text.length) {
+        val startIdx = text.indexOf(toolStart, pos)
+        if (startIdx == -1) {
+            // 剩余全是正常文本
+            result.add("text" to text.substring(pos))
+            break
+        }
+        // 工具调用前的正常文本
+        if (startIdx > pos) {
+            result.add("text" to text.substring(pos, startIdx))
+        }
+        val afterStart = startIdx + toolStart.length
+        val endIdx = text.indexOf(toolEnd, afterStart)
+        if (endIdx != -1) {
+            // 新格式：有结束标记
+            result.add("tool" to text.substring(afterStart, endIdx))
+            pos = endIdx + toolEnd.length
+        } else {
+            // 旧格式：无结束标记，工具调用到下一个 [__TOOL_CALL__] 或文末
+            val nextStart = text.indexOf(toolStart, afterStart)
+            if (nextStart != -1) {
+                result.add("tool" to text.substring(afterStart, nextStart))
+                pos = nextStart
+            } else {
+                result.add("tool" to text.substring(afterStart))
+                break
+            }
+        }
+    }
+    return result
 }
 
 private fun formatDateShort(timestamp: Long): String {

@@ -35,6 +35,7 @@ class SettingsRepository(
         private val AUTO_UPDATE = booleanPreferencesKey("auto_update")
         private val SHOW_STATUS = booleanPreferencesKey("show_status")
         private val PYPI_MIRROR_URL = stringPreferencesKey("pypi_mirror_url")
+        private val SERVICE_STOP_REQUESTED = booleanPreferencesKey("service_stop_requested")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -68,5 +69,13 @@ class SettingsRepository(
             preferences[SHOW_STATUS] = settings.showStatus
             preferences[PYPI_MIRROR_URL] = settings.pypiMirrorUrl
         }
+    }
+
+    suspend fun isServiceStopRequested(): Boolean {
+        return dataStore.data.first()[SERVICE_STOP_REQUESTED] ?: false
+    }
+
+    suspend fun setServiceStopRequested(value: Boolean) {
+        dataStore.edit { it[SERVICE_STOP_REQUESTED] = value }
     }
 }
