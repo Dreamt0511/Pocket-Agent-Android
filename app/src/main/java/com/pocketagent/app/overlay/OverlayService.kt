@@ -136,7 +136,13 @@ class OverlayService : Service() {
                         if (::miniView.isInitialized) miniView.setStreamText(text)
                     }
                     OverlayMode.EXPANDED -> {
-                        if (::expandedView.isInitialized) expandedView.appendStream(text)
+                        if (::expandedView.isInitialized) {
+                            if (text.isEmpty()) {
+                                expandedView.clearStream()
+                            } else {
+                                expandedView.appendStream(text)
+                            }
+                        }
                     }
                     OverlayMode.HIDDEN -> {}
                 }
@@ -350,9 +356,12 @@ class OverlayService : Service() {
             windowManager.addView(expandedView, expandedParams)
         }
 
-        // 同步当前状态
+        // 同步当前状态（先清空 buffer 再重填，避免 diff 计算错误）
         expandedView.updateStatus(taskStatus.value)
-        expandedView.appendStream(streamText.value)
+        expandedView.clearStream()
+        if (streamText.value.isNotEmpty()) {
+            expandedView.appendStream(streamText.value)
+        }
 
         currentMode = OverlayMode.EXPANDED
         overlayState.value = OverlayMode.EXPANDED

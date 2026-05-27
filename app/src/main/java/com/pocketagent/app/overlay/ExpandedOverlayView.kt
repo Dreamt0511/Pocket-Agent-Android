@@ -54,7 +54,7 @@ class ExpandedOverlayView(
 
     // ── 字体大小（双指缩放） ──
     private var fontSizeSp = 11f
-    private val minFontSize = 8f
+    private val minFontSize = 5f
     private val maxFontSize = 30f
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -265,6 +265,14 @@ class ExpandedOverlayView(
                     scrollView.fullScroll(View.FOCUS_DOWN)
                 }
             }
+        }
+    }
+
+    /** 清空终端缓冲区 — 新任务开始时调用 */
+    fun clearStream() {
+        post {
+            terminalBuffer.clear()
+            terminalText.text = "$ Pocket Agent 就绪\n"
         }
     }
 
