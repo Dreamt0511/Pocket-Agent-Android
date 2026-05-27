@@ -10,6 +10,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -23,7 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalView
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
@@ -457,6 +460,7 @@ data class ChatMessage(
 
 @Composable
 private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
+    val clipboardManager = LocalClipboardManager.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -476,11 +480,26 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
                     Text(text = message.text, color = Color.White, fontSize = 13.sp)
-                    Text(
-                        text = formatTime(message.timestamp),
-                        fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)
-                    )
+                    ) {
+                        Text(
+                            text = formatTime(message.timestamp),
+                            fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(message.text))
+                                },
+                            tint = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
                 }
             }
         } else {
@@ -515,12 +534,27 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                             }
                         }
                     }
-                    Text(
-                        text = formatTime(message.timestamp),
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = 4.dp)
-                    )
+                    ) {
+                        Text(
+                            text = formatTime(message.timestamp),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable {
+                                    clipboardManager.setText(AnnotatedString(message.text))
+                                },
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                        )
+                    }
                 }
             }
         }
