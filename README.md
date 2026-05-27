@@ -2,80 +2,111 @@
 
 > 将 Pocket-Agent Python AI Agent 能力搬到 Android 手机上的原生客户端。
 
+## 核心功能
+
+- **AI 对话**：连接 Termux 中运行的 Python 后端（FastAPI），通过 SSE 流式输出 AI 回复
+- **全局悬浮窗**：系统级悬浮球 + 终端卡片，退出 App 后仍可监控 Agent 执行
+- **任务队列**：后台服务保活，单任务串行执行，支持排队和取消
+- **语音输入**：内置语音识别
+- **MCP 联动**：通过独立的 [NeuralBridge MCP](https://github.com/dondetir/NeuralBridge_mcp) 服务操控手机（无障碍/触控），本项目不内置无障碍实现
+- **代码同步**：通知 Termux 执行 `git pull`，自动拉取最新 Python Agent 代码
+- **配置管理**：支持 LLM 模型配置（base_url / api_key / model / temperature / max_tokens），云端 API + 本地 llama-server
+- **会话持久化**：Room 数据库存储历史会话和消息
+
+## 架构概览
+
+```
+┌─────────────────────────────────────────────┐
+│           Android App (Kotlin/Compose)       │
+│                                              │
+│  HomeScreen → ChatScreen → TerminalScreen    │
+│  ConfigScreen / HistoryScreen / SkillsScreen │
+│                  │                           │
+│          AppBootstrapper (启动协调)           │
+│           ┌──────┴──────┐                    │
+│     AgentDaemon    OverlayManager            │
+│           │             │                    │
+│  TermuxServiceClient  StreamBridge           │
+│     (OkHttp/SSE)    (输出分发)                │
+└──────────┬──────────────┬────────────────────┘
+           │ HTTP/SSE     │ → 悬浮窗 / 终端
+           ▼
+┌──────────────────────────────────────┐
+│     Termux (localhost:8000)          │
+│                                      │
+│  uvicorn app:app → FastAPI 后端       │
+│  Python Agent 引擎 (agent-seed/)     │
+└──────────────────────────────────────┘
+```
+
+### 通信链路
+
+1. `TermuxLauncher` 通过 Intent 向 Termux 发送 bash 脚本
+2. 首次启动：`git clone` + `pip install`（创建 `~/.pocket-agent-ready` 标记文件）
+3. 后续启动：直接运行 `uvicorn app:app --host 0.0.0.0 --port 8000`
+4. `TermuxServiceClient`（OkHttp）与 FastAPI 通信：health check、SSE 流式对话、配置同步、代码同步
+5. `StreamBridge` 将输出同步分发到悬浮窗和终端页面
+
+### 数据层
+
+- **SettingsRepository**：DataStore Preferences 存储用户配置
+- **AppDatabase**（Room）：会话（Conversation）+ 消息（Message）持久化
+- **ChatRepository**：会话和消息的 CRUD
+
 ## 项目结构
 
 ```
 PocketAgent/
-├── app/                          # Android 主模块
-│   ├── build.gradle.kts         # 模块构建配置
-│   ├── proguard-rules.pro       # 混淆规则
-│   └── src/main/
-│       ├── AndroidManifest.xml   # 清单文件
-│       ├── java/com/pocketagent/app/
-│       │   ├── MainActivity.kt
-│       │   ├── PocketAgentApplication.kt
-│       │   ├── accessibility/
-│       │   │   └── AgentAccessibilityService.kt
-│       │   ├── bridge/
-│       │   │   └── PythonBridge.kt
-│       │   ├── config/
-│       │   │   └── ConfigManager.kt
-│       │   ├── daemon/
-│       │   │   └── AgentDaemon.kt
-│       │   ├── network/
-│       │   │   └── NetworkMonitor.kt
-│       │   ├── overlay/
-│       │   │   ├── OverlayManager.kt
-│       │   │   ├── OverlayService.kt
-│       │   │   ├── MiniOverlayView.kt
-│       │   │   └── ExpandedOverlayView.kt
-│       │   ├── service/
-│       │   │   └── AgentService.kt
-│       │   ├── stream/
-│       │   │   └── StreamBridge.kt
-│       │   ├── sync/
-│       │   │   ├── CodeSyncManager.kt
-│       │   │   └── UpdateChecker.kt
-│       │   ├── task/
-│       │   │   └── TaskQueueManager.kt
-│       │   └── ui/
-│       │       ├── theme/
-│       │       ├── navigation/
-│       │       └── screens/
-│       │           ├── HomeScreen.kt
-│       │           ├── ChatScreen.kt
-│       │           ├── ConfigScreen.kt
-│       │           ├── TerminalScreen.kt
-│       │           ├── OverlayScreen.kt
-│       │           ├── HistoryScreen.kt
-│       │           └── onboarding/
-│       └── res/
-│           ├── values/
-│           │   ├── strings.xml
-│           │   ├── colors.xml
-│           │   └── themes.xml
-│           ├── xml/
-│           │   ├── backup_rules.xml
-│           │   ├── data_extraction_rules.xml
-│           │   └── accessibility_service_config.xml
-│           └── mipmap-*/
-├── agent-seed/                   # Python Agent 种子代码（运行时动态加载）
-│   ├── stable_entry.py          # 多模式启动入口
-│   ├── config.json              # Agent 配置
-│   ├── requirements.txt         # Python 依赖
-│   └── agent/
-│       ├── config.py
-│       ├── core.py
-│       ├── prompts/
-│       └── tools/
-├── build.gradle.kts             # 根构建文件
-├── settings.gradle.kts          # 项目设置
-├── gradle.properties            # Gradle 配置
-├── local.properties             # 本地 SDK 路径
-├── gradlew.bat                  # Gradle Wrapper (Windows)
-└── gradle/wrapper/
-    ├── gradle-wrapper.jar
-    └── gradle-wrapper.properties
+├── app/src/main/java/com/pocketagent/app/
+│   ├── MainActivity.kt              # 入口 Activity
+│   ├── NavGraph.kt                  # Compose 导航（Screen sealed class）
+│   ├── PocketAgentApp.kt            # Application 类
+│   ├── core/
+│   │   ├── AgentDaemon.kt           # Agent 守护进程，状态机 + 任务执行
+│   │   ├── AppBootstrapper.kt       # 启动协调器（单例）
+│   │   ├── TermuxLauncher.kt        # Termux Intent 发送 bash 脚本
+│   │   ├── TermuxServiceClient.kt   # OkHttp 客户端（HTTP/SSE）
+│   │   ├── ConfigManager.kt         # Agent 配置管理
+│   │   ├── SkillManager.kt          # 技能扫描
+│   │   └── NeuralBridgeHelper.kt    # MCP 服务辅助
+│   ├── data/
+│   │   ├── SettingsRepository.kt    # DataStore 配置存储
+│   │   ├── AppDatabase.kt           # Room 数据库
+│   │   ├── ChatRepository.kt        # 聊天数据仓库
+│   │   ├── entity/                  # Conversation, Message
+│   │   └── dao/                     # ConversationDao, MessageDao
+│   ├── overlay/
+│   │   ├── OverlayService.kt        # 前台服务，维护全局 StateFlow
+│   │   ├── OverlayManager.kt        # 悬浮窗管理
+│   │   ├── StreamBridge.kt          # 输出分发桥接器
+│   │   ├── MiniOverlayView.kt       # 悬浮球视图
+│   │   └── ExpandedOverlayView.kt   # 终端卡片视图
+│   ├── service/
+│   │   ├── AgentService.kt          # 前台服务
+│   │   ├── TaskQueueManager.kt      # 任务队列（单任务串行）
+│   │   └── SessionManager.kt        # 会话管理
+│   ├── update/
+│   │   ├── CodeSyncManager.kt       # 代码同步
+│   │   └── UpdateChecker.kt         # 更新检查
+│   └── ui/
+│       ├── chat/ChatScreen.kt       # 对话页面（Markdown 渲染）
+│       ├── home/HomeScreen.kt       # 主页
+│       ├── config/ConfigScreen.kt   # 配置页面
+│       ├── terminal/TerminalScreen.kt # 终端输出页面
+│       ├── overlay/OverlayScreen.kt # 悬浮窗设置
+│       ├── screens/history/         # 历史会话
+│       ├── screens/skills/          # 技能列表
+│       ├── screens/onboarding/      # 引导页
+│       ├── components/              # 通用组件（TaskInputBar, VoiceInputButton 等）
+│       └── theme/                   # 主题 + GlassComponents 毛玻璃风格
+├── agent-seed/                      # Python Agent 种子代码
+│   ├── stable_entry.py              # 不可变接口（task/ready/config/get_config 模式）
+│   ├── config.json                  # Agent 配置
+│   ├── requirements.txt             # Python 依赖
+│   └── agent/                       # Agent 核心（config.py, core.py, prompts/, tools/）
+├── scripts/
+│   └── bootstrap.sh                 # Termux 环境初始化脚本
+└── .github/workflows/build.yml      # CI：下载 Termux Python → Gradle assembleRelease
 ```
 
 ## 编译环境要求
@@ -83,7 +114,7 @@ PocketAgent/
 | 组件 | 版本要求 | 说明 |
 |------|----------|------|
 | JDK | 17 | OpenJDK 或 Oracle JDK |
-| Android SDK | API 33 (Android 13) | 最低 API 33 |
+| Android SDK | API 34 | compileSdk = 34, minSdk = 26 |
 | Build Tools | 32.0.0 | |
 | Gradle | 8.5 | 项目自带 wrapper，无需手动安装 |
 | Kotlin | 1.9.22 | AGP 自动管理 |
@@ -111,18 +142,17 @@ sdk.dir=C\:\\YourAndroidSdkPath
 
 ```bash
 # Debug APK
-gradlew.bat assembleDebug
+./gradlew assembleDebug
 
-# 或者（如果 gradlew 不可用，下载 Gradle 后）
-gradle assembleDebug
+# Release APK（需要 keystore）
+./gradlew assembleRelease
 ```
-
-**如果没有 gradlew.jar**，从 [Gradle Releases](https://services.gradle.org/distributions/gradle-8.5-bin.zip) 下载 Gradle 8.5，解压后把 `bin/` 目录加入 PATH，然后运行 `gradle assembleDebug`。
 
 ### 4. 产物位置
 
 ```
 app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/release/app-release.apk
 ```
 
 ## 使用 Android Studio 编译（推荐）
@@ -132,25 +162,28 @@ app/build/outputs/apk/debug/app-debug.apk
 3. Build → Build Bundle(s) / APK(s) → Build APK(s)
 4. APK 生成在 `app/build/outputs/apk/debug/`
 
+## CI 自动编译
+
+GitHub Actions 在 push to main 时自动构建 Release APK：
+
+1. 从 Termux 官方仓库下载 Python 3.13 deb 包 + libandroid-support
+2. 解压到 `app/src/main/assets/python/`，用 patchelf 修改 RPATH
+3. `./gradlew assembleRelease`
+4. APK 上传为 Artifact
+
+签名密钥通过 GitHub Secrets 配置（KEYSTORE_BASE64、KEYSTORE_PASSWORD、KEY_ALIAS、KEY_PASSWORD）。
+
+## 安装后首次启动
+
+1. 安装 [Termux](https://f-droid.org/packages/com.termux/)、Termux:API、Termux:Boot
+2. 授权「显示在其他应用上层」权限（悬浮窗）
+3. 授权「录音」权限（语音输入）
+4. 进入「配置」页面，填写 LLM API 地址和密钥
+5. 主页点击对话，Agent 自动在 Termux 中初始化环境（首次需等待 git clone + pip install）
+
 ## 注意事项
 
-1. **首次编译**：会从 Google Maven 和 Gradle Plugin Portal 下载大量依赖，需要稳定的网络连接
-2. **如果有 VPN**：建议开启，Google 服务需要科学上网
-3. **AndroidManifest 中的 foregroundServiceType="specialUse"** 需要 API 34+，如果编译报错，可改为 API 33 兼容的类型或直接移除该属性
-4. **Chaquopy Python 插件**：当前版本未包含。如需嵌入 Python 运行时（让 App 自带 Python 环境执行 Agent 代码），需在 `app/build.gradle.kts` 中添加：
-   ```kotlin
-   plugins {
-       id("com.chaquopy") version "15.0.1"
-   }
-   ```
-   并在 defaultConfig 中添加 python 配置块。
-
-## 核心功能
-
-- **AI 对话**：连接主仓库 Pocket-Agent 的 Python 后端，实现手机端 AI Agent
-- **全局悬浮窗**：系统级悬浮球 + 终端卡片，退出 App 后仍可监控 Agent 执行
-- **守护进程**：后台服务保活，任务队列调度
-- **语音输入**：内置语音识别
-- **MCP 联动**：通过独立的 [NeuralBridge MCP](https://github.com/dondetir/NeuralBridge_mcp) 服务操控手机（无障碍/触控），本项目不内置无障碍实现
-- **动态代码加载**：主仓库更新后 App 自动拉取最新 Python Agent 代码
-- **配置管理**：支持主/子 Agent 模型配置，云端 API + 本地 llama-server
+1. **首次启动较慢**：Termux 中 `pip install` 可能需要 2-5 分钟，App 会轮询等待服务就绪
+2. **网络要求**：Google Maven 和 GitHub 需要可访问，建议开启代理/VPN
+3. **ABI 限制**：仅支持 `arm64-v8a`，不支持 32 位设备
+4. **NeuralBridge MCP**：手机操控（触控/无障碍）由独立服务完成，需单独安装配置
