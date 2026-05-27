@@ -38,7 +38,7 @@ import java.util.*
  * 在这里给 AI 下达任务指令，由 Agent 规划并操控手机完成。
  * 所有消息持久化到 Python 后端 SQLite。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val scope = rememberCoroutineScope()
