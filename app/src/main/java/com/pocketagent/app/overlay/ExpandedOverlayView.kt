@@ -276,6 +276,38 @@ class ExpandedOverlayView(
         }
     }
 
+    /** 设置会话消息列表 — 显示完整对话，支持滚动 */
+    fun setMessages(messages: List<OverlayService.OverlayMessage>) {
+        post {
+            val sb = SpannableStringBuilder()
+            for (msg in messages) {
+                val start = sb.length
+                if (msg.isUser) {
+                    sb.append("你: ${msg.text}\n\n")
+                    sb.setSpan(
+                        ForegroundColorSpan(Color.parseColor("#90CAF9")),
+                        start, sb.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                } else {
+                    sb.append("AI: ${msg.text}\n\n")
+                    sb.setSpan(
+                        ForegroundColorSpan(Color.parseColor("#C8E6C9")),
+                        start, sb.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+                }
+            }
+            if (sb.isEmpty()) {
+                sb.append("$ Pocket Agent 就绪\n")
+            }
+            terminalText.text = sb
+            scrollView.post {
+                scrollView.fullScroll(View.FOCUS_DOWN)
+            }
+        }
+    }
+
     fun updateStatus(status: String) {
         post {
             val color = when {

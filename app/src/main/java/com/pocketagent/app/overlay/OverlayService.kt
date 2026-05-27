@@ -39,6 +39,28 @@ class OverlayService : Service() {
         val streamText = kotlinx.coroutines.flow.MutableStateFlow("")
         val taskStatus = kotlinx.coroutines.flow.MutableStateFlow("空闲")
         val isAgentOperating = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+        /** 当前会话消息列表 — 供悬浮窗显示 */
+        data class OverlayMessage(val text: String, val isUser: Boolean)
+        val conversationMessages = kotlinx.coroutines.flow.MutableStateFlow<List<OverlayMessage>>(emptyList())
+
+        /** 显示迷你悬浮窗药丸 */
+        fun showMini(context: Context) {
+            try {
+                context.startService(Intent(context, OverlayService::class.java).apply {
+                    action = ACTION_SHOW
+                })
+            } catch (_: Exception) {}
+        }
+
+        /** 隐藏所有悬浮窗 */
+        fun hideAll(context: Context) {
+            try {
+                context.startService(Intent(context, OverlayService::class.java).apply {
+                    action = ACTION_HIDE
+                })
+            } catch (_: Exception) {}
+        }
     }
 
     enum class OverlayMode { HIDDEN, MINI, EXPANDED }
@@ -108,6 +130,7 @@ class OverlayService : Service() {
         observeTaskStatus()
         observeStreamText()
         observeAgentOperation()
+        observeConversationMessages()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -187,6 +210,17 @@ class OverlayService : Service() {
                     try {
                         windowManager.updateViewLayout(miniView, miniParams)
                     } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    /** 监听会话消息 → 同步到展开视图 */
+    private fun observeConversationMessages() {
+        serviceScope.launch {
+            conversationMessages.collect { messages ->
+                if (currentMode == OverlayMode.EXPANDED && ::expandedView.isInitialized) {
+                    expandedView.setMessages(messages)
                 }
             }
         }

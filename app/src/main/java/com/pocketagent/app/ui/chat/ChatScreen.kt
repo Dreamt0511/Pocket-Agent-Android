@@ -5,6 +5,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,8 +18,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import com.pocketagent.app.data.SettingsRepository
+import com.pocketagent.app.data.settingsDataStore
 import android.view.ViewTreeObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
@@ -46,6 +55,8 @@ import java.util.*
 @Composable
 fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val settingsRepo = remember { SettingsRepository(context.settingsDataStore) }
     val listState = rememberLazyListState()
     var inputText by remember { mutableStateOf("") }
     var isProcessing by remember { mutableStateOf(false) }
@@ -57,14 +68,21 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
     val toolStatus by OverlayService.taskStatus.collectAsState()
 
-    // 进入页面时创建新会话或从后端加载已有会话
+    // 新建会话的辅助函数
+    val createNewSession: () -> Unit = {
+        val newId = UUID.randomUUID().toString()
+        currentConvId = newId
+        messages.clear()
+        sessionTitle = "新会话"
+        scope.launch { settingsRepo.setActiveConversationId(newId) }
+    }
+
+    // 进入页面时：优先用传入的 conversationId，否则从 DataStore 恢复上次会话
     LaunchedEffect(conversationId) {
-        if (conversationId == null) {
-            // 新会话：本地生成 UUID
-            currentConvId = UUID.randomUUID().toString()
-        } else {
-            // 加载已有会话：从后端获取消息历史
+        if (conversationId != null) {
+            // 指定了会话 ID（从历史记录进入）
             currentConvId = conversationId
+            settingsRepo.setActiveConversationId(conversationId)
             when (val result = TermuxServiceClient.fetchMessages(conversationId)) {
                 is TermuxServiceClient.MessagesResult.Ok -> {
                     try {
@@ -87,8 +105,37 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 }
                 else -> {
                     // 加载失败，创建新会话
-                    currentConvId = UUID.randomUUID().toString()
+                    createNewSession()
                 }
+            }
+        } else {
+            // 未指定会话：从 DataStore 恢复上次会话，或创建新会话
+            val savedId = settingsRepo.getActiveConversationId()
+            if (savedId != null) {
+                currentConvId = savedId
+                when (val result = TermuxServiceClient.fetchMessages(savedId)) {
+                    is TermuxServiceClient.MessagesResult.Ok -> {
+                        try {
+                            val arr = org.json.JSONArray(result.json)
+                            messages.clear()
+                            for (i in 0 until arr.length()) {
+                                val obj = arr.getJSONObject(i)
+                                messages.add(
+                                    ChatMessage(
+                                        text = obj.optString("content", ""),
+                                        isUser = obj.optString("role") == "user",
+                                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                                    )
+                                )
+                            }
+                            val firstUser = messages.firstOrNull { it.isUser }
+                            if (firstUser != null) sessionTitle = firstUser.text.take(30)
+                        } catch (_: Exception) {}
+                    }
+                    else -> { /* 后端不可用，保持空消息列表 */ }
+                }
+            } else {
+                createNewSession()
             }
         }
     }
@@ -122,6 +169,28 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
+    // 离开页面（切换 Tab / 切后台）自动弹出悬浮窗药丸，回来时隐藏
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (messages.isNotEmpty() || isProcessing) {
+                        OverlayService.showMini(context)
+                    }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    OverlayService.hideAll(context)
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // 退出页面时终止后台执行（仅页面销毁，不包括切换后台应用）
     DisposableEffect(Unit) {
         onDispose {
@@ -152,6 +221,13 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
+    // 同步消息到悬浮窗（供展开视图显示完整对话）
+    LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
+        OverlayService.conversationMessages.value = messages.map {
+            OverlayService.OverlayMessage(text = it.text, isUser = it.isUser)
+        }
+    }
+
     Scaffold(
         modifier = Modifier.imePadding(),
         topBar = {
@@ -171,6 +247,22 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Text("←")
+                    }
+                },
+                actions = {
+                    // 新建会话
+                    IconButton(onClick = { createNewSession() }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "新建会话"
+                        )
+                    }
+                    // 历史记录
+                    IconButton(onClick = { navController.navigate("history") }) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = "历史记录"
+                        )
                     }
                 }
             )

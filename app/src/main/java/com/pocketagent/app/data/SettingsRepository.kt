@@ -37,6 +37,7 @@ class SettingsRepository(
         private val PYPI_MIRROR_URL = stringPreferencesKey("pypi_mirror_url")
         private val SERVICE_STOP_REQUESTED = booleanPreferencesKey("service_stop_requested")
         private val INITIAL_SETUP_DONE = booleanPreferencesKey("initial_setup_done")
+        private val ACTIVE_CONVERSATION_ID = stringPreferencesKey("active_conversation_id")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -86,5 +87,16 @@ class SettingsRepository(
 
     suspend fun setInitialSetupDone(value: Boolean) {
         dataStore.edit { it[INITIAL_SETUP_DONE] = value }
+    }
+
+    suspend fun getActiveConversationId(): String? {
+        return dataStore.data.first()[ACTIVE_CONVERSATION_ID]?.ifBlank { null }
+    }
+
+    suspend fun setActiveConversationId(value: String?) {
+        dataStore.edit {
+            if (value.isNullOrBlank()) it.remove(ACTIVE_CONVERSATION_ID)
+            else it[ACTIVE_CONVERSATION_ID] = value
+        }
     }
 }
