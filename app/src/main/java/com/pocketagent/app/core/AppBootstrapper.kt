@@ -81,11 +81,6 @@ object AppBootstrapper {
         val daemonStatus: String
     )
 
-    suspend fun checkAllUpdates() {
-        StreamBridge.info("检查更新中...")
-        daemon.forceSync()
-    }
-
     private var appContext: Context? = null
 
     private fun getContext(): Context {
