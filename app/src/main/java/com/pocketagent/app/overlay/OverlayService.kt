@@ -41,7 +41,6 @@ class OverlayService : Service() {
         val isAgentOperating = kotlinx.coroutines.flow.MutableStateFlow(false)
 
         /** 当前会话消息列表 — 供悬浮窗显示 */
-        data class OverlayMessage(val text: String, val isUser: Boolean)
         val conversationMessages = kotlinx.coroutines.flow.MutableStateFlow<List<OverlayMessage>>(emptyList())
 
         /** 显示迷你悬浮窗药丸 */
@@ -62,6 +61,9 @@ class OverlayService : Service() {
             } catch (_: Exception) {}
         }
     }
+
+    /** 悬浮窗显示的消息条目 */
+    data class OverlayMessage(val text: String, val isUser: Boolean)
 
     enum class OverlayMode { HIDDEN, MINI, EXPANDED }
 
