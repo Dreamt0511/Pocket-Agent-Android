@@ -41,18 +41,7 @@ class AgentDaemon(
         StreamBridge.status("连接 Termux 服务...")
         StreamBridge.out("[info] 检查 Termux FastAPI 服务...\n")
 
-        // 检查服务是否已在运行，如果是则先关闭旧实例再重启，确保干净状态
-        when (TermuxServiceClient.healthCheck()) {
-            is TermuxServiceClient.HealthResult.Ok -> {
-                StreamBridge.out("[info] 检测到旧服务运行中，正在关闭...\n")
-                TermuxServiceClient.shutdown()
-                kotlinx.coroutines.delay(2000) // 等待旧进程退出
-            }
-            is TermuxServiceClient.HealthResult.Error -> {
-                // 服务未运行，正常启动
-            }
-        }
-
+        // launchFastAPI 脚本自带 pgrep + kill 清理旧进程，无需额外 shutdown
         StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
         TermuxLauncher.launchFastAPI(context)
         val r = TermuxServiceClient.waitForService(
