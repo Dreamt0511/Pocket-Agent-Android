@@ -550,7 +550,11 @@ private fun TermuxStatusCard(
                             isChecking = true
                             testResult = "正在连接..."
                             when (val r = TermuxServiceClient.healthCheck()) {
-                                is TermuxServiceClient.HealthResult.Ok -> testResult = "连接成功! ${r.body}"
+                                is TermuxServiceClient.HealthResult.Ok -> {
+                                    testResult = "连接成功! ${r.body}"
+                                    // 连接成功后更新 daemon 状态
+                                    AppBootstrapper.start()
+                                }
                                 is TermuxServiceClient.HealthResult.Error -> testResult = "连接失败: ${r.message}"
                             }
                             isChecking = false

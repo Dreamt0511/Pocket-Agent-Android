@@ -51,10 +51,13 @@ object ScriptProgress {
                 }
             )
             if (isLaunching.value) {
-                status.value = if (r.success)
+                status.value = if (r.success) {
+                    // 服务就绪后自动触发 bootstrap 更新 daemon 状态
+                    scope.launch { AppBootstrapper.start() }
                     "服务已就绪!"
-                else
+                } else {
                     "启动超时（检查 Termux ~/startup.log）: ${r.message}"
+                }
                 isLaunching.value = false
             }
         }
@@ -66,8 +69,13 @@ object ScriptProgress {
         if (msg == "服务已启动！") {
             scope.launch {
                 val r = withContext(Dispatchers.IO) { TermuxServiceClient.healthCheck() }
-                status.value = if (r is TermuxServiceClient.HealthResult.Ok)
-                    "服务已就绪!" else "服务已启动（HTTP 暂未就绪）"
+                if (r is TermuxServiceClient.HealthResult.Ok) {
+                    status.value = "服务已就绪!"
+                    // 自动触发 bootstrap 更新 daemon 状态
+                    AppBootstrapper.start()
+                } else {
+                    status.value = "服务已启动（HTTP 暂未就绪）"
+                }
                 isLaunching.value = false
             }
         }
