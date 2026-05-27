@@ -5,9 +5,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,6 +42,7 @@ import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
@@ -502,11 +508,9 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                                     MarkdownText(markdown = text, modifier = Modifier.fillMaxWidth())
                                 }
                             } else {
-                                Text(
-                                    text = text,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    modifier = Modifier.padding(top = if (index > 0) 4.dp else 0.dp)
+                                CollapsibleToolCall(
+                                    toolText = text,
+                                    initiallyExpanded = isProcessing
                                 )
                             }
                         }
@@ -519,6 +523,61 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 可折叠的工具调用组件
+ * 执行中默认展开，完成后自动折叠，点击可切换
+ */
+@Composable
+private fun CollapsibleToolCall(toolText: String, initiallyExpanded: Boolean) {
+    // 从工具文本中提取工具名称作为摘要
+    val toolName = toolText.substringBefore(":").trim().ifEmpty { "工具调用" }
+    val summary = if (toolText.length > 40) "${toolText.take(40)}..." else toolText
+
+    // key 变化时重置展开状态：执行中展开，完成后折叠
+    var expanded by remember(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+
+    Column(modifier = Modifier.padding(top = 4.dp)) {
+        // 可点击的摘要行
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(6.dp))
+                .clickable { expanded = !expanded }
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (expanded) "▼" else "▶",
+                fontSize = 9.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.padding(end = 6.dp)
+            )
+            Text(
+                text = if (expanded) toolName else summary,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // 展开的详细内容
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(),
+            exit = shrinkVertically()
+        ) {
+            Text(
+                text = toolText,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.padding(start = 14.dp, top = 2.dp, end = 4.dp)
+            )
         }
     }
 }
