@@ -15,9 +15,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.focus.onFocusChanged
-import dev.jeziellago.compose.markdowntext.MarkdownText
+import com.mikepenz.markdown.m3.Markdown
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.pocketagent.app.core.AgentDaemon
@@ -357,12 +356,8 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                     if (message.text.isEmpty() && isProcessing) {
                         ThinkingDots()
                     } else {
-                        MarkdownText(
-                            markdown = message.text,
-                            style = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp
-                            ),
+                        Markdown(
+                            content = message.text,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

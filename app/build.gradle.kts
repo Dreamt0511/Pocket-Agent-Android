@@ -97,7 +97,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("com.github.jeziellago:compose-markdown:0.5.0")
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.22.0")
 
     // Room
     implementation("androidx.room:room-runtime:2.6.1")

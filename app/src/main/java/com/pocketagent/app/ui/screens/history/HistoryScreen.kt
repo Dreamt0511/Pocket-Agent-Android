@@ -158,8 +158,9 @@ fun HistoryScreen(navController: NavController) {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    val id = deleteTarget!!.id
                     scope.launch {
-                        repo.deleteConversation(deleteTarget!!.id)
+                        repo.deleteConversation(id)
                     }
                     showDeleteOneDialog = false
                     deleteTarget = null

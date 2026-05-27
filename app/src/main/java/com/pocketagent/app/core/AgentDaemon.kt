@@ -98,16 +98,26 @@ class AgentDaemon(
             TermuxServiceClient.chatStream(command, config).collect { data ->
                 when {
                     data.startsWith("[TOOL]") -> {
-                        // 工具调用事件不放入聊天内容，只更新状态栏
                         try {
                             val jsonStr = data.removePrefix("[TOOL]").trim()
                             val event = org.json.JSONObject(jsonStr)
                             when (event.optString("type")) {
                                 "tool_start" -> {
                                     val toolName = event.optString("name", "工具")
-                                    StreamBridge.status("执行: $toolName")
+                                    StreamBridge.status("⚡ $toolName")
+                                    val toolLine = "\n\n> 🔧 **${toolName}**\n"
+                                    StreamBridge.stream(toolLine)
+                                    output.append(toolLine)
+                                    task.output.value = output.toString()
                                 }
-                                "tool_end" -> StreamBridge.status("处理结果")
+                                "tool_end" -> {
+                                    val toolName = event.optString("name", "工具")
+                                    StreamBridge.status("就绪")
+                                    val toolLine = "> ✅ **${toolName}** 完成\n\n"
+                                    StreamBridge.stream(toolLine)
+                                    output.append(toolLine)
+                                    task.output.value = output.toString()
+                                }
                                 "thinking" -> StreamBridge.status("思考中")
                             }
                         } catch (_: Exception) {}
