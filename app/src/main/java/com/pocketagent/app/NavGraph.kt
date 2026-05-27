@@ -20,7 +20,9 @@ import com.pocketagent.app.ui.screens.skills.SkillsScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object Execute : Screen("execute/{conversationId}")
+    object Execute : Screen("execute/{conversationId}") {
+        fun createRoute(conversationId: String = "") = "execute/$conversationId"
+    }
     object History : Screen("history")
     object Skills : Screen("skills")
     object Terminal : Screen("terminal")
@@ -53,15 +55,15 @@ fun AppNavGraph(navController: NavHostController) {
             route = Screen.Execute.route,
             arguments = listOf(
                 navArgument("conversationId") {
-                    type = NavType.LongType
-                    defaultValue = -1L
+                    type = NavType.StringType
+                    defaultValue = ""
                 }
             )
         ) { backStackEntry ->
-            val convId = backStackEntry.arguments?.getLong("conversationId") ?: -1L
+            val convId = backStackEntry.arguments?.getString("conversationId") ?: ""
             ChatScreen(
                 navController = navController,
-                conversationId = if (convId == -1L) null else convId
+                conversationId = if (convId.isBlank() || convId == "new") null else convId
             )
         }
         composable(Screen.History.route) {

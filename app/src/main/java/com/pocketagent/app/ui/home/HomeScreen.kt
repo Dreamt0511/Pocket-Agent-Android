@@ -52,7 +52,7 @@ private data class NavEntry(
 )
 
 private val navEntries = listOf(
-    NavEntry("执行任务", "用 AI 操控手机，一步到位", Icons.Default.PlayArrow, "execute/-1"),
+    NavEntry("执行任务", "用 AI 操控手机，一步到位", Icons.Default.PlayArrow, "execute/new"),
     NavEntry("设置", "模型 / MCP / 高级参数", Icons.Default.Settings, "config"),
     NavEntry("技能库", "Agent 已掌握的技能与工具", Icons.Default.Psychology, "skills"),
     NavEntry("悬浮窗", "后台执行与状态监控", Icons.Default.PictureInPicture, "overlay"),

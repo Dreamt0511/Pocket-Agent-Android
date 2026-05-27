@@ -95,7 +95,7 @@ class AgentDaemon(
             config["temperature"] = settings.llmTemperature.toString()
             config["max_tokens"] = settings.llmMaxTokens.toString()
 
-            TermuxServiceClient.chatStream(command, config).collect { data ->
+            TermuxServiceClient.chatStream(command, config, sessionId.ifBlank { null }).collect { data ->
                 when {
                     data.startsWith("[TOOL]") -> {
                         try {

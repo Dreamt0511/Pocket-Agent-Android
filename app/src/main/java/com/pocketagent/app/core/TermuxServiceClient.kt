@@ -110,11 +110,14 @@ object TermuxServiceClient {
 
     // ─── SSE 流式执行 ───────────────────
 
-    fun chatStream(command: String, config: Map<String, String> = emptyMap()): Flow<String> = flow {
+    fun chatStream(command: String, config: Map<String, String> = emptyMap(), conversationId: String? = null): Flow<String> = flow {
         val bodyJson = JSONObject().apply {
             put("message", command)
             if (config.isNotEmpty()) {
                 put("config", JSONObject(config as Map<*, *>))
+            }
+            if (conversationId != null) {
+                put("conversation_id", conversationId)
             }
         }.toString()
         val body = bodyJson.toRequestBody("application/json".toMediaType())
@@ -212,6 +215,52 @@ object TermuxServiceClient {
         }
     }
 
+    // ─── 会话管理 API ────────────────────
+
+    suspend fun fetchConversations(): ConversationsResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/conversations").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                ConversationsResult.Ok(response.body?.string() ?: "[]")
+            } else {
+                ConversationsResult.Error("HTTP ${response.code}")
+            }
+        } catch (e: Exception) {
+            ConversationsResult.Error(e.message ?: "连接失败")
+        }
+    }
+
+    suspend fun fetchMessages(conversationId: String): MessagesResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/conversations/$conversationId/messages")
+                .build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                MessagesResult.Ok(response.body?.string() ?: "[]")
+            } else {
+                MessagesResult.Error("HTTP ${response.code}")
+            }
+        } catch (e: Exception) {
+            MessagesResult.Error(e.message ?: "连接失败")
+        }
+    }
+
+    suspend fun deleteConversation(conversationId: String): DeleteResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/conversations/$conversationId")
+                .delete()
+                .build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) DeleteResult.Ok
+            else DeleteResult.Error("HTTP ${response.code}")
+        } catch (e: Exception) {
+            DeleteResult.Error(e.message ?: "连接失败")
+        }
+    }
+
     // ─── 结果类型 ───────────────────────
 
     sealed class HealthResult {
@@ -236,5 +285,17 @@ object TermuxServiceClient {
     sealed class SkillsResult {
         data class Ok(val body: String) : SkillsResult()
         data class Error(val message: String) : SkillsResult()
+    }
+    sealed class ConversationsResult {
+        data class Ok(val json: String) : ConversationsResult()
+        data class Error(val message: String) : ConversationsResult()
+    }
+    sealed class MessagesResult {
+        data class Ok(val json: String) : MessagesResult()
+        data class Error(val message: String) : MessagesResult()
+    }
+    sealed class DeleteResult {
+        object Ok : DeleteResult()
+        data class Error(val message: String) : DeleteResult()
     }
 }
