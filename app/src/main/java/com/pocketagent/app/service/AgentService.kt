@@ -212,6 +212,7 @@ class AgentService : Service() {
         healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.destroy()
+        TermuxLauncher.stopFastAPI(this)
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         stopSelf()
