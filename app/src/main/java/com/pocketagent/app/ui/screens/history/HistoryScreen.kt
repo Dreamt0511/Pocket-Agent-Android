@@ -68,7 +68,12 @@ fun HistoryScreen(navController: NavController) {
                     }
                 }
                 is TermuxServiceClient.ConversationsResult.Error -> {
-                    errorMessage = result.message
+                    // 后端未更新时 /conversations 会返回 404，显示空列表而非报错
+                    if (result.message.contains("404")) {
+                        conversations = emptyList()
+                    } else {
+                        errorMessage = result.message
+                    }
                 }
             }
             isLoading = false

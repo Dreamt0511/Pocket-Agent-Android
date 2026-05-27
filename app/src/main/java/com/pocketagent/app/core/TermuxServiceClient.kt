@@ -134,13 +134,37 @@ object TermuxServiceClient {
         }
         val reader = BufferedReader(InputStreamReader(response.body?.byteStream()))
         var line: String?
+        var dataBuffer = StringBuilder()
+        var inData = false
         while (reader.readLine().also { line = it } != null) {
             val l = line ?: continue
             if (l.startsWith("data: ")) {
-                val data = l.removePrefix("data: ")
-                if (data == "[DONE]") break
-                emit(data)
+                // 新的 data 行开始，先 emit 之前累积的数据
+                if (inData && dataBuffer.isNotEmpty()) {
+                    val data = dataBuffer.toString()
+                    if (data == "[DONE]") break
+                    emit(data)
+                }
+                dataBuffer = StringBuilder(l.removePrefix("data: "))
+                inData = true
+            } else if (inData && l.isNotEmpty()) {
+                // SSE 数据中的续行（JSON 内含换行符时会被 readLine 拆成多行）
+                dataBuffer.append("\n").append(l)
+            } else if (l.isEmpty()) {
+                // 空行 = SSE 事件结束
+                if (inData && dataBuffer.isNotEmpty()) {
+                    val data = dataBuffer.toString()
+                    if (data == "[DONE]") break
+                    emit(data)
+                    dataBuffer = StringBuilder()
+                    inData = false
+                }
             }
+        }
+        // 处理最后一条未以空行结束的数据
+        if (inData && dataBuffer.isNotEmpty()) {
+            val data = dataBuffer.toString()
+            if (data != "[DONE]") emit(data)
         }
         reader.close()
     }.flowOn(Dispatchers.IO)

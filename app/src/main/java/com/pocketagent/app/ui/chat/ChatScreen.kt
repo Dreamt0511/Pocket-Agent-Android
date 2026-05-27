@@ -132,10 +132,15 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 onFocusChange = { focused ->
                     if (focused && messages.isNotEmpty()) {
                         scope.launch {
-                            // 延迟等待键盘动画完成后再滚动
-                            kotlinx.coroutines.delay(300)
+                            // 第一次滚动：键盘动画进行中
+                            kotlinx.coroutines.delay(500)
                             try {
                                 listState.animateScrollToItem(messages.size - 1)
+                            } catch (_: Exception) {}
+                            // 第二次滚动：键盘动画结束后确保到达底部
+                            kotlinx.coroutines.delay(400)
+                            try {
+                                listState.scrollToItem(messages.size - 1)
                             } catch (_: Exception) {}
                         }
                     }
@@ -338,7 +343,7 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(text = message.text, color = Color.White, fontSize = 14.sp)
+                    Text(text = message.text, color = Color.White, fontSize = 13.sp)
                     Text(
                         text = formatTime(message.timestamp),
                         fontSize = 10.sp, color = Color.White.copy(alpha = 0.7f),
@@ -364,7 +369,11 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                         // 第一段是普通文本（可能为空）
                         val mainText = parts.first().trim()
                         if (mainText.isNotEmpty()) {
-                            Markdown(content = mainText, modifier = Modifier.fillMaxWidth())
+                            androidx.compose.material3.ProvideTextStyle(
+                                value = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp)
+                            ) {
+                                Markdown(content = mainText, modifier = Modifier.fillMaxWidth())
+                            }
                         }
                         // 后续段是工具调用
                         for (i in 1 until parts.size) {
