@@ -93,12 +93,10 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
 
-    // 监听键盘弹起，自动滚动到底部
-    val imeVisible = WindowInsets.isImeVisible
-    LaunchedEffect(imeVisible) {
-        if (imeVisible && messages.isNotEmpty()) {
-            // 键盘弹起动画完成后滚动
-            delay(100)
+    // 新消息或消息数变化时自动滚动到底部（配合 imePadding 处理键盘弹起）
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            delay(50)
             listState.scrollToItem(messages.size - 1)
         }
     }
