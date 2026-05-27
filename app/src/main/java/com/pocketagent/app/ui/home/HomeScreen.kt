@@ -552,8 +552,10 @@ private fun TermuxStatusCard(
                             when (val r = TermuxServiceClient.healthCheck()) {
                                 is TermuxServiceClient.HealthResult.Ok -> {
                                     testResult = "连接成功! ${r.body}"
-                                    // 连接成功后更新 daemon 状态
-                                    AppBootstrapper.start()
+                                    // 连接成功后更新 daemon 状态（已就绪则跳过）
+                                    if (AppBootstrapper.daemonStatus.value !is AgentDaemon.DaemonStatus.Ready) {
+                                        AppBootstrapper.start()
+                                    }
                                 }
                                 is TermuxServiceClient.HealthResult.Error -> testResult = "连接失败: ${r.message}"
                             }

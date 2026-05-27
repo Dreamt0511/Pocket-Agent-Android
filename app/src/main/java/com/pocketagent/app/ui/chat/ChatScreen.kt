@@ -77,66 +77,48 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         scope.launch { settingsRepo.setActiveConversationId(newId) }
     }
 
+    // 从后端加载会话消息的辅助函数
+    suspend fun loadMessages(convId: String): Boolean {
+        when (val result = TermuxServiceClient.fetchMessages(convId)) {
+            is TermuxServiceClient.MessagesResult.Ok -> {
+                try {
+                    val arr = org.json.JSONArray(result.json)
+                    messages.clear()
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.getJSONObject(i)
+                        messages.add(
+                            ChatMessage(
+                                text = obj.optString("content", ""),
+                                isUser = obj.optString("role") == "user",
+                                timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                            )
+                        )
+                    }
+                    val firstUser = messages.firstOrNull { it.isUser }
+                    if (firstUser != null) sessionTitle = firstUser.text.take(30)
+                    return true
+                } catch (_: Exception) {}
+            }
+            else -> {}
+        }
+        return false
+    }
+
     // 进入页面时：优先用传入的 conversationId，否则从 DataStore 恢复上次会话
     LaunchedEffect(conversationId) {
-        if (conversationId != null) {
-            // 指定了会话 ID（从历史记录进入）
-            currentConvId = conversationId
-            settingsRepo.setActiveConversationId(conversationId)
-            when (val result = TermuxServiceClient.fetchMessages(conversationId)) {
-                is TermuxServiceClient.MessagesResult.Ok -> {
-                    try {
-                        val arr = org.json.JSONArray(result.json)
-                        messages.clear()
-                        for (i in 0 until arr.length()) {
-                            val obj = arr.getJSONObject(i)
-                            messages.add(
-                                ChatMessage(
-                                    text = obj.optString("content", ""),
-                                    isUser = obj.optString("role") == "user",
-                                    timestamp = obj.optLong("timestamp", System.currentTimeMillis())
-                                )
-                            )
-                        }
-                        // 用首条用户消息作为标题
-                        val firstUser = messages.firstOrNull { it.isUser }
-                        if (firstUser != null) sessionTitle = firstUser.text.take(30)
-                    } catch (_: Exception) {}
-                }
-                else -> {
-                    // 加载失败，创建新会话
-                    createNewSession()
-                }
+        val convId = when {
+            conversationId != null -> {
+                settingsRepo.setActiveConversationId(conversationId)
+                conversationId
             }
-        } else {
-            // 未指定会话：从 DataStore 恢复上次会话，或创建新会话
-            val savedId = settingsRepo.getActiveConversationId()
-            if (savedId != null) {
-                currentConvId = savedId
-                when (val result = TermuxServiceClient.fetchMessages(savedId)) {
-                    is TermuxServiceClient.MessagesResult.Ok -> {
-                        try {
-                            val arr = org.json.JSONArray(result.json)
-                            messages.clear()
-                            for (i in 0 until arr.length()) {
-                                val obj = arr.getJSONObject(i)
-                                messages.add(
-                                    ChatMessage(
-                                        text = obj.optString("content", ""),
-                                        isUser = obj.optString("role") == "user",
-                                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
-                                    )
-                                )
-                            }
-                            val firstUser = messages.firstOrNull { it.isUser }
-                            if (firstUser != null) sessionTitle = firstUser.text.take(30)
-                        } catch (_: Exception) {}
-                    }
-                    else -> { /* 后端不可用，保持空消息列表 */ }
-                }
-            } else {
-                createNewSession()
+            else -> {
+                val savedId = settingsRepo.getActiveConversationId()
+                savedId ?: run { createNewSession(); return@LaunchedEffect }
             }
+        }
+        currentConvId = convId
+        if (!loadMessages(convId) && conversationId != null) {
+            createNewSession()
         }
     }
 
@@ -221,10 +203,22 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
-    // 同步消息到悬浮窗（供展开视图显示完整对话）
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text) {
+    // 同步消息到悬浮窗（消息数变化时完整同步）
+    LaunchedEffect(messages.size) {
         OverlayService.conversationMessages.value = messages.map {
             OverlayService.OverlayMessage(text = it.text, isUser = it.isUser)
+        }
+    }
+
+    // 流式输出时只更新最后一条消息的文本（避免频繁全量同步）
+    LaunchedEffect(messages.lastOrNull()?.text) {
+        if (messages.isNotEmpty()) {
+            val list = OverlayService.conversationMessages.value.toMutableList()
+            if (list.isNotEmpty()) {
+                val last = messages.last()
+                list[list.lastIndex] = OverlayService.OverlayMessage(text = last.text, isUser = last.isUser)
+                OverlayService.conversationMessages.value = list
+            }
         }
     }
 

@@ -44,8 +44,9 @@ object TermuxServiceClient {
 
     /** 取消当前正在进行的 SSE 请求 */
     fun cancelChat() {
-        currentCall?.cancel()
+        val call = currentCall
         currentCall = null
+        call?.cancel()
     }
 
     // ─── 健康检查 ───────────────────────
