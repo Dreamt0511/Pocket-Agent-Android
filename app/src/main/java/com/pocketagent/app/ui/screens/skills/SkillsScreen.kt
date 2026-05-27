@@ -348,13 +348,18 @@ fun SkillsScreen(navController: NavController) {
                 scope.launch {
                     if (editSkill != null) {
                         SkillManager.updateSkill(editSkill!!.path, name, description, content)
+                        // 更新内存中的技能
+                        val updated = editSkill!!.copy(name = name, description = description, content = content)
+                        allSkills = allSkills.map { if (it.path == updated.path) updated else it }
                     } else {
-                        SkillManager.createSkill(name, description, content, currentCategory)
+                        val created = SkillManager.createSkill(name, description, content, currentCategory)
+                        if (created != null) {
+                            allSkills = allSkills + created
+                        }
                     }
+                    skills = allSkills.filter { it.category == currentCategory }
                     showSkillDialog = false
                     editSkill = null
-                    isNetworkLoaded = false
-                    skills = SkillManager.getSkills(currentCategory)
                 }
             }
         )
@@ -383,11 +388,13 @@ fun SkillsScreen(navController: NavController) {
             confirmButton = {
                 Button(
                     onClick = {
+                        val toDelete = showDeleteConfirm!!
                         scope.launch {
-                            SkillManager.deleteSkill(showDeleteConfirm!!.path)
+                            SkillManager.deleteSkill(toDelete.path)
                             showDeleteConfirm = null
-                            isNetworkLoaded = false
-                            skills = SkillManager.getSkills(currentCategory)
+                            // 从内存列表中移除，不依赖本地文件系统
+                            allSkills = allSkills.filter { it.path != toDelete.path }
+                            skills = allSkills.filter { it.category == currentCategory }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
