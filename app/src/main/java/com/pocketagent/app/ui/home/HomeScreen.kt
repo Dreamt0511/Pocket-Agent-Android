@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -161,7 +162,8 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                 AgentOverviewCard(
                     daemonStatus = daemonStatus,
                     modelConfigured = modelConfigured,
-                    initialSetupDone = initialSetupDone
+                    initialSetupDone = initialSetupDone,
+                    navController = navController
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -263,72 +265,109 @@ private fun NavCard(entry: NavEntry) {
 private fun AgentOverviewCard(
     daemonStatus: AgentDaemon.DaemonStatus,
     modelConfigured: Boolean,
-    initialSetupDone: Boolean
+    initialSetupDone: Boolean,
+    navController: NavController
 ) {
     val serviceReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
-    val allReady = initialSetupDone && serviceReady && modelConfigured
+    // 服务已连通 = 环境依赖 OK（不需要强制重新 bootstrap）
+    val envReady = serviceReady || initialSetupDone
+    val allReady = envReady && serviceReady && modelConfigured
 
     val statusColor = if (allReady) Color(0xFF4CAF50) else Color(0xFFFF9800)
     val statusText = when {
-        !initialSetupDone -> "环境未初始化"
+        !envReady -> "环境未就绪"
         !serviceReady -> "服务未连接"
         !modelConfigured -> "模型未配置"
         else -> "Agent 已就绪"
     }
 
     GlassCard(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            // 标题行
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
                         .background(statusColor)
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = statusText,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(Modifier.height(10.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
             Spacer(Modifier.height(8.dp))
             // 三项检查
-            CheckItem(label = "环境依赖", ok = initialSetupDone)
-            Spacer(Modifier.height(4.dp))
-            CheckItem(label = "服务连接", ok = serviceReady)
-            Spacer(Modifier.height(4.dp))
-            CheckItem(label = "模型配置", ok = modelConfigured)
+            CheckItem(
+                label = "环境依赖",
+                ok = envReady,
+                guidance = if (!envReady) "点击下方「启动服务」自动安装" else null
+            )
+            Spacer(Modifier.height(2.dp))
+            CheckItem(
+                label = "服务连接",
+                ok = serviceReady,
+                guidance = if (!serviceReady) "点击下方「启动服务」连接" else null
+            )
+            Spacer(Modifier.height(2.dp))
+            CheckItem(
+                label = "模型配置",
+                ok = modelConfigured,
+                guidance = if (!modelConfigured) "前往设置配置 LLM" else null,
+                onClick = if (!modelConfigured) {
+                    { navController.navigate("config") }
+                } else null
+            )
         }
     }
 }
 
 @Composable
-private fun CheckItem(label: String, ok: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = if (ok) "●" else "○",
-            fontSize = 10.sp,
-            color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (ok) 0.7f else 0.4f)
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = if (ok) "完成" else "待完成",
-            fontSize = 11.sp,
-            color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-        )
+private fun CheckItem(
+    label: String,
+    ok: Boolean,
+    guidance: String? = null,
+    onClick: (() -> Unit)? = null
+) {
+    val modifier = if (onClick != null) {
+        Modifier.clickable { onClick() }
+    } else {
+        Modifier
+    }
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (ok) "●" else "○",
+                fontSize = 9.sp,
+                color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (ok) 0.7f else 0.4f)
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = if (ok) "完成" else "待完成",
+                fontSize = 10.sp,
+                color = if (ok) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
+        }
+        if (guidance != null) {
+            Text(
+                text = guidance,
+                fontSize = 9.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                modifier = Modifier.padding(start = 15.dp)
+            )
+        }
     }
 }
 
