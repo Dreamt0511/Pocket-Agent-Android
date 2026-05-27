@@ -54,7 +54,6 @@ object TermuxLauncher {
             append("    echo \"[init] Done — ready for future starts\";\n")
             append("  else\n")
             append("    echo \"[start] Environment ready, launching uvicorn...\";\n")
-            append("    cd ~/$POCKET_AGENT_DIR && git pull origin main 2>/dev/null || true;\n")
             append("  fi &&\n")
             append("  echo \"[uvicorn] Starting...\";\n")
             append("  # 杀旧进程再启动，避免重复\n")

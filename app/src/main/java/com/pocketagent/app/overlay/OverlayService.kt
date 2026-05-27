@@ -13,6 +13,10 @@ import android.provider.Settings
 import android.view.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
 
 /**
  * 全局悬浮窗服务 - 退到后台后仍悬浮在所有应用上层
@@ -394,6 +398,21 @@ class OverlayService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         try { stopForeground(true) } catch (_: Exception) {}
         hideAll()
+        // 通知 Termux 关闭 uvicorn（fire-and-forget，不阻塞主线程）
+        Thread {
+            try {
+                OkHttpClient.Builder()
+                    .connectTimeout(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(1, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                    .newCall(
+                        Request.Builder()
+                            .url("http://127.0.0.1:8000/shutdown")
+                            .post("{}".toRequestBody("application/json".toMediaType()))
+                            .build()
+                    ).execute()
+            } catch (_: Exception) {}
+        }.start()
         super.onTaskRemoved(rootIntent)
     }
 }

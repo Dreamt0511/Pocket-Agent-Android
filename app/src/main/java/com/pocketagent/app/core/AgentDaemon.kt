@@ -113,8 +113,11 @@ class AgentDaemon(
                         } catch (_: Exception) {}
                     }
                     else -> {
-                        StreamBridge.stream(data)
-                        output.append(data)
+                        val text = try {
+                            org.json.JSONArray("[$data]").getString(0)
+                        } catch (_: Exception) { data }
+                        StreamBridge.stream(text)
+                        output.append(text)
                         task.output.value = output.toString()
                     }
                 }
