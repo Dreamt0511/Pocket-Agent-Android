@@ -213,8 +213,43 @@ fun SkillsScreen(navController: NavController) {
                         IconButton(onClick = {
                             scope.launch {
                                 isLoading = true
-                                isNetworkLoaded = false
-                                skills = SkillManager.getSkills(currentCategory)
+                                when (val r = TermuxServiceClient.fetchSkills()) {
+                                    is TermuxServiceClient.SkillsResult.Ok -> {
+                                        try {
+                                            val json = org.json.JSONObject(r.body)
+                                            val loaded = mutableListOf<SkillManager.Skill>()
+                                            val categories = mapOf(
+                                                "main_skills" to SkillManager.Category.MAIN_SKILLS,
+                                                "executor_skills" to SkillManager.Category.EXECUTOR_SKILLS,
+                                                "auto_skills" to SkillManager.Category.AUTO_SKILLS,
+                                            )
+                                            for ((key, category) in categories) {
+                                                val arr = json.optJSONArray(key) ?: continue
+                                                for (i in 0 until arr.length()) {
+                                                    val obj = arr.getJSONObject(i)
+                                                    loaded.add(SkillManager.Skill(
+                                                        name = obj.optString("name"),
+                                                        description = obj.optString("description"),
+                                                        category = category,
+                                                        path = obj.optString("path"),
+                                                        content = obj.optString("content")
+                                                    ))
+                                                }
+                                            }
+                                            allSkills = loaded
+                                            isNetworkLoaded = true
+                                        } catch (_: Exception) {}
+                                    }
+                                    is TermuxServiceClient.SkillsResult.Error -> {
+                                        // 后端不可用，降级读本地
+                                        isNetworkLoaded = false
+                                    }
+                                }
+                                skills = if (isNetworkLoaded) {
+                                    allSkills.filter { it.category == currentCategory }
+                                } else {
+                                    SkillManager.getSkills(currentCategory)
+                                }
                                 isLoading = false
                             }
                         }) {
