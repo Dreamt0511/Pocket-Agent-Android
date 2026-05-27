@@ -108,19 +108,17 @@ class AgentDaemon(
                             when (event.optString("type")) {
                                 "tool_start" -> {
                                     val toolName = event.optString("name", "工具")
+                                    val toolArgs = event.optJSONObject("args")
+                                    val argsStr = toolArgs?.toString() ?: ""
+                                    val display = if (argsStr.length > 60) argsStr.take(60) + "..." else argsStr
                                     StreamBridge.status("⚡ $toolName")
-                                    val toolLine = "\n\n> 🔧 **${toolName}**\n"
+                                    val toolLine = "\n\n[__TOOL_CALL__]${toolName}: ${display}\n"
                                     StreamBridge.stream(toolLine)
                                     output.append(toolLine)
                                     task.output.value = output.toString()
                                 }
                                 "tool_end" -> {
-                                    val toolName = event.optString("name", "工具")
                                     StreamBridge.status("就绪")
-                                    val toolLine = "> ✅ **${toolName}** 完成\n\n"
-                                    StreamBridge.stream(toolLine)
-                                    output.append(toolLine)
-                                    task.output.value = output.toString()
                                 }
                                 "thinking" -> StreamBridge.status("思考中")
                             }

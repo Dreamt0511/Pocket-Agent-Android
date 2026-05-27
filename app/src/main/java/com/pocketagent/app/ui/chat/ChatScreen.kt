@@ -358,10 +358,26 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                     if (message.text.isEmpty() && isProcessing) {
                         ThinkingDots()
                     } else {
-                        Markdown(
-                            content = message.text,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        // 解析工具调用标记，分段渲染
+                        val toolMarker = "[__TOOL_CALL__]"
+                        val parts = message.text.split(toolMarker)
+                        // 第一段是普通文本（可能为空）
+                        val mainText = parts.first().trim()
+                        if (mainText.isNotEmpty()) {
+                            Markdown(content = mainText, modifier = Modifier.fillMaxWidth())
+                        }
+                        // 后续段是工具调用
+                        for (i in 1 until parts.size) {
+                            val toolLine = parts[i].trim()
+                            if (toolLine.isNotEmpty()) {
+                                Text(
+                                    text = toolLine,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                    modifier = Modifier.padding(top = if (i == 1 && mainText.isEmpty()) 0.dp else 4.dp)
+                                )
+                            }
+                        }
                     }
                     Text(
                         text = formatTime(message.timestamp),
