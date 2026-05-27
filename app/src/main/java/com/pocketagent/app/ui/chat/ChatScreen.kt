@@ -38,7 +38,7 @@ import java.util.*
  * 在这里给 AI 下达任务指令，由 Agent 规划并操控手机完成。
  * 所有消息持久化到 Python 后端 SQLite。
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val scope = rememberCoroutineScope()
@@ -132,8 +132,10 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 onFocusChange = { focused ->
                     if (focused && messages.isNotEmpty()) {
                         scope.launch {
+                            // 延迟等待键盘动画完成后再滚动
+                            kotlinx.coroutines.delay(300)
                             try {
-                                listState.scrollToItem(messages.size - 1)
+                                listState.animateScrollToItem(messages.size - 1)
                             } catch (_: Exception) {}
                         }
                     }
@@ -223,22 +225,11 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 }
             }
 
-            // 自动滚动到底部（新消息时触发，避免 streamText 频繁取消）
+            // 自动滚动到底部（新消息时触发）
             LaunchedEffect(messages.size) {
                 if (messages.isNotEmpty()) {
                     try {
                         listState.scrollToItem(messages.size - 1)
-                    } catch (_: Exception) {}
-                }
-            }
-
-            // 键盘弹起时自动滚动到底部
-            val isImeVisible = WindowInsets.isImeVisible
-            LaunchedEffect(isImeVisible) {
-                if (isImeVisible && messages.isNotEmpty()) {
-                    kotlinx.coroutines.delay(100)
-                    try {
-                        listState.animateScrollToItem(messages.size - 1)
                     } catch (_: Exception) {}
                 }
             }
