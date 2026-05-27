@@ -395,7 +395,11 @@ class OverlayService : Service() {
         // 同步当前状态（先清空 buffer 再重填，避免 diff 计算错误）
         expandedView.updateStatus(taskStatus.value)
         expandedView.clearStream()
-        if (streamText.value.isNotEmpty()) {
+        // 优先显示完整会话消息，否则显示流式文本
+        val msgs = conversationMessages.value
+        if (msgs.isNotEmpty()) {
+            expandedView.setMessages(msgs)
+        } else if (streamText.value.isNotEmpty()) {
             expandedView.appendStream(streamText.value)
         }
 
