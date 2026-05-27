@@ -64,19 +64,19 @@ class AgentService : Service() {
 
         val prompt = intent?.getStringExtra("task_prompt") ?: ""
         startForeground(NOTIFICATION_ID, createNotification(prompt))
-        acquireWakeLock()
-        startHealthMonitor()
 
+        // 仅在有任务时才获取 WakeLock 和启动健康监控
         if (prompt.isNotBlank()) {
+            acquireWakeLock()
+            startHealthMonitor()
             taskQueue.add(TaskItem(
                 id = "task_${System.currentTimeMillis()}",
                 prompt = prompt
             ))
+            processQueue()
         }
 
-        processQueue()
-
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
