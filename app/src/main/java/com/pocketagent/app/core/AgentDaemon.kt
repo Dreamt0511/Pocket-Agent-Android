@@ -41,30 +41,34 @@ class AgentDaemon(
         StreamBridge.status("连接 Termux 服务...")
         StreamBridge.out("[info] 检查 Termux FastAPI 服务...\n")
 
-        // 先检查服务是否已在运行
+        // 检查服务是否已在运行，如果是则先关闭旧实例再重启，确保干净状态
         when (TermuxServiceClient.healthCheck()) {
             is TermuxServiceClient.HealthResult.Ok -> {
-                StreamBridge.out("[done] Termux 服务已连接\n")
+                StreamBridge.out("[info] 检测到旧服务运行中，正在关闭...\n")
+                TermuxServiceClient.shutdown()
+                kotlinx.coroutines.delay(2000) // 等待旧进程退出
             }
             is TermuxServiceClient.HealthResult.Error -> {
-                StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
-                TermuxLauncher.launchFastAPI(context)
-                val r = TermuxServiceClient.waitForService(
-                    maxAttempts = 60,
-                    intervalMs = 5000L,
-                    onAttempt = { attempt, total, error, sec ->
-                        StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
-                        Log.d(TAG, "waitForService attempt $attempt/$total: $error")
-                    }
-                )
-                if (r.success) {
-                    StreamBridge.out("[done] Termux 服务已启动\n")
-                } else {
-                    StreamBridge.error("Termux 服务启动失败: ${r.message}")
-                    _status.value = DaemonStatus.Error("Termux 服务不可用")
-                    return false
-                }
+                // 服务未运行，正常启动
             }
+        }
+
+        StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
+        TermuxLauncher.launchFastAPI(context)
+        val r = TermuxServiceClient.waitForService(
+            maxAttempts = 60,
+            intervalMs = 5000L,
+            onAttempt = { attempt, total, error, sec ->
+                StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
+                Log.d(TAG, "waitForService attempt $attempt/$total: $error")
+            }
+        )
+        if (r.success) {
+            StreamBridge.out("[done] Termux 服务已启动\n")
+        } else {
+            StreamBridge.error("Termux 服务启动失败: ${r.message}")
+            _status.value = DaemonStatus.Error("Termux 服务不可用")
+            return false
         }
 
         _status.value = DaemonStatus.Ready
