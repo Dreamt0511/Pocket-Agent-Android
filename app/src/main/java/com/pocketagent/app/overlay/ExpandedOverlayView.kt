@@ -42,9 +42,14 @@ class ExpandedOverlayView(
 ) : LinearLayout(context) {
 
     val headerView: View
+    private lateinit var titleText: TextView
     private lateinit var terminalText: TextView
     private val scrollView: NestedScrollView
     private val statusText: TextView
+
+    // 基础字号（缩放时按比例变化）
+    private val baseTitleSize = 13f
+    private val baseStatusSize = 10f
 
     private val terminalBuffer = StringBuilder()
 
@@ -64,6 +69,10 @@ class ExpandedOverlayView(
             val factor = detector.scaleFactor
             fontSizeSp = (fontSizeSp * factor).coerceIn(minFontSize, maxFontSize)
             terminalText.textSize = fontSizeSp
+            // 标题和状态栏按比例缩放
+            val ratio = fontSizeSp / 11f // 11f 是终端默认字号
+            titleText.textSize = (baseTitleSize * ratio).coerceIn(7f, 20f)
+            statusText.textSize = (baseStatusSize * ratio).coerceIn(6f, 16f)
             return true
         }
     })
@@ -106,7 +115,7 @@ class ExpandedOverlayView(
         headerView = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(8), dp(8))
+            setPadding(dp(10), dp(4), dp(6), dp(4))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadii = floatArrayOf(
@@ -116,10 +125,10 @@ class ExpandedOverlayView(
                 setColor(Color.parseColor("#331A1A2E"))
             }
 
-            val titleText = TextView(context).apply {
+            titleText = TextView(context).apply {
                 text = "Pocket Agent"
                 setTextColor(Color.parseColor("#CCFFFFFF"))
-                textSize = 13f
+                textSize = baseTitleSize
                 layoutParams = LinearLayout.LayoutParams(
                     0,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -189,7 +198,7 @@ class ExpandedOverlayView(
                 1f
             )
             isFillViewport = true
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(10), dp(4), dp(10), dp(4))
             setBackgroundColor(Color.parseColor("#0D000000"))
         }
 
@@ -220,14 +229,14 @@ class ExpandedOverlayView(
             )
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(4), dp(2), dp(4))
+            setPadding(dp(10), dp(2), dp(2), dp(2))
             setBackgroundColor(Color.parseColor("#11000000"))
 
             // 状态文本
             statusText = TextView(context).apply {
                 text = "空闲"
                 setTextColor(Color.parseColor("#4CAF50"))
-                textSize = 10f
+                textSize = baseStatusSize
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
             addView(statusText)
