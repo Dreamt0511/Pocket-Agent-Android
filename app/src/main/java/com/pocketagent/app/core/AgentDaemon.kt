@@ -41,23 +41,30 @@ class AgentDaemon(
         StreamBridge.status("连接 Termux 服务...")
         StreamBridge.out("[info] 检查 Termux FastAPI 服务...\n")
 
-        // launchFastAPI 脚本自带 pgrep + kill 清理旧进程，无需额外 shutdown
-        StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
-        TermuxLauncher.launchFastAPI(context)
-        val r = TermuxServiceClient.waitForService(
-            maxAttempts = 60,
-            intervalMs = 5000L,
-            onAttempt = { attempt, total, error, sec ->
-                StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
-                Log.d(TAG, "waitForService attempt $attempt/$total: $error")
+        // 先检查服务是否已在运行
+        when (TermuxServiceClient.healthCheck()) {
+            is TermuxServiceClient.HealthResult.Ok -> {
+                StreamBridge.out("[done] Termux 服务已连接\n")
             }
-        )
-        if (r.success) {
-            StreamBridge.out("[done] Termux 服务已启动\n")
-        } else {
-            StreamBridge.error("Termux 服务启动失败: ${r.message}")
-            _status.value = DaemonStatus.Error("Termux 服务不可用")
-            return false
+            is TermuxServiceClient.HealthResult.Error -> {
+                StreamBridge.out("[info] 正在启动 Termux 服务（首次需 git clone + pip install，请耐心等待）...\n")
+                TermuxLauncher.launchFastAPI(context)
+                val r = TermuxServiceClient.waitForService(
+                    maxAttempts = 60,
+                    intervalMs = 5000L,
+                    onAttempt = { attempt, total, error, sec ->
+                        StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
+                        Log.d(TAG, "waitForService attempt $attempt/$total: $error")
+                    }
+                )
+                if (r.success) {
+                    StreamBridge.out("[done] Termux 服务已启动\n")
+                } else {
+                    StreamBridge.error("Termux 服务启动失败: ${r.message}")
+                    _status.value = DaemonStatus.Error("Termux 服务不可用")
+                    return false
+                }
+            }
         }
 
         _status.value = DaemonStatus.Ready
