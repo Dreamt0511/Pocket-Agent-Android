@@ -125,6 +125,22 @@ class AgentDaemon(
                                     StreamBridge.status("就绪")
                                 }
                                 "thinking" -> StreamBridge.status("思考中")
+                                "executor_start" -> {
+                                    val objective = event.optString("objective", "")
+                                    val label = "\n\n🟢 子Agent执行: $objective\n"
+                                    StreamBridge.stream(label)
+                                    output.append(label)
+                                    task.output.value = output.toString()
+                                    StreamBridge.status("子Agent执行中")
+                                }
+                                "executor_done" -> {
+                                    val status = event.optString("status", "completed")
+                                    val msg = if (status == "cancelled") "\n\n⏹️ 子Agent已中断\n" else "\n\n✅ 子Agent完成\n"
+                                    StreamBridge.stream(msg)
+                                    output.append(msg)
+                                    task.output.value = output.toString()
+                                    StreamBridge.status("就绪")
+                                }
                             }
                         } catch (_: Exception) {}
                     }

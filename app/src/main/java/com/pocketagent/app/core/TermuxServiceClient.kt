@@ -42,11 +42,17 @@ object TermuxServiceClient {
     @Volatile
     private var currentCall: Call? = null
 
-    /** 取消当前正在进行的 SSE 请求 */
+    /** 取消当前正在进行的 SSE 请求，同时通知 Python 端取消（包括子 Agent） */
     fun cancelChat() {
         val call = currentCall
         currentCall = null
         call?.cancel()
+        // 通知 Python 端取消执行
+        try {
+            val body = "{}".toRequestBody("application/json".toMediaType())
+            val request = Request.Builder().url("$BASE_URL/cancel").post(body).build()
+            shortTimeoutClient.newCall(request).execute().close()
+        } catch (_: Exception) {}
     }
 
     // ─── 健康检查 ───────────────────────

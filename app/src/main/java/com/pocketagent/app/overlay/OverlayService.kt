@@ -301,6 +301,7 @@ class OverlayService : Service() {
         miniView.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    isDragging = false
                     // 半隐藏状态下点击，先拉出来
                     if (isMiniHalfHidden) {
                         isMiniHalfHidden = false
