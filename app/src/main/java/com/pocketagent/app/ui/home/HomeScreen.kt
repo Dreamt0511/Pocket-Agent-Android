@@ -570,16 +570,9 @@ private fun TermuxStatusCard(
                                     val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                                     testResult = "连接成功 http://127.0.0.1:8000 ($time)"
                                     // 检查嵌入模型服务
-                                    embedResult = try {
-                                        val req = okhttp3.Request.Builder().url("http://127.0.0.1:8080/health").build()
-                                        val resp = okhttp3.OkHttpClient.Builder()
-                                            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
-                                            .build().newCall(req).execute()
-                                        if (resp.isSuccessful) "嵌入模型: 运行中 (localhost:8080)"
-                                        else "嵌入模型: 异常 (HTTP ${resp.code})"
-                                    } catch (_: Exception) {
-                                        "嵌入模型: 未启动"
-                                    }
+                                    embedResult = if (TermuxServiceClient.checkEmbedding())
+                                        "嵌入模型: 运行中 (localhost:8080)"
+                                    else "嵌入模型: 未启动"
                                     // 连接成功后更新 daemon 状态（已就绪则跳过）
                                     if (AppBootstrapper.daemonStatus.value !is AgentDaemon.DaemonStatus.Ready) {
                                         AppBootstrapper.start()

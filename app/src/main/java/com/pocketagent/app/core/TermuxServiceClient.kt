@@ -218,6 +218,15 @@ object TermuxServiceClient {
         }
     }
 
+    /** 检查嵌入模型服务是否运行 */
+    suspend fun checkEmbedding(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("http://127.0.0.1:8080/health").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            response.isSuccessful
+        } catch (_: Exception) { false }
+    }
+
     /** 从 Termux 服务读取当前配置 */
     suspend fun fetchConfig(): Map<String, String> = withContext(Dispatchers.IO) {
         try {
