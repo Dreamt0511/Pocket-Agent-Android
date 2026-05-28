@@ -393,6 +393,7 @@ private fun TermuxStatusCard(
     val context = LocalContext.current
     var isChecking by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
+    var embedResult by remember { mutableStateOf<String?>(null) }
     var showPermDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -405,6 +406,7 @@ private fun TermuxStatusCard(
         scope.launch { settingsRepo.setServiceStopRequested(false) }
         onLaunch(currentMirrorUrl)
         testResult = null
+        embedResult = null
         ScriptProgress.startLaunch()
     }
     val permLauncher = rememberLauncherForActivityResult(
@@ -414,6 +416,7 @@ private fun TermuxStatusCard(
             launchService()
         } else {
             testResult = "权限被拒绝，请到系统设置 → 应用 → Termux → 权限中手动授权"
+            embedResult = null
         }
     }
     var mirrorCustom by remember { mutableStateOf(
@@ -462,6 +465,14 @@ private fun TermuxStatusCard(
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     )
+                    if (embedResult != null) {
+                        Text(
+                            text = embedResult!!,
+                            fontSize = 11.5.sp,
+                            color = if (embedResult!!.contains("运行中")) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                    else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
 
@@ -553,16 +564,31 @@ private fun TermuxStatusCard(
                         scope.launch {
                             isChecking = true
                             testResult = "正在连接..."
+                            embedResult = null
                             when (val r = TermuxServiceClient.healthCheck()) {
                                 is TermuxServiceClient.HealthResult.Ok -> {
                                     val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                                     testResult = "连接成功 http://127.0.0.1:8000 ($time)"
+                                    // 检查嵌入模型服务
+                                    embedResult = try {
+                                        val req = okhttp3.Request.Builder().url("http://127.0.0.1:8080/health").build()
+                                        val resp = okhttp3.OkHttpClient.Builder()
+                                            .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+                                            .build().newCall(req).execute()
+                                        if (resp.isSuccessful) "嵌入模型: 运行中 (localhost:8080)"
+                                        else "嵌入模型: 异常 (HTTP ${resp.code})"
+                                    } catch (_: Exception) {
+                                        "嵌入模型: 未启动"
+                                    }
                                     // 连接成功后更新 daemon 状态（已就绪则跳过）
                                     if (AppBootstrapper.daemonStatus.value !is AgentDaemon.DaemonStatus.Ready) {
                                         AppBootstrapper.start()
                                     }
                                 }
-                                is TermuxServiceClient.HealthResult.Error -> testResult = "连接失败: ${r.message}"
+                                is TermuxServiceClient.HealthResult.Error -> {
+                                    testResult = "连接失败: ${r.message}"
+                                    embedResult = null
+                                }
                             }
                             isChecking = false
                         }
@@ -601,6 +627,7 @@ private fun TermuxStatusCard(
                     onClick = {
                         scope.launch {
                             testResult = "正在关闭..."
+                            embedResult = null
                             settingsRepo.setServiceStopRequested(true)
                             // 优先 HTTP 关闭，fallback 到 Termux 脚本
                             TermuxServiceClient.shutdown()
