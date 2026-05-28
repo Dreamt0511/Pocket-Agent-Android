@@ -20,6 +20,7 @@ object ConfigManager {
         "EXECUTOR_LLM_BASE_URL", "EXECUTOR_API_KEY", "EXECUTOR_MODEL",
         "EXECUTOR_TEMPERATURE", "EXECUTOR_MAX_TOKENS",
         "MCP_SERVER_URL",
+        "EMBEDDING_MODEL_PATH",
     )
 
     private val CONFIG_PY_KEYS = setOf(
@@ -108,6 +109,7 @@ object ConfigManager {
             "EXECUTOR_TEMPERATURE" to "",
             "EXECUTOR_MAX_TOKENS" to "",
             "MCP_SERVER_URL" to "http://127.0.0.1:7474/mcp",
+            "EMBEDDING_MODEL_PATH" to "",
             "MAX_ITERATIONS" to "300",
             "RECURSION_LIMIT" to "600",
             "MAX_CONTEXT_TOKENS" to "128000",

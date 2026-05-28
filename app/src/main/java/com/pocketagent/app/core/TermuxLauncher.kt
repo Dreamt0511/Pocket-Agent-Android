@@ -55,7 +55,7 @@ object TermuxLauncher {
             append("    echo \"[start] Environment ready, launching uvicorn...\";\n")
             append("  fi\n")
             append("  # 启动 embedding 服务（BGE-M3，需编译带 embedding 后端的 llama.cpp）\n")
-            append("  EMBED_MODEL=\"\$(find ~/$POCKET_AGENT_DIR -name 'bge-m3*.gguf' -type f 2>/dev/null | head -1)\"\n")
+            append("  EMBED_MODEL=\"\$(grep '^EMBEDDING_MODEL_PATH=' /sdcard/Pocket-Agent/.env 2>/dev/null | cut -d= -f2 | tr -d '\"')\"\n")
             append("  if [ -f \"\$EMBED_MODEL\" ]; then\n")
             append("    for pid in \$(pgrep -f 'llama-server.*8080' 2>/dev/null); do [ \"\$pid\" != \"\$\$\" ] && kill \$pid 2>/dev/null; done\n")
             append("    setsid nohup llama-server \\\n")

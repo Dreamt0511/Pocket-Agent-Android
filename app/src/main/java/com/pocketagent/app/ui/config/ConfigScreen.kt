@@ -119,7 +119,8 @@ fun ConfigScreen(navController: NavController) {
                                 llmModel = map["LLM_MODEL"] ?: "",
                                 llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
                                 llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
-                                mcpServerUrl = map["MCP_SERVER_URL"] ?: ""
+                                mcpServerUrl = map["MCP_SERVER_URL"] ?: "",
+                                embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: ""
                             )
                         )
                     } catch (_: Exception) {}
@@ -411,6 +412,21 @@ fun ConfigScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
                     }
+                }
+
+                // ===== 嵌入模型 =====
+                SectionCard(title = "嵌入模型（语义检索）") {
+                    ConfigField(
+                        label = "模型文件路径",
+                        value = configMap["EMBEDDING_MODEL_PATH"] ?: "",
+                        placeholder = "/sdcard/Pocket-Agent/bge-m3-Q4_K_M.gguf",
+                        onValueChange = { configMap = configMap + ("EMBEDDING_MODEL_PATH" to it) }
+                    )
+                    Text(
+                        "BGE-M3 GGUF 模型的绝对路径。留空则不启用语义检索，仅使用全文搜索。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
                 }
 
                 // ===== 代码更新 =====

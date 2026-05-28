@@ -19,7 +19,8 @@ data class Settings(
     val mcpServerUrl: String = "http://127.0.0.1:7474/mcp",
     val autoUpdate: Boolean = true,
     val showStatus: Boolean = true,
-    val pypiMirrorUrl: String = ""
+    val pypiMirrorUrl: String = "",
+    val embeddingModelPath: String = ""
 )
 
 class SettingsRepository(
@@ -40,6 +41,7 @@ class SettingsRepository(
         private val ACTIVE_CONVERSATION_ID = stringPreferencesKey("active_conversation_id")
         private val DELETED_SKILLS = stringPreferencesKey("deleted_skills")
         private val MODIFIED_SKILLS = stringPreferencesKey("modified_skills")
+        private val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -53,7 +55,8 @@ class SettingsRepository(
                 mcpServerUrl = preferences[MCP_SERVER_URL] ?: "http://127.0.0.1:7474/mcp",
                 autoUpdate = preferences[AUTO_UPDATE] ?: true,
                 showStatus = preferences[SHOW_STATUS] ?: true,
-                pypiMirrorUrl = preferences[PYPI_MIRROR_URL] ?: ""
+                pypiMirrorUrl = preferences[PYPI_MIRROR_URL] ?: "",
+                embeddingModelPath = preferences[EMBEDDING_MODEL_PATH] ?: ""
             )
         }
 
@@ -72,6 +75,7 @@ class SettingsRepository(
             preferences[AUTO_UPDATE] = settings.autoUpdate
             preferences[SHOW_STATUS] = settings.showStatus
             preferences[PYPI_MIRROR_URL] = settings.pypiMirrorUrl
+            preferences[EMBEDDING_MODEL_PATH] = settings.embeddingModelPath
         }
     }
 
