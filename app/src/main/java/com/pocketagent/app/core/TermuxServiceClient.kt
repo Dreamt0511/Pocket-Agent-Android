@@ -331,6 +331,17 @@ object TermuxServiceClient {
         }
     }
 
+    /** 从 Termux 服务获取当前代码版本（git commit SHA） */
+    suspend fun fetchVersion(): String = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/version").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                org.json.JSONObject(response.body?.string() ?: "{}").optString("version", "")
+            } else ""
+        } catch (_: Exception) { "" }
+    }
+
     // ─── 会话管理 API ────────────────────
 
     suspend fun fetchConversations(): ConversationsResult = withContext(Dispatchers.IO) {

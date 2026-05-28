@@ -69,7 +69,14 @@ fun ConfigScreen(navController: NavController) {
     var remoteVersion by remember { mutableStateOf<String?>(null) }
     var updating by remember { mutableStateOf(false) }
     var pendingRollbackSha by remember { mutableStateOf<String?>(null) }
+    var localCodeVersion by remember { mutableStateOf("") }
     val syncManager = remember { try { CodeSyncManager.getInstance() } catch (_: Exception) { null } }
+
+    // 从 Termux 服务获取当前代码版本
+    LaunchedEffect(Unit) {
+        val ver = TermuxServiceClient.fetchVersion()
+        if (ver.isNotBlank()) localCodeVersion = ver
+    }
 
     // 加载配置：优先从 DataStore 读取（可靠持久化），
     // ConfigManager 补充 .env 文件中的 executor/高级字段
@@ -404,7 +411,7 @@ fun ConfigScreen(navController: NavController) {
 
                 // ===== 代码更新 =====
                 SectionCard(title = "代码更新") {
-                    val codeVersion = syncManager?.getLocalVersion() ?: "未知"
+                    val codeVersion = localCodeVersion.ifBlank { "未连接" }
                     val lastUpdate = syncManager?.getLastUpdateTime() ?: 0
                     val versionHistory = syncManager?.getVersionHistory() ?: emptyList()
 
@@ -430,6 +437,9 @@ fun ConfigScreen(navController: NavController) {
                                     updateInfo = null
                                     when (val r = TermuxServiceClient.triggerSync()) {
                                         is TermuxServiceClient.SyncResult.Ok -> {
+                                            // 刷新本地版本号
+                                            val ver = TermuxServiceClient.fetchVersion()
+                                            if (ver.isNotBlank()) localCodeVersion = ver
                                             updateInfo = "更新成功，请重启服务"
                                             remoteVersion = null
                                         }
@@ -459,7 +469,8 @@ fun ConfigScreen(navController: NavController) {
                                     checkingUpdate = true
                                     updateInfo = null
                                     try {
-                                        val localVer = CodeSyncManager.getInstance().getLocalVersion()
+                                        val localVer = localCodeVersion.ifBlank { TermuxServiceClient.fetchVersion() }
+                                        if (localVer.isNotBlank()) localCodeVersion = localVer
                                         val remoteSha = fetchRemoteVersion()
                                         if (remoteSha != localVer) {
                                             remoteVersion = remoteSha
