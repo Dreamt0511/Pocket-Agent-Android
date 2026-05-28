@@ -218,6 +218,18 @@ object TermuxServiceClient {
         }
     }
 
+    /** 从 Termux 服务读取当前配置 */
+    suspend fun fetchConfig(): Map<String, String> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/config").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val obj = org.json.JSONObject(response.body?.string() ?: "{}")
+                obj.keys().asSequence().associateWith { obj.optString(it, "") }
+            } else emptyMap()
+        } catch (_: Exception) { emptyMap() }
+    }
+
     // ─── 关闭服务 ───────────────────────
 
     /**
@@ -360,7 +372,7 @@ object TermuxServiceClient {
     /** 从 Termux 服务获取版本历史 */
     suspend fun fetchVersionHistory(): List<VersionEntry> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url("$BASE_URL/version/history?limit=10").build()
+            val request = Request.Builder().url("$BASE_URL/version/history").build()
             val response = shortTimeoutClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val arr = org.json.JSONObject(response.body?.string() ?: "{}").optJSONArray("history") ?: return@withContext emptyList()

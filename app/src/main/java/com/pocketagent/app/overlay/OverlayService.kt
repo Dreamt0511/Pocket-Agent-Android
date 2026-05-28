@@ -354,11 +354,10 @@ class OverlayService : Service() {
     /** 将药丸吸附到最近的屏幕边缘 */
     private fun snapMiniToEdge(view: View, fullyVisible: Boolean) {
         miniParams?.let { params ->
-            val viewW = view.width.coerceAtLeast(dpToPx(100))
+            // 用固定最小宽度计算，避免 view 宽度因内容变化导致隐藏量不一致
+            val viewW = dpToPx(100)
             val centerX = params.x + viewW / 2
-            // 固定隐藏 1/3，露出 2/3
-            val hideRatio = 3
-            val hiddenOffset = viewW / hideRatio
+            val hiddenOffset = viewW / 3
 
             params.x = if (centerX < screenWidth / 2) {
                 // 左侧
