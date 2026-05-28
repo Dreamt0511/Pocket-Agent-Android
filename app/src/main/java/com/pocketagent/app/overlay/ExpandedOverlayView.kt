@@ -38,7 +38,8 @@ class ExpandedOverlayView(
     private val onResize: (width: Int, height: Int) -> Unit,
     private val onDrag: (dx: Int, dy: Int) -> Unit,
     private val screenWidth: Int,
-    private val screenHeight: Int
+    private val screenHeight: Int,
+    initialFontSize: Float = 11f
 ) : LinearLayout(context) {
 
     val headerView: View
@@ -58,9 +59,11 @@ class ExpandedOverlayView(
     private val dragThreshold = 10f
 
     // ── 字体大小（双指缩放） ──
-    private var fontSizeSp = 11f
+    private var fontSizeSp = initialFontSize
     private val minFontSize = 5f
     private val maxFontSize = 30f
+
+    fun getFontSizeSp(): Float = fontSizeSp
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean = true

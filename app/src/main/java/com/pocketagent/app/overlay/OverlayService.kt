@@ -233,7 +233,15 @@ class OverlayService : Service() {
     private fun showMini() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
 
-        expandedParams?.let { try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
+        // 保存展开窗状态，下次展开时恢复
+        expandedParams?.let { params ->
+            getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit()
+                .putInt("expanded_width", params.width)
+                .putInt("expanded_height", params.height)
+                .putFloat("font_size", expandedView?.getFontSizeSp() ?: 11f)
+                .apply()
+            try { windowManager.removeView(expandedView) } catch (_: Exception) {}
+        }
         expandedParams = null
 
         if (miniParams == null) {
@@ -280,6 +288,8 @@ class OverlayService : Service() {
         }
     }
 
+    private var isMiniHalfHidden = false
+
     private fun setupMiniDrag() {
         var initialX = 0
         var initialY = 0
@@ -291,6 +301,12 @@ class OverlayService : Service() {
         miniView.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    // 半隐藏状态下点击，先拉出来
+                    if (isMiniHalfHidden) {
+                        isMiniHalfHidden = false
+                        snapMiniToEdge(view, fullyVisible = true)
+                        return@setOnTouchListener true
+                    }
                     initialX = miniParams!!.x
                     initialY = miniParams!!.y
                     initialTouchX = event.rawX
@@ -323,6 +339,9 @@ class OverlayService : Service() {
                 MotionEvent.ACTION_UP -> {
                     if (!isDragging) {
                         miniView.performClick()
+                    } else {
+                        // 松手后自动吸附到最近的屏幕边缘，半隐藏
+                        snapMiniToEdge(view, fullyVisible = false)
                     }
                     true
                 }
@@ -331,11 +350,28 @@ class OverlayService : Service() {
         }
     }
 
+    /** 将药丸吸附到最近的屏幕边缘 */
+    private fun snapMiniToEdge(view: View, fullyVisible: Boolean) {
+        miniParams?.let { params ->
+            val viewW = view.width
+            val centerX = params.x + viewW / 2
+            val halfHiddenOffset = viewW / 3 // 露出 2/3
+
+            params.x = if (centerX < screenWidth / 2) {
+                // 左侧
+                if (fullyVisible) 0 else -halfHiddenOffset
+            } else {
+                // 右侧
+                if (fullyVisible) screenWidth - viewW else screenWidth - viewW + halfHiddenOffset
+            }
+            isMiniHalfHidden = !fullyVisible
+            try { windowManager.updateViewLayout(miniView, params) } catch (_: Exception) {}
+        }
+    }
+
     fun moveMiniToCorner() {
         miniParams?.let { params ->
-            params.x = screenWidth - dpToPx(60)
-            params.y = dpToPx(20)
-            try { windowManager.updateViewLayout(miniView, params) } catch (_: Exception) {}
+            snapMiniToEdge(miniView, fullyVisible = false)
         }
     }
 
@@ -347,7 +383,17 @@ class OverlayService : Service() {
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         miniParams = null
 
+        // 缩小前保存当前展开状态
+        val savedFontSize = expandedView?.getFontSizeSp() ?: 0f
+
         if (expandedParams == null) {
+            val prefs = getSharedPreferences("overlay_prefs", MODE_PRIVATE)
+            val defaultW = (screenWidth * 0.9).toInt()
+            val defaultH = (screenHeight * 0.4).toInt()
+            val savedW = prefs.getInt("expanded_width", defaultW)
+            val savedH = prefs.getInt("expanded_height", defaultH)
+            val savedFs = if (savedFontSize > 0f) savedFontSize else prefs.getFloat("font_size", 11f)
+
             expandedView = ExpandedOverlayView(
                 context = this,
                 onMinimize = { showMini() },
@@ -367,7 +413,8 @@ class OverlayService : Service() {
                     }
                 },
                 screenWidth = screenWidth,
-                screenHeight = screenHeight
+                screenHeight = screenHeight,
+                initialFontSize = savedFs
             )
 
             expandedParams = WindowManager.LayoutParams().apply {
@@ -383,8 +430,8 @@ class OverlayService : Service() {
                         WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
 
                 format = PixelFormat.TRANSLUCENT
-                width = (screenWidth * 0.9).toInt()
-                height = (screenHeight * 0.4).toInt()
+                width = savedW
+                height = savedH
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 y = dpToPx(60)
             }

@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.tooling.preview.Preview
@@ -67,15 +68,18 @@ fun ConfigScreen(navController: NavController) {
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<String?>(null) }
     var remoteVersion by remember { mutableStateOf<String?>(null) }
+    var remoteVersionMessage by remember { mutableStateOf("") }
     var updating by remember { mutableStateOf(false) }
     var pendingRollbackSha by remember { mutableStateOf<String?>(null) }
     var localCodeVersion by remember { mutableStateOf("") }
+    var versionHistory by remember { mutableStateOf<List<TermuxServiceClient.VersionEntry>>(emptyList()) }
     val syncManager = remember { try { CodeSyncManager.getInstance() } catch (_: Exception) { null } }
 
-    // 从 Termux 服务获取当前代码版本
+    // 从 Termux 服务获取当前代码版本和历史
     LaunchedEffect(Unit) {
         val ver = TermuxServiceClient.fetchVersion()
         if (ver.isNotBlank()) localCodeVersion = ver
+        versionHistory = TermuxServiceClient.fetchVersionHistory()
     }
 
     // 加载配置：优先从 DataStore 读取（可靠持久化），
@@ -412,23 +416,18 @@ fun ConfigScreen(navController: NavController) {
                 // ===== 代码更新 =====
                 SectionCard(title = "代码更新") {
                     val codeVersion = localCodeVersion.ifBlank { "未连接" }
-                    val lastUpdate = syncManager?.getLastUpdateTime() ?: 0
-                    val versionHistory = syncManager?.getVersionHistory() ?: emptyList()
 
                     Text("当前版本: $codeVersion", fontSize = 14.sp)
-                    if (lastUpdate > 0) {
-                        Text(
-                            "上次更新: ${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastUpdate))}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
                     Spacer(Modifier.height(8.dp))
 
                     if (remoteVersion != null) {
                         // 发现新版本，显示确认按钮
                         Text("发现新版本: ${remoteVersion}", fontSize = 14.sp,
                             color = Color(0xFF16A34A))
+                        if (remoteVersionMessage.isNotBlank()) {
+                            Text(remoteVersionMessage, fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        }
                         Spacer(Modifier.height(8.dp))
                         Button(
                             onClick = {
@@ -471,9 +470,10 @@ fun ConfigScreen(navController: NavController) {
                                     try {
                                         val localVer = localCodeVersion.ifBlank { TermuxServiceClient.fetchVersion() }
                                         if (localVer.isNotBlank()) localCodeVersion = localVer
-                                        val remoteSha = fetchRemoteVersion()
+                                        val (remoteSha, remoteMsg) = fetchRemoteVersion()
                                         if (remoteSha != localVer) {
                                             remoteVersion = remoteSha
+                                            remoteVersionMessage = remoteMsg
                                         } else {
                                             updateInfo = "已是最新版本"
                                         }
@@ -511,19 +511,25 @@ fun ConfigScreen(navController: NavController) {
                         for (entry in versionHistory) {
                             val timeStr = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault())
                                 .format(java.util.Date(entry.timestamp))
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { pendingRollbackSha = entry.sha }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 4.dp)
                             ) {
-                                Text(entry.sha, fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(8.dp))
-                                Text(timeStr, fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(entry.sha, fontSize = 13.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(timeStr, fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                                }
+                                if (entry.message.isNotBlank()) {
+                                    Text(entry.message, fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
                     }
@@ -547,10 +553,13 @@ fun ConfigScreen(navController: NavController) {
                     scope.launch {
                         updating = true
                         updateInfo = null
-                        when (val r = syncManager?.rollbackTo(sha)) {
-                            is SyncResult.Synced -> updateInfo = "已回退到 $sha，请重启服务"
-                            is SyncResult.Failed -> updateInfo = "回退失败: ${r.error}"
-                            else -> {}
+                        when (val r = TermuxServiceClient.rollbackVersion(sha)) {
+                            is TermuxServiceClient.RollbackResult.Ok -> {
+                                localCodeVersion = r.version
+                                updateInfo = "已回退到 ${r.version}，请重启服务"
+                                versionHistory = TermuxServiceClient.fetchVersionHistory()
+                            }
+                            is TermuxServiceClient.RollbackResult.Error -> updateInfo = "回退失败: ${r.message}"
                         }
                         updating = false
                     }
@@ -737,7 +746,7 @@ private fun ConfigField(
 
 // ─── 获取远程版本 ───────────────────────────────
 
-private suspend fun fetchRemoteVersion(): String = withContext(Dispatchers.IO) {
+private suspend fun fetchRemoteVersion(): Pair<String, String> = withContext(Dispatchers.IO) {
     val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -750,7 +759,10 @@ private suspend fun fetchRemoteVersion(): String = withContext(Dispatchers.IO) {
     val response = client.newCall(request).execute()
     if (response.isSuccessful) {
         val json = JSONObject(response.body?.string() ?: "")
-        json.optString("sha", "").take(7)
+        val sha = json.optString("sha", "").take(7)
+        val commitObj = json.optJSONObject("commit")
+        val message = commitObj?.optString("message", "")?.lines()?.firstOrNull() ?: ""
+        sha to message
     } else {
         throw Exception("HTTP ${response.code}")
     }

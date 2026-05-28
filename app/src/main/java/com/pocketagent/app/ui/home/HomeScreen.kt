@@ -285,8 +285,12 @@ private fun AgentOverviewCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            // 标题行
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 标题行 — 居中显示
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     modifier = Modifier
                         .size(7.dp)
@@ -551,7 +555,8 @@ private fun TermuxStatusCard(
                             testResult = "正在连接..."
                             when (val r = TermuxServiceClient.healthCheck()) {
                                 is TermuxServiceClient.HealthResult.Ok -> {
-                                    testResult = "连接成功! ${r.body}"
+                                    val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                                    testResult = "连接成功 http://127.0.0.1:8000 ($time)"
                                     // 连接成功后更新 daemon 状态（已就绪则跳过）
                                     if (AppBootstrapper.daemonStatus.value !is AgentDaemon.DaemonStatus.Ready) {
                                         AppBootstrapper.start()

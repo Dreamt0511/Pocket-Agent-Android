@@ -331,6 +331,15 @@ object TermuxServiceClient {
         }
     }
 
+    /** 心跳 — 告知服务端 App 还活着 */
+    suspend fun heartbeat() = withContext(Dispatchers.IO) {
+        try {
+            val body = "{}".toRequestBody("application/json".toMediaType())
+            val request = Request.Builder().url("$BASE_URL/heartbeat").post(body).build()
+            shortTimeoutClient.newCall(request).execute().close()
+        } catch (_: Exception) {}
+    }
+
     /** 从 Termux 服务获取当前代码版本（git commit SHA） */
     suspend fun fetchVersion(): String = withContext(Dispatchers.IO) {
         try {
@@ -340,6 +349,49 @@ object TermuxServiceClient {
                 org.json.JSONObject(response.body?.string() ?: "{}").optString("version", "")
             } else ""
         } catch (_: Exception) { "" }
+    }
+
+    /** 从 Termux 服务获取版本历史 */
+    suspend fun fetchVersionHistory(): List<VersionEntry> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/version/history?limit=10").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val arr = org.json.JSONObject(response.body?.string() ?: "{}").optJSONArray("history") ?: return@withContext emptyList()
+                (0 until arr.length()).map { i ->
+                    val obj = arr.getJSONObject(i)
+                    VersionEntry(
+                        sha = obj.optString("sha", ""),
+                        message = obj.optString("message", ""),
+                        timestamp = obj.optLong("timestamp", 0)
+                    )
+                }
+            } else emptyList()
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** 回退到指定版本 */
+    suspend fun rollbackVersion(sha: String): RollbackResult = withContext(Dispatchers.IO) {
+        try {
+            val json = org.json.JSONObject().apply { put("sha", sha) }
+            val body = json.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder().url("$BASE_URL/version/rollback").post(body).build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val resp = org.json.JSONObject(response.body?.string() ?: "{}")
+                if (resp.optString("status") == "ok") RollbackResult.Ok(resp.optString("version", sha))
+                else RollbackResult.Error(resp.optString("message", "回退失败"))
+            } else RollbackResult.Error("HTTP ${response.code}")
+        } catch (e: Exception) {
+            RollbackResult.Error(e.message ?: "连接失败")
+        }
+    }
+
+    data class VersionEntry(val sha: String, val message: String, val timestamp: Long)
+
+    sealed class RollbackResult {
+        data class Ok(val version: String) : RollbackResult()
+        data class Error(val message: String) : RollbackResult()
     }
 
     // ─── 会话管理 API ────────────────────

@@ -148,7 +148,8 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 scope.launch {
                     delay(280) // 等键盘动画完成
                     try {
-                        listState.scrollToItem(messages.size - 1)
+                        val lastIdx = messages.lastIndex
+                        if (lastIdx >= 0) listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
                     } catch (_: Exception) {}
                 }
             }
@@ -206,7 +207,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 messages[lastIdx] = messages[lastIdx].copy(text = streamText)
                 // 流式文本增长时自动滚动到底部
                 try {
-                    listState.animateScrollToItem(lastIdx)
+                    listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
                 } catch (_: Exception) {}
             }
         }
@@ -335,7 +336,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                             isProcessing = false
 
                             // 滚动到底部
-                            listState.animateScrollToItem(messages.size - 1)
+                            listState.animateScrollToItem(messages.lastIndex, scrollOffset = Int.MAX_VALUE)
                         }
                     }
                 },
@@ -369,7 +370,8 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             LaunchedEffect(messages.size) {
                 if (messages.isNotEmpty()) {
                     try {
-                        listState.scrollToItem(messages.size - 1)
+                        val lastIdx = messages.lastIndex
+                        if (lastIdx >= 0) listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
                     } catch (_: Exception) {}
                 }
             }
