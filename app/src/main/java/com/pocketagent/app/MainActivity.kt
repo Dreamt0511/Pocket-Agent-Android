@@ -16,7 +16,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.rememberNavController
-import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.NeuralBridgeHelper
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.ui.theme.PocketAgentTheme
@@ -25,9 +24,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-
-        // 启动 Agent 守护进程（异步：同步代码 + 初始化 Python）
-        AppBootstrapper.start()
 
         setContent {
             PocketAgentTheme {
