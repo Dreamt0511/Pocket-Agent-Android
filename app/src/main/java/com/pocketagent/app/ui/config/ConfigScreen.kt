@@ -68,6 +68,7 @@ fun ConfigScreen(navController: NavController) {
     var updateInfo by remember { mutableStateOf<String?>(null) }
     var remoteVersion by remember { mutableStateOf<String?>(null) }
     var updating by remember { mutableStateOf(false) }
+    var pendingRollbackSha by remember { mutableStateOf<String?>(null) }
 
     // 加载配置：优先从 DataStore 读取（可靠持久化），
     // ConfigManager 补充 .env 文件中的 executor/高级字段
@@ -502,22 +503,7 @@ fun ConfigScreen(navController: NavController) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        scope.launch {
-                                            updating = true
-                                            updateInfo = null
-                                            when (val r = syncManager?.rollbackTo(entry.sha)) {
-                                                is SyncResult.Synced -> {
-                                                    updateInfo = "已回退到 ${entry.sha}，请重启服务"
-                                                }
-                                                is SyncResult.Failed -> {
-                                                    updateInfo = "回退失败: ${r.error}"
-                                                }
-                                                else -> {}
-                                            }
-                                            updating = false
-                                        }
-                                    }
+                                    .clickable { pendingRollbackSha = entry.sha }
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -535,6 +521,34 @@ fun ConfigScreen(navController: NavController) {
                 Spacer(Modifier.height(16.dp))
             }
         }
+    }
+
+    // 版本回退确认弹窗
+    if (pendingRollbackSha != null) {
+        AlertDialog(
+            onDismissRequest = { pendingRollbackSha = null },
+            title = { Text("确认回退") },
+            text = { Text("将代码回退到 ${pendingRollbackSha}，当前版本会被覆盖。确定继续？") },
+            confirmButton = {
+                Button(onClick = {
+                    val sha = pendingRollbackSha!!
+                    pendingRollbackSha = null
+                    scope.launch {
+                        updating = true
+                        updateInfo = null
+                        when (val r = syncManager?.rollbackTo(sha)) {
+                            is SyncResult.Synced -> updateInfo = "已回退到 $sha，请重启服务"
+                            is SyncResult.Failed -> updateInfo = "回退失败: ${r.error}"
+                            else -> {}
+                        }
+                        updating = false
+                    }
+                }) { Text("确认回退") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRollbackSha = null }) { Text("取消") }
+            }
+        )
     }
 }
 

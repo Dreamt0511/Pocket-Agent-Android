@@ -103,26 +103,19 @@ class SettingsRepository(
     }
 
     /** 获取已删除的技能路径集合（防止后端重新返回已删除的技能） */
-    suspend fun getDeletedSkills(): Set<String> {
-        val json = dataStore.data.first()[DELETED_SKILLS] ?: return emptySet()
-        return try {
-            org.json.JSONArray(json).let { arr ->
-                (0 until arr.length()).map { arr.getString(it) }.toSet()
-            }
-        } catch (_: Exception) { emptySet() }
-    }
+    suspend fun getDeletedSkills(): Set<String> = getStringSet(DELETED_SKILLS)
 
     /** 记录技能已删除 */
-    suspend fun addDeletedSkill(path: String) {
-        val current = getDeletedSkills().toMutableSet()
-        current.add(path)
-        val json = org.json.JSONArray(current.toList()).toString()
-        dataStore.edit { it[DELETED_SKILLS] = json }
-    }
+    suspend fun addDeletedSkill(path: String) = addToStringSet(DELETED_SKILLS, path)
 
     /** 获取已修改的技能路径集合（主库更新时保留本地修改） */
-    suspend fun getModifiedSkills(): Set<String> {
-        val json = dataStore.data.first()[MODIFIED_SKILLS] ?: return emptySet()
+    suspend fun getModifiedSkills(): Set<String> = getStringSet(MODIFIED_SKILLS)
+
+    /** 记录技能已修改 */
+    suspend fun addModifiedSkill(path: String) = addToStringSet(MODIFIED_SKILLS, path)
+
+    private suspend fun getStringSet(key: Preferences.Key<String>): Set<String> {
+        val json = dataStore.data.first()[key] ?: return emptySet()
         return try {
             org.json.JSONArray(json).let { arr ->
                 (0 until arr.length()).map { arr.getString(it) }.toSet()
@@ -130,11 +123,10 @@ class SettingsRepository(
         } catch (_: Exception) { emptySet() }
     }
 
-    /** 记录技能已修改 */
-    suspend fun addModifiedSkill(path: String) {
-        val current = getModifiedSkills().toMutableSet()
-        current.add(path)
+    private suspend fun addToStringSet(key: Preferences.Key<String>, value: String) {
+        val current = getStringSet(key).toMutableSet()
+        current.add(value)
         val json = org.json.JSONArray(current.toList()).toString()
-        dataStore.edit { it[MODIFIED_SKILLS] = json }
+        dataStore.edit { it[key] = json }
     }
 }

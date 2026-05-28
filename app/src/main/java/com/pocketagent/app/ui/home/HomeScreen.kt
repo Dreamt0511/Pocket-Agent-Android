@@ -602,16 +602,13 @@ private fun TermuxStatusCard(
                             delay(1500)
                             // 再检查一下是否真的关了
                             val h = TermuxServiceClient.healthCheck()
-                            if (h is TermuxServiceClient.HealthResult.Error) {
-                                testResult = "服务已关闭"
-                                AppBootstrapper.markDisconnected()
-                            } else {
+                            if (h !is TermuxServiceClient.HealthResult.Error) {
                                 // HTTP 没关掉，用 Termux 脚本强杀
                                 TermuxLauncher.stopFastAPI(context)
                                 delay(1000)
-                                testResult = "服务已关闭"
-                                AppBootstrapper.markDisconnected()
                             }
+                            testResult = "服务已关闭"
+                            AppBootstrapper.markDisconnected()
                         }
                     },
                     modifier = Modifier.weight(1f),

@@ -494,6 +494,7 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                             contentDescription = "复制",
                             modifier = Modifier
                                 .size(14.dp)
+                                .padding(2.dp)
                                 .clickable {
                                     clipboardManager.setText(AnnotatedString(message.text))
                                 },
@@ -549,6 +550,7 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                             contentDescription = "复制",
                             modifier = Modifier
                                 .size(14.dp)
+                                .padding(2.dp)
                                 .clickable {
                                     clipboardManager.setText(AnnotatedString(message.text))
                                 },
