@@ -25,7 +25,7 @@ class CodeSyncManager(private val context: Context) {
         private const val GITHUB_REPO = "Dreamt0511/Pocket-Agent"
         private const val GITHUB_BRANCH = "main"
 //        private const val RUNTIME_DIR = "app_python_runtime"
-        private const val TARGET_DIR = "/sdcard/Pocket-Agent"
+        private const val TARGET_DIR = "/data/data/com.termux/files/home/Pocket-Agent"
         private const val VERSION_FILE = "version.json"
 
         @Volatile
@@ -61,7 +61,7 @@ class CodeSyncManager(private val context: Context) {
         data class Error(val message: String) : SyncState()
     }
 
-    /** 运行时目录: /sdcard/Pocket-Agent/ */
+    /** 运行时目录: Termux home/Pocket-Agent/ */
     fun getRuntimeDir(): File {
         return File(TARGET_DIR).also { it.mkdirs() }
     }

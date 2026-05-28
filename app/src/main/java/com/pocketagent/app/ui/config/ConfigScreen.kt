@@ -423,7 +423,7 @@ fun ConfigScreen(navController: NavController) {
                     ConfigField(
                         label = "模型文件路径",
                         value = configMap["EMBEDDING_MODEL_PATH"] ?: "",
-                        placeholder = "/sdcard/Pocket-Agent/bge-m3-Q4_K_M.gguf",
+                        placeholder = "/sdcard/手机agent开发/Pocket-Agent/bge-m3-Q4_K_M.gguf",
                         onValueChange = { configMap = configMap + ("EMBEDDING_MODEL_PATH" to it) }
                     )
                     Text(

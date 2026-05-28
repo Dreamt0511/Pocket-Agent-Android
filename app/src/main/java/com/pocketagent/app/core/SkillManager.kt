@@ -60,15 +60,16 @@ object SkillManager {
         Log.i(TAG, "SkillManager initialized: $skillsDir")
     }
 
+    private const val TERMUX_SKILLS_DIR = "/data/data/com.termux/files/home/Pocket-Agent/agent/skills"
+
     fun init(context: Context) {
         appContext = context.applicationContext
-        init(File("/sdcard/Pocket-Agent/agent/skills").absolutePath)
+        init(File(TERMUX_SKILLS_DIR).absolutePath)
     }
 
     fun rescan() {
-        val skillsDir = File("/sdcard/Pocket-Agent/agent/skills").absolutePath
-        init(skillsDir)
-        Log.i(TAG, "Rescanned skills root: $skillsDir")
+        init(TERMUX_SKILLS_DIR)
+        Log.i(TAG, "Rescanned skills root: $TERMUX_SKILLS_DIR")
     }
 
     private fun getSkillsRoot(): File =
