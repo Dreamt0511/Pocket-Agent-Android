@@ -69,6 +69,7 @@ fun ConfigScreen(navController: NavController) {
     var remoteVersion by remember { mutableStateOf<String?>(null) }
     var updating by remember { mutableStateOf(false) }
     var pendingRollbackSha by remember { mutableStateOf<String?>(null) }
+    val syncManager = remember { try { CodeSyncManager.getInstance() } catch (_: Exception) { null } }
 
     // 加载配置：优先从 DataStore 读取（可靠持久化），
     // ConfigManager 补充 .env 文件中的 executor/高级字段
@@ -403,7 +404,6 @@ fun ConfigScreen(navController: NavController) {
 
                 // ===== 代码更新 =====
                 SectionCard(title = "代码更新") {
-                    val syncManager = try { CodeSyncManager.getInstance() } catch (_: Exception) { null }
                     val codeVersion = syncManager?.getLocalVersion() ?: "未知"
                     val lastUpdate = syncManager?.getLastUpdateTime() ?: 0
                     val versionHistory = syncManager?.getVersionHistory() ?: emptyList()

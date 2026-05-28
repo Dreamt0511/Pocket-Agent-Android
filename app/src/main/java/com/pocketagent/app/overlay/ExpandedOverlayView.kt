@@ -45,7 +45,7 @@ class ExpandedOverlayView(
     private lateinit var titleText: TextView
     private lateinit var terminalText: TextView
     private val scrollView: NestedScrollView
-    private val statusText: TextView
+    private lateinit var statusText: TextView
 
     // 基础字号（缩放时按比例变化）
     private val baseTitleSize = 13f
