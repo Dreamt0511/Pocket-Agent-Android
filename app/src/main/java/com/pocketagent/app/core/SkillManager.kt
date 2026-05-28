@@ -159,7 +159,55 @@ object SkillManager {
     }
 
     suspend fun getAllSkills(): List<Skill> = withContext(Dispatchers.IO) {
+        // 优先从 Termux API 获取（路径无关）
+        val apiSkills = fetchSkillsFromApi()
+        if (apiSkills != null) return@withContext apiSkills
+        // fallback：本地文件
         Category.entries.flatMap { getSkills(it) }
+    }
+
+    private suspend fun fetchSkillsFromApi(): List<Skill>? {
+        return try {
+            when (val result = com.pocketagent.app.core.TermuxServiceClient.fetchSkills()) {
+                is com.pocketagent.app.core.TermuxServiceClient.SkillsResult.Ok -> {
+                    parseSkillsJson(result.body)
+                }
+                is com.pocketagent.app.core.TermuxServiceClient.SkillsResult.Error -> {
+                    Log.w(TAG, "API fetchSkills failed: ${result.message}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchSkillsFromApi exception", e)
+            null
+        }
+    }
+
+    private fun parseSkillsJson(jsonStr: String): List<Skill> {
+        val json = org.json.JSONObject(jsonStr)
+        val result = mutableListOf<Skill>()
+        val categoryKeys = mapOf(
+            "main_skills" to Category.MAIN_SKILLS,
+            "executor_skills" to Category.EXECUTOR_SKILLS,
+            "auto_skills" to Category.AUTO_SKILLS
+        )
+        for ((key, category) in categoryKeys) {
+            val arr = json.optJSONArray(key) ?: continue
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val path = obj.optString("path", "")
+                val isSys = category.isSystem && !path.contains("/user/")
+                result.add(Skill(
+                    name = obj.optString("name", ""),
+                    description = obj.optString("description", ""),
+                    category = category,
+                    path = path,
+                    content = obj.optString("content", ""),
+                    tagLabel = computeTagLabel(category, path, isSys)
+                ))
+            }
+        }
+        return result
     }
 
     suspend fun getSkillByPath(path: String): Skill? = withContext(Dispatchers.IO) {
