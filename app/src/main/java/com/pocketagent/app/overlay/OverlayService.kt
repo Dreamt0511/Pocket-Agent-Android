@@ -328,8 +328,8 @@ class OverlayService : Service() {
                         miniParams!!.x = initialX + deltaX.toInt()
                         miniParams!!.y = initialY + deltaY.toInt()
 
-                        val viewW = view.width
-                        val viewH = view.height
+                        val viewW = view.width.coerceAtLeast(dpToPx(100))
+                        val viewH = view.height.coerceAtLeast(dpToPx(40))
                         miniParams!!.x = miniParams!!.x.coerceIn(0, screenWidth - viewW)
                         miniParams!!.y = miniParams!!.y.coerceIn(0, screenHeight - viewH - dpToPx(80))
 
@@ -354,16 +354,18 @@ class OverlayService : Service() {
     /** 将药丸吸附到最近的屏幕边缘 */
     private fun snapMiniToEdge(view: View, fullyVisible: Boolean) {
         miniParams?.let { params ->
-            val viewW = view.width
+            val viewW = view.width.coerceAtLeast(dpToPx(100))
             val centerX = params.x + viewW / 2
-            val halfHiddenOffset = viewW / 3 // 露出 2/3
+            // 固定隐藏 1/3，露出 2/3
+            val hideRatio = 3
+            val hiddenOffset = viewW / hideRatio
 
             params.x = if (centerX < screenWidth / 2) {
                 // 左侧
-                if (fullyVisible) 0 else -halfHiddenOffset
+                if (fullyVisible) 0 else -hiddenOffset
             } else {
                 // 右侧
-                if (fullyVisible) screenWidth - viewW else screenWidth - viewW + halfHiddenOffset
+                if (fullyVisible) screenWidth - viewW else screenWidth - viewW + hiddenOffset
             }
             isMiniHalfHidden = !fullyVisible
             try { windowManager.updateViewLayout(miniView, params) } catch (_: Exception) {}
