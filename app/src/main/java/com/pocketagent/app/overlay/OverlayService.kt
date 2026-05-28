@@ -240,7 +240,7 @@ class OverlayService : Service() {
                 .putInt("expanded_height", params.height)
                 .putFloat("font_size", if (::expandedView.isInitialized) expandedView.getFontSizeSp() else 11f)
                 .apply()
-            try { windowManager.removeView(expandedView) } catch (_: Exception) {}
+            if (::expandedView.isInitialized) try { windowManager.removeView(expandedView) } catch (_: Exception) {}
         }
         expandedParams = null
 
@@ -460,7 +460,7 @@ class OverlayService : Service() {
     fun hideAll() {
         try { stopForeground(true) } catch (_: Exception) {}
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
-        expandedParams?.let { try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
+        expandedParams?.let { if (::expandedView.isInitialized) try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
         miniParams = null
         expandedParams = null
         currentMode = OverlayMode.HIDDEN
