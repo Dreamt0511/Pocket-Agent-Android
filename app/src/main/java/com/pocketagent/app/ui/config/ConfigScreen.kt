@@ -70,7 +70,7 @@ fun ConfigScreen(navController: NavController) {
     var remoteVersion by remember { mutableStateOf<String?>(null) }
     var remoteVersionMessage by remember { mutableStateOf("") }
     var updating by remember { mutableStateOf(false) }
-    var pendingRollbackSha by remember { mutableStateOf<String?>(null) }
+    var pendingRollback by remember { mutableStateOf<TermuxServiceClient.VersionEntry?>(null) }
     var localCodeVersion by remember { mutableStateOf("") }
     var versionHistory by remember { mutableStateOf<List<TermuxServiceClient.VersionEntry>>(emptyList()) }
     val syncManager = remember { try { CodeSyncManager.getInstance() } catch (_: Exception) { null } }
@@ -104,26 +104,33 @@ fun ConfigScreen(navController: NavController) {
         isLoading = false
     }
 
+    // 保存配置的函数
+    suspend fun saveConfig(map: Map<String, String>) {
+        // DataStore 始终保存（本地持久化）
+        try {
+            settingsRepo.saveSettings(
+                com.pocketagent.app.data.Settings(
+                    llmBaseUrl = map["DEFAULT_LLM_BASE_URL"] ?: "",
+                    llmApiKey = map["LLM_API_KEY"] ?: "",
+                    llmModel = map["LLM_MODEL"] ?: "",
+                    llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
+                    llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
+                    mcpServerUrl = map["MCP_SERVER_URL"] ?: "",
+                    embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: ""
+                )
+            )
+        } catch (_: Exception) {}
+        // HTTP 同步到 Termux（服务未运行时会静默失败，不影响本地保存）
+        ConfigManager.saveAll(map)
+    }
+
     // 自动保存：监听 configMap 变化，debounce 1.5 秒后自动持久化
     LaunchedEffect(Unit) {
         snapshotFlow { configMap }
             .debounce(1500L)
             .collect { map ->
                 if (!isLoading && map.isNotEmpty()) {
-                    ConfigManager.saveAll(map)
-                    try {
-                        settingsRepo.saveSettings(
-                            com.pocketagent.app.data.Settings(
-                                llmBaseUrl = map["DEFAULT_LLM_BASE_URL"] ?: "",
-                                llmApiKey = map["LLM_API_KEY"] ?: "",
-                                llmModel = map["LLM_MODEL"] ?: "",
-                                llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
-                                llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
-                                mcpServerUrl = map["MCP_SERVER_URL"] ?: "",
-                                embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: ""
-                            )
-                        )
-                    } catch (_: Exception) {}
+                    saveConfig(map)
                     saved = true
                     kotlinx.coroutines.delay(2000)
                     saved = false
@@ -427,6 +434,19 @@ fun ConfigScreen(navController: NavController) {
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                saveConfig(configMap)
+                                saved = true
+                                kotlinx.coroutines.delay(2000)
+                                saved = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("保存配置") }
                 }
 
                 // ===== 代码更新 =====
@@ -530,7 +550,7 @@ fun ConfigScreen(navController: NavController) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { pendingRollbackSha = entry.sha }
+                                    .clickable { pendingRollback = entry }
                                     .padding(vertical = 4.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -557,15 +577,31 @@ fun ConfigScreen(navController: NavController) {
     }
 
     // 版本回退确认弹窗
-    if (pendingRollbackSha != null) {
+    if (pendingRollback != null) {
+        val entry = pendingRollback!!
+        val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(entry.timestamp))
         AlertDialog(
-            onDismissRequest = { pendingRollbackSha = null },
+            onDismissRequest = { pendingRollback = null },
             title = { Text("确认回退") },
-            text = { Text("将代码回退到 ${pendingRollbackSha}，当前版本会被覆盖。确定继续？") },
+            text = {
+                Column {
+                    Text("将代码回退到以下版本，当前版本会被覆盖。")
+                    Spacer(Modifier.height(12.dp))
+                    Text(entry.sha, fontFamily = FontFamily.Monospace, fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text(timeStr, fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    if (entry.message.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(entry.message, fontSize = 13.sp)
+                    }
+                }
+            },
             confirmButton = {
                 Button(onClick = {
-                    val sha = pendingRollbackSha!!
-                    pendingRollbackSha = null
+                    val sha = entry.sha
+                    pendingRollback = null
                     scope.launch {
                         updating = true
                         updateInfo = null
@@ -582,7 +618,7 @@ fun ConfigScreen(navController: NavController) {
                 }) { Text("确认回退") }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRollbackSha = null }) { Text("取消") }
+                TextButton(onClick = { pendingRollback = null }) { Text("取消") }
             }
         )
     }
