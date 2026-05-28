@@ -7,7 +7,6 @@ import com.pocketagent.app.overlay.OverlayManager
 import com.pocketagent.app.service.AgentService
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
-import com.pocketagent.app.update.CodeSyncManager
 import com.pocketagent.app.update.TaskResult
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +39,6 @@ object AppBootstrapper {
         OverlayManager.init(context)
         daemon = AgentDaemon(context, taskQueueManager)
         SkillManager.init(context)
-        CodeSyncManager.init(context)
 
         // 启动前台服务，确保清除 App 时 onTaskRemoved 被触发以关闭 uvicorn
         try {

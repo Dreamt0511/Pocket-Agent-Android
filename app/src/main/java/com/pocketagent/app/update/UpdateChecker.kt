@@ -55,48 +55,23 @@ object UpdateChecker {
     fun init(context: Context, repoUrl: String) {
         appContext = context.applicationContext
         repoBaseUrl = repoUrl
-
-        // 同时初始化 CodeSyncManager
-        CodeSyncManager.init(context, repoUrl + "/releases")
     }
 
     /**
-     * 检查所有更新（代码 + APK）
+     * 检查所有更新（仅 APK 更新，代码更新由用户通过设置页手动触发 Termux /sync）
      */
     suspend fun checkAll(): UpdateEvent = withContext(Dispatchers.IO) {
         _updateEvents.value = UpdateEvent.Checking
 
         try {
-            // 1. 先检查代码更新（轻量，非阻塞）
-            val codeManager = CodeSyncManager.getInstance()
-            val syncResult = codeManager.syncIfNeeded()
-
-            when (syncResult) {
-                is SyncResult.Synced -> {
-                    _updateEvents.value = UpdateEvent.CodeUpdated(syncResult.version)
-                    // 代码更新后继续检查 APK
-                }
-                is SyncResult.Failed -> {
-                    Log.w(TAG, "Code sync failed: ${syncResult.error}")
-                    // 代码同步失败不阻塞 APK 检查
-                }
-                is SyncResult.UpToDate -> { /* 无需操作 */ }
-            }
-
-            // 2. 检查 APK 更新
+            // 检查 APK 更新
             val appUpdate = checkAppUpdate()
             if (appUpdate != null) {
                 _updateEvents.value = appUpdate
                 return@withContext appUpdate
             }
 
-            // 3. 都最新
-            if (syncResult is SyncResult.Synced) {
-                _updateEvents.value = UpdateEvent.CodeUpdated(syncResult.version)
-            } else {
-                _updateEvents.value = UpdateEvent.UpToDate
-            }
-
+            _updateEvents.value = UpdateEvent.UpToDate
             _updateEvents.value
 
         } catch (e: Exception) {

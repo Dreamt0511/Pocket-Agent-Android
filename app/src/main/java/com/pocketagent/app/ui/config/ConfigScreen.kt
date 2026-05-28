@@ -27,8 +27,6 @@ import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.core.TermuxServiceClient
-import com.pocketagent.app.update.CodeSyncManager
-import com.pocketagent.app.update.SyncResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -73,7 +71,6 @@ fun ConfigScreen(navController: NavController) {
     var pendingRollback by remember { mutableStateOf<TermuxServiceClient.VersionEntry?>(null) }
     var localCodeVersion by remember { mutableStateOf("") }
     var versionHistory by remember { mutableStateOf<List<TermuxServiceClient.VersionEntry>>(emptyList()) }
-    val syncManager = remember { try { CodeSyncManager.getInstance() } catch (_: Exception) { null } }
 
     // 从 Termux 服务获取当前代码版本和历史
     LaunchedEffect(Unit) {
