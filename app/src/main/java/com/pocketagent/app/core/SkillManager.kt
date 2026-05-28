@@ -27,10 +27,26 @@ object SkillManager {
         val description: String,
         val category: Category,
         val path: String,
-        val content: String = ""
+        val content: String = "",
+        val tagLabel: String = ""
     ) {
         /** true=系统预装技能（不可修改/删除），false=用户新增/自动生成的技能 */
         val isSystem: Boolean get() = category.isSystem && !path.contains("/user/")
+    }
+
+    private fun computeTagLabel(category: Category, path: String, isSystem: Boolean): String {
+        return when (category) {
+            Category.AUTO_SKILLS -> {
+                when {
+                    path.contains("/main/") -> "主 Agent"
+                    path.contains("/executor/") -> "子 Agent"
+                    else -> ""
+                }
+            }
+            Category.MAIN_SKILLS, Category.EXECUTOR_SKILLS -> {
+                if (isSystem) "系统" else "用户"
+            }
+        }
     }
 
     // ─── 初始化 ─────────────────────────────────────
@@ -97,12 +113,14 @@ object SkillManager {
                 val content = skillFile.readText()
                 val (name, description) = parseFrontmatter(content)
                 val relativePath = dir.relativeTo(getSkillsRoot()).path
+                val isSys = category.isSystem && !relativePath.contains("/user/")
                 result.add(Skill(
                     name = name ?: dir.name,
                     description = description ?: "",
                     category = category,
                     path = relativePath,
-                    content = content
+                    content = content,
+                    tagLabel = computeTagLabel(category, relativePath, isSys)
                 ))
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to read skill file: ${skillFile.absolutePath}", e)
@@ -125,12 +143,14 @@ object SkillManager {
             val content = skillFile.readText()
             val (name, description) = parseFrontmatter(content)
             val relativePath = dir.relativeTo(getSkillsRoot()).path
+            val isSys = category.isSystem && !relativePath.contains("/user/")
             Skill(
                 name = name ?: dir.name,
                 description = description ?: "",
                 category = category,
                 path = relativePath,
-                content = content
+                content = content,
+                tagLabel = computeTagLabel(category, relativePath, isSys)
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to read skill: ${skillFile.absolutePath}", e)
@@ -152,12 +172,14 @@ object SkillManager {
             val (name, description) = parseFrontmatter(content)
             val category = Category.fromDirName(path.substringBefore("/"))
                 ?: return@withContext null
+            val isSys = category.isSystem && !path.contains("/user/")
             Skill(
                 name = name ?: file.name,
                 description = description ?: "",
                 category = category,
                 path = path,
-                content = content
+                content = content,
+                tagLabel = computeTagLabel(category, path, isSys)
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to get skill by path: $path", e)
@@ -201,7 +223,8 @@ object SkillManager {
         }
 
         val relativePath = skillDir.relativeTo(getSkillsRoot()).path
-        Skill(name, description, category, relativePath, frontmatter)
+        val isSys = category.isSystem && !relativePath.contains("/user/")
+        Skill(name, description, category, relativePath, frontmatter, computeTagLabel(category, relativePath, isSys))
     }
 
     // ─── 校验（纯逻辑，不需 IO 线程）────────────────

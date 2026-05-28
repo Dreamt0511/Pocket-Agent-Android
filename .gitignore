@@ -36,8 +36,12 @@ venv/
 
 # OS
 Thumbs.db
-.DS_Storetest_ssl.deb
+.DS_Store
+
+# Temp / test files
+test_ssl.deb
+BUILD_CHECKLIST.md
 
 # Claude Code
-.claude/worktrees/
+.claude/
 .superpowers/

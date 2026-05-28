@@ -435,12 +435,22 @@ private fun SkillCard(
 
             // 文字
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = skill.name,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = skill.name,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (skill.tagLabel.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        SuggestionChip(
+                            onClick = {},
+                            label = { Text(skill.tagLabel, fontSize = 9.sp) },
+                            modifier = Modifier.height(20.dp)
+                        )
+                    }
+                }
                 if (skill.description.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
@@ -736,7 +746,7 @@ private fun SkillDescriptionDialog(
                 Spacer(Modifier.height(4.dp))
                 AssistChip(
                     onClick = {},
-                    label = { Text(skill.category.displayName, fontSize = 11.sp) }
+                    label = { Text(if (skill.tagLabel.isNotBlank()) skill.tagLabel else skill.category.displayName, fontSize = 11.sp) }
                 )
             }
         },
@@ -751,6 +761,11 @@ private fun SkillDescriptionDialog(
                 }
 
                 if (isAuto) {
+                    val autoMessage = when (skill.tagLabel) {
+                        "主 Agent" -> "此技能由主 Agent 在完成任务后自动沉淀生成，总结执行经验以便后续复用。你可以直接使用或按需编辑。"
+                        "子 Agent" -> "此技能由子 Agent 在执行委托任务后自动沉淀生成，记录操作步骤和关键信息。你可以直接使用或按需编辑。"
+                        else -> "此技能由 Agent 在完成一次任务后自动沉淀生成，总结执行经验以便后续复用。你可以直接使用或按需编辑。"
+                    }
                     Spacer(Modifier.height(4.dp))
                     Surface(
                         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -768,7 +783,7 @@ private fun SkillDescriptionDialog(
                                 tint = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                             Text(
-                                text = "此技能由 Agent 在完成一次任务后自动沉淀生成，总结执行经验以便后续复用。你可以直接使用或按需编辑。",
+                                text = autoMessage,
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer,
                                 lineHeight = 18.sp
