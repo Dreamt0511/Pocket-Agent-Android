@@ -465,11 +465,11 @@ private fun TermuxStatusCard(
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     )
-                    if (embedResult != null) {
+                    embedResult?.let { embed ->
                         Text(
-                            text = embedResult!!,
+                            text = embed,
                             fontSize = 11.5.sp,
-                            color = if (embedResult!!.contains("运行中")) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                            color = if (embed.contains("运行中")) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                                     else MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                         )
                     }

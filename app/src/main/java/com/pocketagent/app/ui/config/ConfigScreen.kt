@@ -577,8 +577,9 @@ fun ConfigScreen(navController: NavController) {
     }
 
     // 版本回退确认弹窗
-    if (pendingRollback != null) {
-        val entry = pendingRollback!!
+    val pendingEntry = pendingRollback
+    if (pendingEntry != null) {
+        val entry = pendingEntry
         val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
             .format(java.util.Date(entry.timestamp))
         AlertDialog(
