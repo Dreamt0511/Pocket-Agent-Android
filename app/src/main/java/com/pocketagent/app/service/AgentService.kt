@@ -27,6 +27,7 @@ class AgentService : Service() {
         const val CHANNEL_ID = "agent_service_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.pocketagent.app.action.STOP"
+        private const val HEARTBEAT_INTERVAL = 30_000L // 30 秒
 
         // 状态流，供 UI 层订阅
         val serviceState = MutableStateFlow(ServiceState.IDLE)
@@ -39,7 +40,9 @@ class AgentService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val taskQueue = ConcurrentLinkedQueue<TaskItem>()
     private var healthCheckJob: Job? = null
-    private var heartbeatJob: Job? = null
+    private var heartbeatThread: Thread? = null
+    @Volatile
+    private var heartbeatRunning = false
 
     enum class ServiceState {
         IDLE, RUNNING, ERROR
@@ -69,9 +72,14 @@ class AgentService : Service() {
         // 启动心跳保活（独立于任务，确保 app 切后台时 uvicorn 不会因心跳超时关闭）
         startHeartbeat()
 
-        // 仅在有任务时才获取 WakeLock 和启动健康监控
-        if (prompt.isNotBlank()) {
+        // 获取 WakeLock 保证心跳在后台能正常运行
+        // 如果已有 WakeLock 且未释放，不重复获取
+        if (wakeLock == null || !wakeLock!!.isHeld) {
             acquireWakeLock()
+        }
+
+        // 仅在有任务时才启动健康监控和处理队列
+        if (prompt.isNotBlank()) {
             startHealthMonitor()
             taskQueue.add(TaskItem(
                 id = "task_${System.currentTimeMillis()}",
@@ -141,7 +149,9 @@ class AgentService : Service() {
             PowerManager.PARTIAL_WAKE_LOCK,
             "PocketAgent:TaskWakeLock"
         ).apply {
-            acquire(10 * 60 * 1000L) // 10 分钟超时
+            // 不设置超时，由服务生命周期管理
+            // 在 onDestroy 和 onTaskRemoved 中释放
+            acquire()
         }
     }
 
@@ -160,13 +170,32 @@ class AgentService : Service() {
     }
 
     private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = serviceScope.launch {
-            while (isActive) {
-                delay(30_000) // 每 30 秒
-                try { TermuxServiceClient.heartbeat() } catch (_: Exception) {}
+        stopHeartbeat()
+        heartbeatRunning = true
+        heartbeatThread = Thread({
+            while (heartbeatRunning) {
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL)
+                    if (heartbeatRunning) {
+                        TermuxServiceClient.heartbeat()
+                    }
+                } catch (e: InterruptedException) {
+                    // 线程被中断，退出循环
+                    break
+                } catch (_: Exception) {
+                    // 心跳失败，继续尝试
+                }
             }
+        }, "HeartbeatThread").apply {
+            isDaemon = true
+            start()
         }
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatRunning = false
+        heartbeatThread?.interrupt()
+        heartbeatThread = null
     }
 
     private fun processQueue() {
@@ -186,10 +215,8 @@ class AgentService : Service() {
 
             serviceState.value = ServiceState.IDLE
             currentTask.value = ""
-            wakeLock?.release()
-            wakeLock = null
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            // 不释放 WakeLock 和停止服务，保持心跳运行
+            // 服务会在 onTaskRemoved 或用户手动停止时关闭
         }
     }
 
@@ -214,7 +241,7 @@ class AgentService : Service() {
     }
 
     override fun onDestroy() {
-        heartbeatJob?.cancel()
+        stopHeartbeat()
         healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.destroy()
@@ -224,7 +251,7 @@ class AgentService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        heartbeatJob?.cancel()
+        stopHeartbeat()
         healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.destroy()
