@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.navigation.NavController
 import com.pocketagent.app.core.SkillManager
+import com.pocketagent.app.core.TermuxServiceClient
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
 import com.pocketagent.app.ui.theme.GlassCard
@@ -316,17 +317,40 @@ fun SkillsScreen(navController: NavController) {
             onSave = { name, description, content ->
                 scope.launch {
                     if (editSkill != null) {
-                        // 编辑：本地更新 + 记录修改
-                        SkillManager.updateSkill(editSkill!!.path, name, description, content)
-                        settingsRepo.addModifiedSkill(editSkill!!.path)
-                        val updated = editSkill!!.copy(name = name, description = description, content = content)
-                        allSkills = allSkills.map { if (it.path == updated.path) updated else it }
+                        // 编辑：通过 API 更新
+                        when (val r = TermuxServiceClient.updateSkill(editSkill!!.path, name, description, content)) {
+                            is TermuxServiceClient.SkillCrudResult.Ok -> {
+                                settingsRepo.addModifiedSkill(editSkill!!.path)
+                                val updated = editSkill!!.copy(name = name, description = description, content = content)
+                                allSkills = allSkills.map { if (it.path == updated.path) updated else it }
+                                snackbarHostState.showSnackbar("技能已更新")
+                            }
+                            is TermuxServiceClient.SkillCrudResult.Error -> {
+                                snackbarHostState.showSnackbar("更新失败: ${r.message}")
+                            }
+                        }
                     } else {
-                        // 新建：本地创建
-                        val created = SkillManager.createSkill(name, description, content, currentCategory)
-                        if (created != null) allSkills = allSkills + created
+                        // 新建：通过 API 创建
+                        val categoryStr = currentCategory.dirName
+                        when (val r = TermuxServiceClient.createSkill(name, description, content, categoryStr)) {
+                            is TermuxServiceClient.SkillCrudResult.Ok -> {
+                                val newSkill = SkillManager.Skill(
+                                    name = name,
+                                    description = description,
+                                    category = currentCategory,
+                                    path = r.path,
+                                    content = "---\nname: $name\ndescription: $description\n---\n\n$content",
+                                    tagLabel = "用户"
+                                )
+                                allSkills = allSkills + newSkill
+                                skills = allSkills.filter { it.category == currentCategory }
+                                snackbarHostState.showSnackbar("技能已创建")
+                            }
+                            is TermuxServiceClient.SkillCrudResult.Error -> {
+                                snackbarHostState.showSnackbar("创建失败: ${r.message}")
+                            }
+                        }
                     }
-                    skills = allSkills.filter { it.category == currentCategory }
                     showSkillDialog = false
                     editSkill = null
                 }
