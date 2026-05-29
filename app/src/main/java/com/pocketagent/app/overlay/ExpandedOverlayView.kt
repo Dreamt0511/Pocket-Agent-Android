@@ -207,7 +207,7 @@ class ExpandedOverlayView(
 
         terminalText = TextView(context).apply {
             setTextColor(Color.parseColor("#CCE0E0E0"))
-            textSize = 11f
+            textSize = initialFontSize
             typeface = android.graphics.Typeface.MONOSPACE
             setLineSpacing(2f, 1f)
             text = "$ Pocket Agent 就绪\n"

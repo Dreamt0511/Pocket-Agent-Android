@@ -236,9 +236,9 @@ class OverlayService : Service() {
         // 保存展开窗状态，下次展开时恢复
         if (::expandedView.isInitialized) {
             val currentFontSize = expandedView.getFontSizeSp()
-            // 直接从 view 的实际布局参数获取宽高
-            val currentWidth = expandedView.width
-            val currentHeight = expandedView.height
+            // 从 expandedParams 读取宽高，避免 updateViewLayout 异步布局导致 view 尺寸未同步
+            val currentWidth = expandedParams?.width ?: expandedView.width
+            val currentHeight = expandedParams?.height ?: expandedView.height
 
             getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit().apply {
                 if (currentWidth > 0) putInt("expanded_width", currentWidth)
