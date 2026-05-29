@@ -462,11 +462,24 @@ fun ConfigScreen(navController: NavController) {
                     ) { Text("保存配置") }
                 }
 
-                // ===== 代码更新 =====
-                SectionCard(title = "代码更新") {
+                // ===== 主库代码更新 =====
+                SectionCard(title = "主库代码更新") {
                     val codeVersion = localCodeVersion.ifBlank { "未连接" }
 
                     Text("当前版本: $codeVersion", fontSize = 14.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "App 更新请前往: github.com/Dreamt0511/Pocket-Agent-Android/releases",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                        modifier = Modifier.clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                data = android.net.Uri.parse("https://github.com/Dreamt0511/Pocket-Agent-Android/releases")
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
                     Spacer(Modifier.height(8.dp))
 
                     if (remoteVersion != null) {
