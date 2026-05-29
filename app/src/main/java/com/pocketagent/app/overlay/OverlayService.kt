@@ -459,6 +459,15 @@ class OverlayService : Service() {
     // ─── 公开 API ────────────────────────────────────
 
     fun hideAll() {
+        // 隐藏前保存展开窗状态，确保重新打开时恢复用户设置
+        expandedParams?.let { params ->
+            getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit()
+                .putInt("expanded_width", params.width)
+                .putInt("expanded_height", params.height)
+                .putFloat("font_size", if (::expandedView.isInitialized) expandedView.getFontSizeSp() else 11f)
+                .apply()
+        }
+
         try { stopForeground(true) } catch (_: Exception) {}
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         expandedParams?.let { if (::expandedView.isInitialized) try { windowManager.removeView(expandedView) } catch (_: Exception) {} }
