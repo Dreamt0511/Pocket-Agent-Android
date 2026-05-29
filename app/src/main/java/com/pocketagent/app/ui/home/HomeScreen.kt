@@ -403,27 +403,29 @@ private fun TermuxStatusCard(
     val isLaunching by ScriptProgress.isLaunching.collectAsState()
     val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
 
-    // 服务运行时长
-    var uptimeSeconds by remember { mutableStateOf(0L) }
+    // 服务运行时长（App 端累加，每秒更新）
+    var startTimeMs by remember { mutableStateOf(0L) }
     var uptimeText by remember { mutableStateOf("") }
 
-    // 定时刷新运行时长（每 10 秒）
+    // 首次获取启动时间，之后每秒累加
     LaunchedEffect(Unit) {
+        try {
+            val startedAt = TermuxServiceClient.fetchStartTime()
+            if (startedAt > 0) {
+                // started_at 是 Unix 时间戳（秒），转换为毫秒
+                startTimeMs = startedAt * 1000
+            }
+        } catch (_: Exception) {}
+
+        // 每秒更新显示
         while (true) {
-            try {
-                val uptime = TermuxServiceClient.fetchUptime()
-                if (uptime > 0) {
-                    uptimeSeconds = uptime
-                    uptimeText = formatUptime(uptime)
-                } else {
-                    uptimeSeconds = 0
-                    uptimeText = ""
-                }
-            } catch (_: Exception) {
-                uptimeSeconds = 0
+            if (startTimeMs > 0) {
+                val elapsed = (System.currentTimeMillis() - startTimeMs) / 1000
+                uptimeText = formatUptime(elapsed)
+            } else {
                 uptimeText = ""
             }
-            kotlinx.coroutines.delay(10000)
+            delay(1000)
         }
     }
 

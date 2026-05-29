@@ -71,15 +71,16 @@ object TermuxServiceClient {
         }
     }
 
-    // ─── 获取服务运行时长 ─────────────────
+    // ─── 获取服务启动时间戳 ─────────────────
+    // 只请求一次，App 端自己累加运行时长
 
-    suspend fun fetchUptime(): Long = withContext(Dispatchers.IO) {
+    suspend fun fetchStartTime(): Long = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url("$BASE_URL/uptime").build()
             val response = shortTimeoutClient.newCall(request).execute()
             if (response.isSuccessful) {
                 val json = org.json.JSONObject(response.body?.string() ?: "{}")
-                json.optLong("uptime_seconds", 0)
+                json.optLong("started_at", 0).toLong()
             } else {
                 0
             }
