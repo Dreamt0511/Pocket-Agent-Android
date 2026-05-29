@@ -88,7 +88,7 @@ fun ConfigScreen(navController: NavController) {
         ConfigManager.ensureEnvFile()
         try {
             val ds = settingsRepo.getSettings()
-            // 只覆盖非空值，避免 DataStore 默认空值清掉 .env 中的配置
+            // 从 DataStore 加载配置，覆盖远程默认值
             val fromDataStore = mutableMapOf(
                 "LLM_TEMPERATURE" to ds.llmTemperature.toString(),
                 "LLM_MAX_TOKENS" to ds.llmMaxTokens.toString(),
@@ -97,6 +97,10 @@ fun ConfigScreen(navController: NavController) {
             if (ds.llmApiKey.isNotBlank()) fromDataStore["LLM_API_KEY"] = ds.llmApiKey
             if (ds.llmModel.isNotBlank()) fromDataStore["LLM_MODEL"] = ds.llmModel
             if (ds.mcpServerUrl.isNotBlank()) fromDataStore["MCP_SERVER_URL"] = ds.mcpServerUrl
+            // 嵌入模型路径：优先使用 DataStore 中的值
+            if (ds.embeddingModelPath.isNotBlank()) {
+                fromDataStore["EMBEDDING_MODEL_PATH"] = ds.embeddingModelPath
+            }
             configMap = ConfigManager.loadAll() + fromDataStore
         } catch (_: Exception) {
             configMap = ConfigManager.loadAll()
@@ -468,17 +472,31 @@ fun ConfigScreen(navController: NavController) {
 
                     Text("当前版本: $codeVersion", fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "App 更新请前往: github.com/Dreamt0511/Pocket-Agent-Android/releases",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                        modifier = Modifier.clickable {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                data = android.net.Uri.parse("https://github.com/Dreamt0511/Pocket-Agent-Android/releases")
-                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(intent)
+                    val linkText = "App 更新请前往: github.com/Dreamt0511/Pocket-Agent-Android/releases"
+                    val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
+                        append("App 更新请前往: ")
+                        pushStringAnnotation(tag = "URL", annotation = "https://github.com/Dreamt0511/Pocket-Agent-Android/releases")
+                        withStyle(style = androidx.compose.ui.text.SpanStyle(
+                            color = MaterialTheme.colorScheme.primary,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                        )) {
+                            append("github.com/Dreamt0511/Pocket-Agent-Android/releases")
                         }
+                        pop()
+                    }
+                    androidx.compose.foundation.text.ClickableText(
+                        text = annotatedString,
+                        onClick = { offset ->
+                            annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                .firstOrNull()?.let { annotation ->
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.parse(annotation.item)
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                        },
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
                     )
                     Spacer(Modifier.height(8.dp))
 

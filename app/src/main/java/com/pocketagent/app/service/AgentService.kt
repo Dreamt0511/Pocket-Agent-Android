@@ -260,14 +260,19 @@ class AgentService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        stopHeartbeat()
-        healthCheckJob?.cancel()
-        serviceScope.cancel()
-        agentDaemon?.destroy()
-        TermuxLauncher.stopFastAPI(this)
-        wakeLock?.let { if (it.isHeld) it.release() }
-        wakeLock = null
-        stopSelf()
+        // rootIntent 不为 null 表示用户主动从最近任务列表滑掉 App
+        if (rootIntent != null) {
+            // 用户主动清除 App，关闭服务
+            stopHeartbeat()
+            healthCheckJob?.cancel()
+            serviceScope.cancel()
+            agentDaemon?.destroy()
+            TermuxLauncher.stopFastAPI(this)
+            wakeLock?.let { if (it.isHeld) it.release() }
+            wakeLock = null
+            stopSelf()
+        }
+        // rootIntent 为 null 表示系统杀死，不主动关闭服务
         super.onTaskRemoved(rootIntent)
     }
 }
