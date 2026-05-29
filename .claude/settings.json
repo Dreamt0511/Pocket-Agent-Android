@@ -6,11 +6,6 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(*git push*)",
-            "command": "echo '{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"Android 仓库推送前必须征得用户同意。请让用户确认。\"}}'"
-          },
-          {
-            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-termux.sh"
           }
         ]

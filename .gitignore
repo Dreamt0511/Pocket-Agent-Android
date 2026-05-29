@@ -45,6 +45,7 @@ BUILD_CHECKLIST.md
 # Claude Code
 .claude/settings.local.json
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 .superpowers/
 CLAUDE.md
 CLAUDE.md.bak
