@@ -206,9 +206,7 @@ fun HistoryScreen(navController: NavController) {
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        conversations.forEach { conv ->
-                            TermuxServiceClient.deleteConversation(conv.id)
-                        }
+                        TermuxServiceClient.clearAllConversations()
                         loadConversations()
                     }
                     showDeleteAllDialog = false

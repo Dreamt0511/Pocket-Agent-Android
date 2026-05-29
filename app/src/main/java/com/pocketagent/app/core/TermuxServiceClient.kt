@@ -567,6 +567,20 @@ object TermuxServiceClient {
         }
     }
 
+    suspend fun clearAllConversations(): DeleteResult = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$BASE_URL/conversations/all")
+                .delete()
+                .build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) DeleteResult.Ok
+            else DeleteResult.Error("HTTP ${response.code}")
+        } catch (e: Exception) {
+            DeleteResult.Error(e.message ?: "连接失败")
+        }
+    }
+
     // ─── 结果类型 ───────────────────────
 
     sealed class HealthResult {
