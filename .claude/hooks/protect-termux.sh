@@ -8,4 +8,10 @@ if [[ "$COMMAND" == *"/data/data/com.termux/"* ]] && [[ "$COMMAND" == *"git "* ]
   exit 2
 fi
 
+# 阻止 Android 仓库推送（需要用户确认）
+if [[ "$COMMAND" == *"git push"* ]] && [[ "$COMMAND" == *"Pocket-Agent-Android"* ]]; then
+  echo "已阻止: Android 仓库推送前必须征得用户同意。请让用户确认。" >&2
+  exit 2
+fi
+
 exit 0
