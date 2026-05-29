@@ -18,6 +18,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
@@ -146,10 +150,13 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             val isKeyboardVisible = heightDiff > rootView.height * 0.15
             if (isKeyboardVisible && !wasKeyboardVisible && messages.isNotEmpty()) {
                 scope.launch {
-                    delay(280) // 等键盘动画完成
+                    delay(350) // 等键盘动画完成
                     try {
                         val lastIdx = messages.lastIndex
-                        if (lastIdx >= 0) listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
+                        if (lastIdx >= 0) {
+                            // 使用 scrollToItem 而不是 animateScrollToItem，避免与键盘动画冲突
+                            listState.scrollToItem(lastIdx)
+                        }
                     } catch (_: Exception) {}
                 }
             }
@@ -199,16 +206,13 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         navController.popBackStack()
     }
 
+    // 流式输出时更新消息文本
     LaunchedEffect(streamText) {
         if (isProcessing && messages.isNotEmpty()) {
             val lastIdx = messages.size - 1
             val lastMsg = messages[lastIdx]
             if (!lastMsg.isUser && streamText.isNotEmpty() && lastMsg.text != streamText) {
                 messages[lastIdx] = messages[lastIdx].copy(text = streamText)
-                // 流式文本增长时自动滚动到底部
-                try {
-                    listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
-                } catch (_: Exception) {}
             }
         }
     }
@@ -229,6 +233,30 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 list[list.lastIndex] = OverlayService.OverlayMessage(text = last.text, isUser = last.isUser)
                 OverlayService.conversationMessages.value = list
             }
+        }
+    }
+
+    // 统一的自动滚动逻辑：防抖 + 只在接近底部时滚动
+    var isNearBottom by remember { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val visibleItems = info.visibleItemsInfo
+            if (visibleItems.isEmpty()) true
+            else {
+                val lastVisible = visibleItems.last().index
+                val totalItems = info.totalItemsCount
+                lastVisible >= totalItems - 2
+            }
+        }
+        .distinctUntilChanged()
+        .collect { nearBottom -> isNearBottom = nearBottom }
+    }
+
+    // 消息数变化或流式输出时，平滑滚动到底部
+    LaunchedEffect(messages.size, streamText) {
+        if (isNearBottom && messages.isNotEmpty()) {
+            listState.scrollToItem(messages.lastIndex)
         }
     }
 
@@ -363,16 +391,6 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             ) {
                 items(messages) { message ->
                     ChatMessageItem(message, isProcessing)
-                }
-            }
-
-            // 自动滚动到底部（新消息时触发）
-            LaunchedEffect(messages.size) {
-                if (messages.isNotEmpty()) {
-                    try {
-                        val lastIdx = messages.lastIndex
-                        if (lastIdx >= 0) listState.animateScrollToItem(lastIdx, scrollOffset = Int.MAX_VALUE)
-                    } catch (_: Exception) {}
                 }
             }
         }

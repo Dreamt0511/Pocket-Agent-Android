@@ -5,7 +5,7 @@
 ## 核心功能
 
 - **AI 对话**：连接 Termux 中运行的 Python 后端（FastAPI），通过 SSE 流式输出 AI 回复
-- **全局悬浮窗**：系统级悬浮球 + 终端卡片，退出 App 后仍可监控 Agent 执行
+- **全局悬浮窗**：系统级悬浮球 + 终端卡片，退出 App 后仍可监控 Agent 执行。悬浮窗基于独立窗口层级，不会被 NeuralBridge 的 `android_get_ui_tree` 获取到，因此不会干扰子 Agent 的 UI 自动化操作——用户可以实时监控执行过程，同时 Agent 能"看不见"悬浮窗地正常操控屏幕
 - **任务队列**：后台服务保活，单任务串行执行，支持排队和取消
 - **语音输入**：内置语音识别
 - **MCP 联动**：通过独立的 [NeuralBridge MCP](https://github.com/dondetir/NeuralBridge_mcp) 服务操控手机（无障碍/触控），本项目不内置无障碍实现
