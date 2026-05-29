@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import com.pocketagent.app.MainActivity
 import com.pocketagent.app.R
 import com.pocketagent.app.core.AgentDaemon
+import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.core.TermuxServiceClient
 import kotlinx.coroutines.*
@@ -173,17 +174,25 @@ class AgentService : Service() {
         stopHeartbeat()
         heartbeatRunning = true
         heartbeatThread = Thread({
+            var failCount = 0
             while (heartbeatRunning) {
                 try {
                     Thread.sleep(HEARTBEAT_INTERVAL)
                     if (heartbeatRunning) {
                         TermuxServiceClient.heartbeatSync()
+                        failCount = 0  // 心跳成功，重置失败计数
                     }
                 } catch (e: InterruptedException) {
                     // 线程被中断，退出循环
                     break
                 } catch (_: Exception) {
-                    // 心跳失败，继续尝试
+                    // 心跳失败
+                    failCount++
+                    // 连续失败 3 次（约 90 秒），标记为断开连接
+                    if (failCount >= 3) {
+                        AppBootstrapper.markDisconnected()
+                        failCount = 0  // 重置，避免重复调用
+                    }
                 }
             }
         }, "HeartbeatThread").apply {
