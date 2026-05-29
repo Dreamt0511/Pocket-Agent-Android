@@ -236,10 +236,10 @@ class OverlayService : Service() {
         // 保存展开窗状态，下次展开时恢复
         if (::expandedView.isInitialized) {
             val currentFontSize = expandedView.getFontSizeSp()
-            val currentWidth = expandedParams?.width ?: 0
-            val currentHeight = expandedParams?.height ?: 0
+            // 直接从 view 的实际布局参数获取宽高
+            val currentWidth = expandedView.width
+            val currentHeight = expandedView.height
 
-            // 只有当有有效值时才保存，避免覆盖之前保存的状态
             getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit().apply {
                 if (currentWidth > 0) putInt("expanded_width", currentWidth)
                 if (currentHeight > 0) putInt("expanded_height", currentHeight)
@@ -393,16 +393,13 @@ class OverlayService : Service() {
         miniParams?.let { try { windowManager.removeView(miniView) } catch (_: Exception) {} }
         miniParams = null
 
-        // 缩小前保存当前展开状态
-        val savedFontSize = if (::expandedView.isInitialized) expandedView.getFontSizeSp() else 0f
-
         if (expandedParams == null) {
             val prefs = getSharedPreferences("overlay_prefs", MODE_PRIVATE)
             val defaultW = (screenWidth * 0.9).toInt()
             val defaultH = (screenHeight * 0.4).toInt()
             val savedW = prefs.getInt("expanded_width", defaultW)
             val savedH = prefs.getInt("expanded_height", defaultH)
-            val savedFs = if (savedFontSize > 0f) savedFontSize else prefs.getFloat("font_size", 11f)
+            val savedFs = prefs.getFloat("font_size", 11f)
 
             expandedView = ExpandedOverlayView(
                 context = this,
