@@ -382,7 +382,8 @@ object TermuxServiceClient {
             }
 
             val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.TermuxService")
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                action = "com.termux.RUN_COMMAND"
                 putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
@@ -429,7 +430,8 @@ object TermuxServiceClient {
             val context = AppBootstrapper.getContext()
             val script = "cd ~/Pocket-Agent && git rev-parse HEAD >~/version.txt 2>/dev/null"
             val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.TermuxService")
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                action = "com.termux.RUN_COMMAND"
                 putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
@@ -449,7 +451,8 @@ object TermuxServiceClient {
                 append("cd ~/Pocket-Agent && git log --oneline --format='%H|%s|%at' -10 >~/version_history.txt 2>/dev/null")
             }
             val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.TermuxService")
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                action = "com.termux.RUN_COMMAND"
                 putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
@@ -489,7 +492,8 @@ object TermuxServiceClient {
                 append("} >~/rollback.log 2>&1")
             }
             val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.TermuxService")
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                action = "com.termux.RUN_COMMAND"
                 putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
