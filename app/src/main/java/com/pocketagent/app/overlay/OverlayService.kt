@@ -234,13 +234,19 @@ class OverlayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) return
 
         // 保存展开窗状态，下次展开时恢复
-        expandedParams?.let { params ->
-            getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit()
-                .putInt("expanded_width", params.width)
-                .putInt("expanded_height", params.height)
-                .putFloat("font_size", if (::expandedView.isInitialized) expandedView.getFontSizeSp() else 11f)
-                .apply()
-            if (::expandedView.isInitialized) try { windowManager.removeView(expandedView) } catch (_: Exception) {}
+        if (::expandedView.isInitialized) {
+            val currentFontSize = expandedView.getFontSizeSp()
+            val currentWidth = expandedParams?.width ?: 0
+            val currentHeight = expandedParams?.height ?: 0
+
+            // 只有当有有效值时才保存，避免覆盖之前保存的状态
+            getSharedPreferences("overlay_prefs", MODE_PRIVATE).edit().apply {
+                if (currentWidth > 0) putInt("expanded_width", currentWidth)
+                if (currentHeight > 0) putInt("expanded_height", currentHeight)
+                if (currentFontSize > 0f) putFloat("font_size", currentFontSize)
+                apply()
+            }
+            try { windowManager.removeView(expandedView) } catch (_: Exception) {}
         }
         expandedParams = null
 
@@ -302,10 +308,12 @@ class OverlayService : Service() {
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     isDragging = false
-                    // 半隐藏状态下点击，先拉出来
+                    // 半隐藏状态下点击，先拉出来，然后展开
                     if (isMiniHalfHidden) {
                         isMiniHalfHidden = false
                         snapMiniToEdge(view, fullyVisible = true)
+                        // 延迟一下再展开，让动画完成
+                        view.postDelayed({ showExpanded() }, 200)
                         return@setOnTouchListener true
                     }
                     initialX = miniParams!!.x
