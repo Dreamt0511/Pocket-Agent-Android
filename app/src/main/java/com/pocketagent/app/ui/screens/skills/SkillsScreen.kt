@@ -1,6 +1,7 @@
 package com.pocketagent.app.ui.screens.skills
 
 import android.os.Environment
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -78,11 +79,55 @@ fun SkillsScreen(navController: NavController) {
         else -> SkillManager.Category.MAIN_SKILLS
     }
 
-    // 页面初次加载：从本地读取技能，过滤已删除的
+    // 从 API 加载技能列表
+    suspend fun loadSkillsFromApi(): List<SkillManager.Skill> {
+        return when (val result = TermuxServiceClient.fetchSkills()) {
+            is TermuxServiceClient.SkillsResult.Ok -> {
+                try {
+                    val json = org.json.JSONObject(result.body)
+                    val skillsList = mutableListOf<SkillManager.Skill>()
+
+                    fun parseCategory(categoryKey: String, category: SkillManager.Category) {
+                        val arr = json.optJSONArray(categoryKey) ?: return
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.getJSONObject(i)
+                            val name = obj.optString("name", "")
+                            val description = obj.optString("description", "")
+                            val content = obj.optString("content", "")
+                            val path = obj.optString("path", "")
+                            val isUser = path.contains("/user/")
+                            skillsList.add(SkillManager.Skill(
+                                name = name,
+                                description = description,
+                                category = category,
+                                path = path,
+                                content = content,
+                                tagLabel = if (isUser) "用户" else "系统"
+                            ))
+                        }
+                    }
+
+                    parseCategory("main_skills", SkillManager.Category.MAIN_SKILLS)
+                    parseCategory("executor_skills", SkillManager.Category.EXECUTOR_SKILLS)
+                    parseCategory("auto_skills", SkillManager.Category.AUTO_SKILLS)
+                    skillsList
+                } catch (e: Exception) {
+                    Log.e("SkillsScreen", "Failed to parse skills", e)
+                    emptyList()
+                }
+            }
+            is TermuxServiceClient.SkillsResult.Error -> {
+                Log.e("SkillsScreen", "Failed to fetch skills: ${result.message}")
+                emptyList()
+            }
+        }
+    }
+
+    // 页面初次加载：从 API 获取技能
     LaunchedEffect(Unit) {
         isLoading = true
         deletedPaths = settingsRepo.getDeletedSkills()
-        val loaded = SkillManager.getAllSkills().filter { it.path !in deletedPaths }
+        val loaded = loadSkillsFromApi().filter { it.path !in deletedPaths }
         allSkills = loaded
         skills = loaded.filter { it.category == currentCategory }
         isLoading = false
@@ -182,7 +227,7 @@ fun SkillsScreen(navController: NavController) {
                             scope.launch {
                                 isLoading = true
                                 deletedPaths = settingsRepo.getDeletedSkills()
-                                val loaded = SkillManager.getAllSkills().filter { it.path !in deletedPaths }
+                                val loaded = loadSkillsFromApi().filter { it.path !in deletedPaths }
                                 allSkills = loaded
                                 skills = loaded.filter { it.category == currentCategory }
                                 isLoading = false
@@ -383,12 +428,19 @@ fun SkillsScreen(navController: NavController) {
                     onClick = {
                         val toDelete = showDeleteConfirm!!
                         scope.launch {
-                            SkillManager.deleteSkill(toDelete.path)
-                            settingsRepo.addDeletedSkill(toDelete.path)
-                            deletedPaths = deletedPaths + toDelete.path
+                            when (val r = TermuxServiceClient.deleteSkill(toDelete.path)) {
+                                is TermuxServiceClient.SkillCrudResult.Ok -> {
+                                    settingsRepo.addDeletedSkill(toDelete.path)
+                                    deletedPaths = deletedPaths + toDelete.path
+                                    allSkills = allSkills.filter { it.path != toDelete.path }
+                                    skills = allSkills.filter { it.category == currentCategory }
+                                    snackbarHostState.showSnackbar("技能已删除")
+                                }
+                                is TermuxServiceClient.SkillCrudResult.Error -> {
+                                    snackbarHostState.showSnackbar("删除失败: ${r.message}")
+                                }
+                            }
                             showDeleteConfirm = null
-                            allSkills = allSkills.filter { it.path != toDelete.path }
-                            skills = allSkills.filter { it.category == currentCategory }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
