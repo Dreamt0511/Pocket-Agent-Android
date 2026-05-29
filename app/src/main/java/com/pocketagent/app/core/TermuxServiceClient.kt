@@ -376,8 +376,13 @@ object TermuxServiceClient {
         }
     }
 
-    /** 心跳 — 告知服务端 App 还活着 */
+    /** 心跳 — 告知服务端 App 还活着（suspend 版本） */
     suspend fun heartbeat() = withContext(Dispatchers.IO) {
+        heartbeatSync()
+    }
+
+    /** 心跳 — 告知服务端 App 还活着（同步版本，可在普通线程调用） */
+    fun heartbeatSync() {
         try {
             val body = "{}".toRequestBody("application/json".toMediaType())
             val request = Request.Builder().url("$BASE_URL/heartbeat").post(body).build()

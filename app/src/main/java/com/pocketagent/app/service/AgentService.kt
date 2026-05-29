@@ -177,7 +177,7 @@ class AgentService : Service() {
                 try {
                     Thread.sleep(HEARTBEAT_INTERVAL)
                     if (heartbeatRunning) {
-                        TermuxServiceClient.heartbeat()
+                        TermuxServiceClient.heartbeatSync()
                     }
                 } catch (e: InterruptedException) {
                     // 线程被中断，退出循环
