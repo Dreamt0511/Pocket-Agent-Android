@@ -1,5 +1,6 @@
 package com.pocketagent.app.core
 
+import android.content.Intent
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -361,7 +362,7 @@ object TermuxServiceClient {
     suspend fun triggerSync(mirrorUrl: String = ""): SyncResult = withContext(Dispatchers.IO) {
         try {
             // 通过 Termux Intent 执行 git pull，不依赖 HTTP 服务
-            val context = AppBootstrapper.instance
+            val context = AppBootstrapper.getContext()
             val script = buildString {
                 append("{\n")
                 append("  cd ~/Pocket-Agent || exit 1\n")
@@ -425,7 +426,7 @@ object TermuxServiceClient {
     /** 从 Termux 获取当前代码版本（git commit SHA） */
     suspend fun fetchVersion(): String = withContext(Dispatchers.IO) {
         try {
-            val context = AppBootstrapper.instance
+            val context = AppBootstrapper.getContext()
             val script = "cd ~/Pocket-Agent && git rev-parse HEAD >~/version.txt 2>/dev/null"
             val intent = Intent("com.termux.RUN_COMMAND").apply {
                 setClassName("com.termux", "com.termux.app.TermuxService")
@@ -443,7 +444,7 @@ object TermuxServiceClient {
     /** 从 Termux 获取版本历史 */
     suspend fun fetchVersionHistory(): List<VersionEntry> = withContext(Dispatchers.IO) {
         try {
-            val context = AppBootstrapper.instance
+            val context = AppBootstrapper.getContext()
             val script = buildString {
                 append("cd ~/Pocket-Agent && git log --oneline --format='%H|%s|%at' -10 >~/version_history.txt 2>/dev/null")
             }
@@ -473,7 +474,7 @@ object TermuxServiceClient {
     /** 回退到指定版本 */
     suspend fun rollbackVersion(sha: String): RollbackResult = withContext(Dispatchers.IO) {
         try {
-            val context = AppBootstrapper.instance
+            val context = AppBootstrapper.getContext()
             val script = buildString {
                 append("{\n")
                 append("  cd ~/Pocket-Agent || exit 1\n")

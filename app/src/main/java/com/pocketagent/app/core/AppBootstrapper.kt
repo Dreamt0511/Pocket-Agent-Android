@@ -97,7 +97,7 @@ object AppBootstrapper {
 
     private var appContext: Context? = null
 
-    private fun getContext(): Context {
+    fun getContext(): Context {
         return appContext ?: throw IllegalStateException("AppBootstrapper not initialized")
     }
 }
