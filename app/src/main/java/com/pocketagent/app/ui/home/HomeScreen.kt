@@ -7,6 +7,7 @@ import androidx.compose.ui.res.painterResource
 import com.pocketagent.app.R
 import android.net.Uri
 import androidx.compose.animation.core.*
+import kotlinx.coroutines.delay
 
 
 import androidx.compose.foundation.background
@@ -402,6 +403,30 @@ private fun TermuxStatusCard(
     val isLaunching by ScriptProgress.isLaunching.collectAsState()
     val statusText = testResult ?: launchStatus ?: "点击测试连接 Termux 服务"
 
+    // 服务运行时长
+    var uptimeSeconds by remember { mutableStateOf(0L) }
+    var uptimeText by remember { mutableStateOf("") }
+
+    // 定时刷新运行时长（每 10 秒）
+    LaunchedEffect(Unit) {
+        while (true) {
+            try {
+                val uptime = TermuxServiceClient.fetchUptime()
+                if (uptime > 0) {
+                    uptimeSeconds = uptime
+                    uptimeText = formatUptime(uptime)
+                } else {
+                    uptimeSeconds = 0
+                    uptimeText = ""
+                }
+            } catch (_: Exception) {
+                uptimeSeconds = 0
+                uptimeText = ""
+            }
+            kotlinx.coroutines.delay(10000)
+        }
+    }
+
     val launchService: () -> Unit = {
         scope.launch { settingsRepo.setServiceStopRequested(false) }
         onLaunch(currentMirrorUrl)
@@ -465,6 +490,13 @@ private fun TermuxStatusCard(
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     )
+                    if (uptimeText.isNotEmpty()) {
+                        Text(
+                            text = "运行时长: $uptimeText",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        )
+                    }
                     embedResult?.let { embed ->
                         Text(
                             text = embed,
@@ -667,6 +699,26 @@ private fun TermuxStatusCard(
                 )
             }
         }
+    }
+}
+
+/**
+ * 格式化运行时长
+ * 秒数 → "X天X时X分X秒" 或 "X时X分X秒" 或 "X分X秒" 或 "X秒"
+ */
+private fun formatUptime(seconds: Long): String {
+    if (seconds <= 0) return ""
+
+    val days = seconds / 86400
+    val hours = (seconds % 86400) / 3600
+    val minutes = (seconds % 3600) / 60
+    val secs = seconds % 60
+
+    return buildString {
+        if (days > 0) append("${days}天")
+        if (hours > 0) append("${hours}时")
+        if (minutes > 0) append("${minutes}分")
+        if (secs > 0 || isEmpty()) append("${secs}秒")
     }
 }
 

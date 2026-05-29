@@ -71,6 +71,23 @@ object TermuxServiceClient {
         }
     }
 
+    // ─── 获取服务运行时长 ─────────────────
+
+    suspend fun fetchUptime(): Long = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url("$BASE_URL/uptime").build()
+            val response = shortTimeoutClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val json = org.json.JSONObject(response.body?.string() ?: "{}")
+                json.optLong("uptime_seconds", 0)
+            } else {
+                0
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
     // ─── 轮询等待服务就绪 ─────────────────
     // pip install 在手机上可能耗时 2-5 分钟，持续重试直到 uvicorn 响应
 
