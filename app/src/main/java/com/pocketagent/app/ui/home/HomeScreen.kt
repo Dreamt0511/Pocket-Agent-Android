@@ -175,6 +175,7 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
                         currentMirrorUrl = settings?.pypiMirrorUrl ?: "",
                         settingsRepo = settingsRepo,
                         initialSetupDone = initialSetupDone,
+                        daemonStatus = daemonStatus,
                         onLaunch = { mirrorUrl ->
                             TermuxLauncher.launchFastAPI(context, mirrorUrl)
                         }
@@ -389,6 +390,7 @@ private fun TermuxStatusCard(
     currentMirrorUrl: String,
     settingsRepo: SettingsRepository,
     initialSetupDone: Boolean,
+    daemonStatus: AgentDaemon.DaemonStatus,
     onLaunch: (mirrorUrl: String) -> Unit
 ) {
     val context = LocalContext.current
@@ -407,26 +409,29 @@ private fun TermuxStatusCard(
     var startTimeMs by remember { mutableStateOf(0L) }
     var uptimeText by remember { mutableStateOf("") }
 
-    // 首次获取启动时间，之后每秒累加
-    LaunchedEffect(Unit) {
-        try {
-            val startedAt = TermuxServiceClient.fetchStartTime()
-            if (startedAt > 0) {
-                // started_at 是 Unix 时间戳（秒），转换为毫秒
-                startTimeMs = startedAt * 1000
-            }
-        } catch (_: Exception) {}
+    // 服务状态变化时：就绪则获取启动时间，否则清零
+    LaunchedEffect(daemonStatus) {
+        if (daemonStatus is AgentDaemon.DaemonStatus.Ready) {
+            try {
+                val startedAt = TermuxServiceClient.fetchStartTime()
+                if (startedAt > 0) {
+                    startTimeMs = startedAt * 1000
+                }
+            } catch (_: Exception) {}
+        } else {
+            startTimeMs = 0
+            uptimeText = ""
+        }
+    }
 
-        // 每秒更新显示
-        while (true) {
-            if (startTimeMs > 0) {
-                val elapsed = (System.currentTimeMillis() - startTimeMs) / 1000
-                uptimeText = formatUptime(elapsed)
-            } else {
-                uptimeText = ""
-            }
+    // 每秒更新显示
+    LaunchedEffect(startTimeMs) {
+        while (startTimeMs > 0) {
+            val elapsed = (System.currentTimeMillis() - startTimeMs) / 1000
+            uptimeText = formatUptime(elapsed)
             delay(1000)
         }
+        uptimeText = ""
     }
 
     val launchService: () -> Unit = {
