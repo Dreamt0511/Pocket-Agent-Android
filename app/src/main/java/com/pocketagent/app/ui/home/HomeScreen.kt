@@ -497,7 +497,8 @@ private fun TermuxStatusCard(
                         fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                     )
-                    if (uptimeText.isNotEmpty()) {
+                    // 只在启动服务后显示运行时长，测试连接时不显示
+                    if (launchStatus != null && uptimeText.isNotEmpty()) {
                         Text(
                             text = "运行时长: $uptimeText",
                             fontSize = 11.sp,
