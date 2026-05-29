@@ -43,7 +43,8 @@ test_ssl.deb
 BUILD_CHECKLIST.md
 
 # Claude Code
-.claude/
+.claude/settings.local.json
+.claude/worktrees/
 .superpowers/
 CLAUDE.md
 CLAUDE.md.bak
