@@ -16,17 +16,10 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * 更新检查器 — 统一管理代码同步 + APK 自身更新
+ * 更新检查器 — 管理 APK 自身更新
  *
- * 两类更新：
- *  1. 代码更新 (CodeSync): 主仓库 Python 代码 → 动态加载，无需重装 APK
- *  2. APK 更新 (AppUpdate):   APK 自身新版本 → 下载 + 安装
- *
- * 检查优先级：代码更新优先（轻量），APK 更新仅在有重大版本时才提示。
- *
- * 使用方式：
- *   UpdateChecker.init(context, "https://github.com/xxx/pocket-agent")
- *   UpdateChecker.checkAll().collect { event -> ... }
+ * 代码更新由用户通过设置页手动触发 Termux /sync 端点完成。
+ * 此类仅负责 APK 版本检查和下载安装。
  */
 object UpdateChecker {
 
@@ -45,8 +38,6 @@ object UpdateChecker {
     sealed class UpdateEvent {
         object Idle : UpdateEvent()
         object Checking : UpdateEvent()
-        data class CodeUpdateAvailable(val newVersion: String, val changelog: String) : UpdateEvent()
-        data class CodeUpdated(val version: String) : UpdateEvent()
         data class AppUpdateAvailable(val newVersion: String, val downloadUrl: String, val size: Long) : UpdateEvent()
         data class Error(val message: String) : UpdateEvent()
         object UpToDate : UpdateEvent()
