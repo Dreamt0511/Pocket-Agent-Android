@@ -360,19 +360,51 @@ object TermuxServiceClient {
 
     suspend fun triggerSync(mirrorUrl: String = ""): SyncResult = withContext(Dispatchers.IO) {
         try {
-            val json = org.json.JSONObject().apply {
-                put("mirror", mirrorUrl)
+            // 通过 Termux Intent 执行 git pull，不依赖 HTTP 服务
+            val context = AppBootstrapper.instance
+            val script = buildString {
+                append("{\n")
+                append("  cd ~/Pocket-Agent || exit 1\n")
+                append("  echo \"[update] Pulling latest code...\"\n")
+                append("  git pull origin main 2>&1\n")
+                append("  if [ \$? -eq 0 ]; then\n")
+                append("    echo \"[update] Success\"\n")
+                append("    # 检查是否有新依赖\n")
+                append("    if git diff HEAD~1 --name-only 2>/dev/null | grep -q requirements.txt; then\n")
+                append("      echo \"[update] Installing new dependencies...\"\n")
+                append("      pip install -q -r requirements.txt 2>&1\n")
+                append("    fi\n")
+                append("  else\n")
+                append("    echo \"[update] Failed\"\n")
+                append("  fi\n")
+                append("} >~/update.log 2>&1")
             }
-            val body = json.toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder()
-                .url("$BASE_URL/sync")
-                .post(body)
-                .build()
-            val response = shortTimeoutClient.newCall(request).execute()
-            if (response.isSuccessful) SyncResult.Ok(response.body?.string() ?: "")
-            else SyncResult.Error("HTTP ${response.code}")
+
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.TermuxService")
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+            }
+
+            context.startService(intent)
+
+            // 等待执行完成
+            kotlinx.coroutines.delay(5000)
+
+            // 读取日志判断结果
+            val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
+            val logContent = if (logFile.exists()) logFile.readText() else ""
+
+            if (logContent.contains("[update] Success")) {
+                SyncResult.Ok(logContent)
+            } else if (logContent.contains("[update] Failed")) {
+                SyncResult.Error("git pull 失败")
+            } else {
+                SyncResult.Ok("更新命令已发送，请等待完成")
+            }
         } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "连接失败")
+            SyncResult.Error(e.message ?: "执行失败")
         }
     }
 
@@ -390,50 +422,90 @@ object TermuxServiceClient {
         } catch (_: Exception) {}
     }
 
-    /** 从 Termux 服务获取当前代码版本（git commit SHA） */
+    /** 从 Termux 获取当前代码版本（git commit SHA） */
     suspend fun fetchVersion(): String = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url("$BASE_URL/version").build()
-            val response = shortTimeoutClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                org.json.JSONObject(response.body?.string() ?: "{}").optString("version", "")
-            } else ""
+            val context = AppBootstrapper.instance
+            val script = "cd ~/Pocket-Agent && git rev-parse HEAD >~/version.txt 2>/dev/null"
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.TermuxService")
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+            }
+            context.startService(intent)
+            kotlinx.coroutines.delay(2000)
+            val file = java.io.File("/data/data/com.termux/files/home/version.txt")
+            if (file.exists()) file.readText().trim().take(7) else ""
         } catch (_: Exception) { "" }
     }
 
-    /** 从 Termux 服务获取版本历史 */
+    /** 从 Termux 获取版本历史 */
     suspend fun fetchVersionHistory(): List<VersionEntry> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url("$BASE_URL/version/history").build()
-            val response = shortTimeoutClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val arr = org.json.JSONObject(response.body?.string() ?: "{}").optJSONArray("history") ?: return@withContext emptyList()
-                (0 until arr.length()).map { i ->
-                    val obj = arr.getJSONObject(i)
+            val context = AppBootstrapper.instance
+            val script = buildString {
+                append("cd ~/Pocket-Agent && git log --oneline --format='%H|%s|%at' -10 >~/version_history.txt 2>/dev/null")
+            }
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.TermuxService")
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+            }
+            context.startService(intent)
+            kotlinx.coroutines.delay(2000)
+            val file = java.io.File("/data/data/com.termux/files/home/version_history.txt")
+            if (!file.exists()) return@withContext emptyList()
+            file.readLines().mapNotNull { line ->
+                val parts = line.split("|", limit = 3)
+                if (parts.size == 3) {
                     VersionEntry(
-                        sha = obj.optString("sha", ""),
-                        message = obj.optString("message", ""),
-                        timestamp = obj.optLong("timestamp", 0)
+                        sha = parts[0].take(7),
+                        message = parts[1],
+                        timestamp = parts[2].toLongOrNull()?.times(1000) ?: 0
                     )
-                }
-            } else emptyList()
+                } else null
+            }
         } catch (_: Exception) { emptyList() }
     }
 
     /** 回退到指定版本 */
     suspend fun rollbackVersion(sha: String): RollbackResult = withContext(Dispatchers.IO) {
         try {
-            val json = org.json.JSONObject().apply { put("sha", sha) }
-            val body = json.toString().toRequestBody("application/json".toMediaType())
-            val request = Request.Builder().url("$BASE_URL/version/rollback").post(body).build()
-            val response = shortTimeoutClient.newCall(request).execute()
-            if (response.isSuccessful) {
-                val resp = org.json.JSONObject(response.body?.string() ?: "{}")
-                if (resp.optString("status") == "ok") RollbackResult.Ok(resp.optString("version", sha))
-                else RollbackResult.Error(resp.optString("message", "回退失败"))
-            } else RollbackResult.Error("HTTP ${response.code}")
+            val context = AppBootstrapper.instance
+            val script = buildString {
+                append("{\n")
+                append("  cd ~/Pocket-Agent || exit 1\n")
+                append("  echo \"[rollback] Rolling back to $sha...\"\n")
+                append("  git reset --hard $sha 2>&1\n")
+                append("  if [ \$? -eq 0 ]; then\n")
+                append("    echo \"[rollback] Success\"\n")
+                append("    git rev-parse HEAD >~/version.txt\n")
+                append("  else\n")
+                append("    echo \"[rollback] Failed\"\n")
+                append("  fi\n")
+                append("} >~/rollback.log 2>&1")
+            }
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.TermuxService")
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+            }
+            context.startService(intent)
+            kotlinx.coroutines.delay(3000)
+            val logFile = java.io.File("/data/data/com.termux/files/home/rollback.log")
+            val logContent = if (logFile.exists()) logFile.readText() else ""
+            if (logContent.contains("[rollback] Success")) {
+                val versionFile = java.io.File("/data/data/com.termux/files/home/version.txt")
+                val newVersion = if (versionFile.exists()) versionFile.readText().trim().take(7) else sha
+                RollbackResult.Ok(newVersion)
+            } else {
+                RollbackResult.Error("回退失败")
+            }
         } catch (e: Exception) {
-            RollbackResult.Error(e.message ?: "连接失败")
+            RollbackResult.Error(e.message ?: "执行失败")
         }
     }
 
