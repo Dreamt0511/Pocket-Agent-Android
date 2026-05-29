@@ -39,6 +39,7 @@ class AgentService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val taskQueue = ConcurrentLinkedQueue<TaskItem>()
     private var healthCheckJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     enum class ServiceState {
         IDLE, RUNNING, ERROR
@@ -64,6 +65,9 @@ class AgentService : Service() {
 
         val prompt = intent?.getStringExtra("task_prompt") ?: ""
         startForeground(NOTIFICATION_ID, createNotification(prompt))
+
+        // 启动心跳保活（独立于任务，确保 app 切后台时 uvicorn 不会因心跳超时关闭）
+        startHeartbeat()
 
         // 仅在有任务时才获取 WakeLock 和启动健康监控
         if (prompt.isNotBlank()) {
@@ -155,6 +159,16 @@ class AgentService : Service() {
         }
     }
 
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = serviceScope.launch {
+            while (isActive) {
+                delay(30_000) // 每 30 秒
+                try { TermuxServiceClient.heartbeat() } catch (_: Exception) {}
+            }
+        }
+    }
+
     private fun processQueue() {
         serviceScope.launch {
             while (taskQueue.isNotEmpty()) {
@@ -200,6 +214,7 @@ class AgentService : Service() {
     }
 
     override fun onDestroy() {
+        heartbeatJob?.cancel()
         healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.destroy()
@@ -209,6 +224,7 @@ class AgentService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        heartbeatJob?.cancel()
         healthCheckJob?.cancel()
         serviceScope.cancel()
         agentDaemon?.destroy()

@@ -26,7 +26,6 @@ object AppBootstrapper {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private lateinit var daemon: AgentDaemon
-    private var heartbeatJob: Job? = null
 
     val taskQueueManager: TaskQueueManager = TaskQueueManager()
 
@@ -41,24 +40,12 @@ object AppBootstrapper {
         SkillManager.init(context)
 
         // 启动前台服务，确保清除 App 时 onTaskRemoved 被触发以关闭 uvicorn
+        // 心跳逻辑已移至 AgentService，确保 app 切后台时心跳不断
         try {
             context.startService(Intent(context, AgentService::class.java))
         } catch (_: Exception) {}
 
-        // 启动心跳：App 被杀后进程终止，心跳停止，服务端超时自动关闭 uvicorn
-        startHeartbeat()
-
         Log.i(TAG, "All subsystems initialized")
-    }
-
-    private fun startHeartbeat() {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
-            while (isActive) {
-                delay(30_000) // 每 30 秒
-                try { TermuxServiceClient.heartbeat() } catch (_: Exception) {}
-            }
-        }
     }
 
     fun start(): Job {
