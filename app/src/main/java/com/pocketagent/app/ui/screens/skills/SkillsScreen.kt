@@ -435,22 +435,12 @@ private fun SkillCard(
 
             // 文字
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = skill.name,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (skill.tagLabel.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        SuggestionChip(
-                            onClick = {},
-                            label = { Text(skill.tagLabel, fontSize = 9.sp) },
-                            modifier = Modifier.height(20.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = skill.name,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 if (skill.description.isNotBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
@@ -462,28 +452,43 @@ private fun SkillCard(
                 }
             }
 
-            // 操作按钮
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!isSelectionMode) {
-                    IconButton(onClick = onViewDetail) {
-                        Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(18.dp))
-                    }
-                    if (!skill.isSystem) {
-                        IconButton(onClick = onEdit) {
-                            Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            // 右侧：标签 + 操作按钮（上下排列）
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 标签（移到右侧上方）
+                if (skill.tagLabel.isNotBlank()) {
+                    SuggestionChip(
+                        onClick = {},
+                        label = { Text(skill.tagLabel, fontSize = 9.sp) },
+                        modifier = Modifier.height(20.dp)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+
+                // 操作按钮
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isSelectionMode) {
+                        IconButton(onClick = onViewDetail) {
+                            Icon(Icons.Default.Visibility, contentDescription = "查看", modifier = Modifier.size(18.dp))
                         }
-                    }
-                    IconButton(onClick = onExport) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
-                    }
-                    if (!skill.isSystem) {
-                        IconButton(onClick = onDelete) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "删除",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                        if (!skill.isSystem) {
+                            IconButton(onClick = onEdit) {
+                                Icon(Icons.Default.Edit, contentDescription = "编辑", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        IconButton(onClick = onExport) {
+                            Icon(Icons.Default.FileDownload, contentDescription = "导出", modifier = Modifier.size(18.dp))
+                        }
+                        if (!skill.isSystem) {
+                            IconButton(onClick = onDelete) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "删除",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
