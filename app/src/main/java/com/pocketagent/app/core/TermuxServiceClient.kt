@@ -1,11 +1,15 @@
 package com.pocketagent.app.core
 
 import android.content.Intent
+import android.os.FileObserver
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import launch
+import suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -362,14 +366,12 @@ object TermuxServiceClient {
     suspend fun triggerSync(mirrorUrl: String = ""): SyncResult = withContext(Dispatchers.IO) {
         try {
             val context = AppBootstrapper.getContext()
-            // 完整的更新脚本，处理所有错误情况
             val script = buildString {
                 append("{\n")
                 append("  cd ~/Pocket-Agent 2>/dev/null || { echo \"[update] Failed: 目录不存在，请先启动服务初始化\"; exit 1; }\n")
                 append("\n")
                 append("  echo \"[update] Pulling latest code...\"\n")
                 append("\n")
-                append("  # 第一次尝试\n")
                 append("  output=\$(git pull origin main 2>&1)\n")
                 append("\n")
                 append("  if echo \"\$output\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
@@ -415,41 +417,56 @@ object TermuxServiceClient {
                 append("} >~/update.log 2>&1\n")
             }
 
-            val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.RunCommandService")
-                action = "com.termux.RUN_COMMAND"
-                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
-                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            }
-
-            // 清空旧日志，避免误读上次结果
+            // 清空旧日志
             val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
             if (logFile.exists()) logFile.writeText("")
 
-            context.startService(intent)
+            // 用 FileObserver 监听日志文件变化，替代轮询
+            val result = suspendCancellableCoroutine<String> { cont ->
+                val observer = object : android.os.FileObserver(logFile.absolutePath, android.os.FileObserver.MODIFY or android.os.FileObserver.CLOSE_WRITE) {
+                    override fun onEvent(event: Int, path: String?) {
+                        val content = try { logFile.readText() } catch (_: Exception) { "" }
+                        if (content.contains("[update] Success") || content.contains("[update] Failed")) {
+                            stopWatching()
+                            if (cont.isActive) cont.resume(content) {}
+                        }
+                    }
+                }
+                observer.startWatching()
 
-            // 轮询等待执行完成，最多等 60 秒（含重试）
-            val maxWaitMs = 60_000L
-            val pollIntervalMs = 1_000L
-            var elapsed = 0L
-            var logContent = ""
+                // 超时保护：60 秒后自动结束
+                val timeout = launch(Dispatchers.IO) {
+                    delay(60_000L)
+                    observer.stopWatching()
+                    if (cont.isActive) cont.resume("[update] Timeout") {}
+                }
 
-            while (elapsed < maxWaitMs) {
-                kotlinx.coroutines.delay(pollIntervalMs)
-                elapsed += pollIntervalMs
-                logContent = if (logFile.exists()) logFile.readText() else ""
-                if (logContent.contains("[update] Success") || logContent.contains("[update] Failed")) {
-                    break
+                cont.invokeOnCancellation {
+                    observer.stopWatching()
+                    timeout.cancel()
+                }
+
+                // 发送 Intent
+                val intent = Intent("com.termux.RUN_COMMAND").apply {
+                    setClassName("com.termux", "com.termux.app.RunCommandService")
+                    action = "com.termux.RUN_COMMAND"
+                    putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                    putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                    putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+                }
+                try {
+                    context.startService(intent)
+                } catch (e: Exception) {
+                    observer.stopWatching()
+                    timeout.cancel()
+                    if (cont.isActive) cont.resume("[update] Failed: Intent 发送失败: ${e.message}") {}
                 }
             }
 
-            if (logContent.contains("[update] Success")) {
-                SyncResult.Ok(logContent)
-            } else if (logContent.contains("[update] Failed")) {
-                SyncResult.Error("git pull 失败: $logContent")
-            } else {
-                SyncResult.Error("更新超时（${maxWaitMs / 1000}秒），请检查 Termux 是否在运行")
+            when {
+                result.contains("[update] Success") -> SyncResult.Ok(result)
+                result.contains("[update] Timeout") -> SyncResult.Error("更新超时（60秒），Termux 可能未运行或 Intent 被拒绝")
+                else -> SyncResult.Error(result)
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "执行失败")
