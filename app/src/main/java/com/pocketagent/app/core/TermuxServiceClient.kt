@@ -1,14 +1,12 @@
 package com.pocketagent.app.core
 
 import android.content.Intent
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -412,12 +410,10 @@ object TermuxServiceClient {
                 append("    echo \"[update] Installing new dependencies...\"\n")
                 append("    pip install -q -r requirements.txt 2>&1\n")
                 append("  fi\n")
-                append("} >~/update.log 2>&1\n")
+                append("} >/sdcard/Pocket-Agent/update.log 2>&1\n")
             }
 
-            // 清空旧日志
-            val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
-            if (logFile.exists()) logFile.writeText("")
+            val logFile = java.io.File("/sdcard/Pocket-Agent/update.log")
 
             // 发送 Intent
             val intent = Intent("com.termux.RUN_COMMAND").apply {
@@ -433,22 +429,27 @@ object TermuxServiceClient {
                 return@withContext SyncResult.Error("Intent 发送失败: ${e.message}")
             }
 
-            // 轮询等待日志结果（FileObserver 无法跨应用私有目录监听）
-            val result = withTimeoutOrNull(60_000L) {
-                while (true) {
-                    delay(1000)
-                    val content = try { logFile.readText() } catch (_: Exception) { "" }
-                    if (content.contains("[update] Success") || content.contains("[update] Failed")) {
-                        return@withTimeoutOrNull content
-                    }
-                }
-                ""
-            } ?: "[update] Timeout"
+            // 轮询等待执行完成，最多等 60 秒
+            val maxWaitMs = 60_000L
+            val pollIntervalMs = 1_000L
+            var elapsed = 0L
+            var logContent = ""
 
-            when {
-                result.contains("[update] Success") -> SyncResult.Ok(result)
-                result.contains("[update] Timeout") -> SyncResult.Error("更新超时（60秒），Termux 可能未运行或 Intent 被拒绝")
-                else -> SyncResult.Error(result)
+            while (elapsed < maxWaitMs) {
+                delay(pollIntervalMs)
+                elapsed += pollIntervalMs
+                logContent = try { logFile.readText() } catch (_: Exception) { "" }
+                if (logContent.contains("[update] Success") || logContent.contains("[update] Failed")) {
+                    break
+                }
+            }
+
+            if (logContent.contains("[update] Success")) {
+                SyncResult.Ok(logContent)
+            } else if (logContent.contains("[update] Failed")) {
+                SyncResult.Error("git pull 失败: $logContent")
+            } else {
+                SyncResult.Error("更新超时（${maxWaitMs / 1000}秒），请检查 Termux 是否在运行")
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "执行失败")
