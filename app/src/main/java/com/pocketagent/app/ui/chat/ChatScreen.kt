@@ -383,6 +383,21 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
 
                             isProcessing = false
 
+                            // 从后端同步消息 ID（新发消息本地没有 id，需从后端获取才能支持长按删除）
+                            val msgResult = TermuxServiceClient.fetchMessages(convId)
+                            if (msgResult is TermuxServiceClient.MessagesResult.Ok) {
+                                try {
+                                    val arr = org.json.JSONArray(msgResult.json)
+                                    for (i in 0 until minOf(arr.length(), messages.size)) {
+                                        val obj = arr.getJSONObject(i)
+                                        val backendId = obj.optLong("id", -1).let { if (it == -1L) null else it }
+                                        if (backendId != null && messages[i].id == null) {
+                                            messages[i] = messages[i].copy(id = backendId)
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+
                             // 标记需要滚动到底部（由 LaunchedEffect 在布局完成后执行）
                             forceScrollCount++
                         }
