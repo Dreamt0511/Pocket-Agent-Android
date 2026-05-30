@@ -48,8 +48,10 @@ import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.ui.theme.GlassCard
 import com.pocketagent.app.update.TaskResult
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.clip
@@ -101,6 +103,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                         val obj = arr.getJSONObject(i)
                         messages.add(
                             ChatMessage(
+                                id = obj.optLong("id", -1).let { if (it == -1L) null else it },
                                 text = obj.optString("content", ""),
                                 isUser = obj.optString("role") == "user",
                                 timestamp = obj.optLong("timestamp", System.currentTimeMillis())
@@ -236,7 +239,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
-    // 统一的自动滚动逻辑：防抖 + 只在接近底部时滚动
+    // 统一的自动滚动逻辑：防抖 + 只在接近底部时滚动（仅流式输出期间）
     var isNearBottom by remember { mutableStateOf(true) }
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -253,9 +256,23 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         .collect { nearBottom -> isNearBottom = nearBottom }
     }
 
-    // 消息数变化或流式输出时，平滑滚动到底部
-    LaunchedEffect(messages.size, streamText) {
-        if (isNearBottom && messages.isNotEmpty()) {
+    // 用户发送消息后强制滚动到底部（计数器保证每次发送都触发）
+    var forceScrollCount by remember { mutableIntStateOf(0) }
+    var userScrolledUp by remember { mutableStateOf(false) }
+    LaunchedEffect(isNearBottom) {
+        if (isNearBottom) userScrolledUp = false
+        else userScrolledUp = true
+    }
+    LaunchedEffect(forceScrollCount) {
+        if (forceScrollCount > 0 && messages.isNotEmpty()) {
+            userScrolledUp = false
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    // AI 流式输出时，只在用户没有上滑查看历史时才自动滚动
+    LaunchedEffect(streamText) {
+        if (!userScrolledUp && streamText.isNotEmpty() && messages.isNotEmpty()) {
             listState.scrollToItem(messages.lastIndex)
         }
     }
@@ -335,8 +352,8 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                             )
                             messages.add(placeholderMsg)
 
-                            // 立即滚动到底部显示用户消息
-                            listState.scrollToItem(messages.lastIndex)
+                            // 标记需要滚动到底部（由 LaunchedEffect 在布局完成后执行）
+                            forceScrollCount++
 
                             // 首条消息设为会话标题（本地显示）
                             if (isFirstMessage) {
@@ -366,8 +383,8 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
 
                             isProcessing = false
 
-                            // 滚动到底部
-                            listState.animateScrollToItem(messages.lastIndex, scrollOffset = Int.MAX_VALUE)
+                            // 标记需要滚动到底部（由 LaunchedEffect 在布局完成后执行）
+                            forceScrollCount++
                         }
                     }
                 },
@@ -393,7 +410,18 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(messages) { message ->
-                    ChatMessageItem(message, isProcessing)
+                    ChatMessageItem(
+                        message = message,
+                        isProcessing = isProcessing,
+                        onDelete = if (message.id != null) {
+                            {
+                                scope.launch {
+                                    TermuxServiceClient.deleteMessage(message.id)
+                                    messages.remove(message)
+                                }
+                            }
+                        } else null
+                    )
                 }
             }
         }
@@ -474,6 +502,7 @@ private fun DaemonStatusBar(
 // ─── 消息模型 ───────────────────────────────────
 
 data class ChatMessage(
+    val id: Long? = null,
     val text: String,
     val isUser: Boolean,
     val timestamp: Long
@@ -481,9 +510,33 @@ data class ChatMessage(
 
 // ─── 消息气泡 ───────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
+private fun ChatMessageItem(
+    message: ChatMessage,
+    isProcessing: Boolean,
+    onDelete: (() -> Unit)? = null
+) {
     val clipboardManager = LocalClipboardManager.current
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("删除消息") },
+            text = { Text(message.text.take(80).let { if (it.length < message.text.length) "$it..." else it }) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDelete?.invoke()
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -499,6 +552,10 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                 ),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = { if (onDelete != null) showDeleteDialog = true }
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -532,6 +589,10 @@ private fun ChatMessageItem(message: ChatMessage, isProcessing: Boolean) {
                 shape = RoundedCornerShape(
                     topStart = 16.dp, topEnd = 16.dp,
                     bottomStart = 4.dp, bottomEnd = 16.dp
+                ),
+                modifier = Modifier.combinedClickable(
+                    onClick = {},
+                    onLongClick = { if (onDelete != null) showDeleteDialog = true }
                 )
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
