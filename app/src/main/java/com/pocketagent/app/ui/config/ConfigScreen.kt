@@ -587,36 +587,37 @@ fun ConfigScreen(navController: NavController) {
                             }
                         }
 
-                        // App 更新链接（在版本历史下面）
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                        Spacer(Modifier.height(8.dp))
-                        val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
-                            append("App 更新请前往: ")
-                            pushStringAnnotation(tag = "URL", annotation = "https://github.com/Dreamt0511/Pocket-Agent-Android/releases")
-                            withStyle(style = androidx.compose.ui.text.SpanStyle(
-                                color = MaterialTheme.colorScheme.primary,
-                                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                            )) {
-                                append("github.com/Dreamt0511/Pocket-Agent-Android/releases")
-                            }
-                            pop()
-                        }
-                        androidx.compose.foundation.text.ClickableText(
-                            text = annotatedString,
-                            onClick = { offset ->
-                                annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                                    .firstOrNull()?.let { annotation ->
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                            data = android.net.Uri.parse(annotation.item)
-                                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                            },
-                            style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
-                        )
                     }
+
+                    // App 更新链接（在版本回退下面）
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                    Spacer(Modifier.height(8.dp))
+                    val annotatedString = androidx.compose.ui.text.buildAnnotatedString {
+                        append("App 更新请前往: ")
+                        pushStringAnnotation(tag = "URL", annotation = "https://github.com/Dreamt0511/Pocket-Agent-Android/releases")
+                        withStyle(style = androidx.compose.ui.text.SpanStyle(
+                            color = MaterialTheme.colorScheme.primary,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                        )) {
+                            append("github.com/Dreamt0511/Pocket-Agent-Android/releases")
+                        }
+                        pop()
+                    }
+                    androidx.compose.foundation.text.ClickableText(
+                        text = annotatedString,
+                        onClick = { offset ->
+                            annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                .firstOrNull()?.let { annotation ->
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.parse(annotation.item)
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                        },
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))
