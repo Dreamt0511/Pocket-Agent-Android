@@ -428,17 +428,18 @@ object TermuxServiceClient {
                         val content = try { logFile.readText() } catch (_: Exception) { "" }
                         if (content.contains("[update] Success") || content.contains("[update] Failed")) {
                             stopWatching()
-                            if (cont.isActive) cont.resume(content) {}
+                            if (cont.isActive) cont.resume(content)
                         }
                     }
                 }
                 observer.startWatching()
 
                 // 超时保护：60 秒后自动结束
-                val timeout = launch(Dispatchers.IO) {
+                val scope = kotlinx.coroutines.CoroutineScope(cont.context + Dispatchers.IO)
+                val timeout = scope.launch {
                     delay(60_000L)
                     observer.stopWatching()
-                    if (cont.isActive) cont.resume("[update] Timeout") {}
+                    if (cont.isActive) cont.resume("[update] Timeout")
                 }
 
                 cont.invokeOnCancellation {
@@ -459,7 +460,9 @@ object TermuxServiceClient {
                 } catch (e: Exception) {
                     observer.stopWatching()
                     timeout.cancel()
-                    if (cont.isActive) cont.resume("[update] Failed: Intent 发送失败: ${e.message}") {}
+                    if (cont.isActive) {
+                        cont.resume("[update] Failed: Intent 发送失败: ${e.message}")
+                    }
                 }
             }
 
