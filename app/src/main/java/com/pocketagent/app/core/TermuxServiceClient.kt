@@ -363,61 +363,57 @@ object TermuxServiceClient {
         try {
             val context = AppBootstrapper.getContext()
             // 完整的更新脚本，处理所有错误情况
-            val script = """
-{
-  cd ~/Pocket-Agent 2>/dev/null || { echo "[update] Failed: 目录不存在，请先启动服务初始化"; exit 1; }
-
-  echo "[update] Pulling latest code..."
-
-  # 第一次尝试：正常 git pull
-  output=$(git pull origin main 2>&1)
-
-  if echo "$output" | grep -q "Already up to date\|Fast-forward\|Updating"; then
-    echo "[update] Success"
-  elif echo "$output" | grep -q "Your local changes"; then
-    # 本地有修改冲突，stash 后重试
-    echo "[update] Local changes conflict, stashing..."
-    git stash 2>&1
-    output2=$(git pull origin main 2>&1)
-    if echo "$output2" | grep -q "Already up to date\|Fast-forward\|Updating"; then
-      echo "[update] Success (stashed local changes)"
-    else
-      echo "[update] Failed after stash: $output2"
-      exit 1
-    fi
-  elif echo "$output" | grep -qi "SSL\|ssl\|unexpected eof"; then
-    # SSL 错误，关闭验证重试
-    echo "[update] SSL error, retrying..."
-    output3=$(git -c http.sslVerify=false pull origin main 2>&1)
-    if echo "$output3" | grep -q "Already up to date\|Fast-forward\|Updating"; then
-      echo "[update] Success (SSL verify disabled)"
-    else
-      echo "[update] Failed: $output3"
-      exit 1
-    fi
-  elif echo "$output" | grep -qi "Could not resolve host\|Connection refused\|timed out"; then
-    # 网络问题，等 3 秒重试一次
-    echo "[update] Network error, retrying in 3s..."
-    sleep 3
-    output4=$(git pull origin main 2>&1)
-    if echo "$output4" | grep -q "Already up to date\|Fast-forward\|Updating"; then
-      echo "[update] Success"
-    else
-      echo "[update] Failed: $output4"
-      exit 1
-    fi
-  else
-    echo "[update] Failed: $output"
-    exit 1
-  fi
-
-  # 检查是否有新依赖
-  if git diff HEAD~1 --name-only 2>/dev/null | grep -q requirements.txt; then
-    echo "[update] Installing new dependencies..."
-    pip install -q -r requirements.txt 2>&1
-  fi
-} >~/update.log 2>&1
-""".trimIndent()
+            val script = buildString {
+                append("{\n")
+                append("  cd ~/Pocket-Agent 2>/dev/null || { echo \"[update] Failed: 目录不存在，请先启动服务初始化\"; exit 1; }\n")
+                append("\n")
+                append("  echo \"[update] Pulling latest code...\"\n")
+                append("\n")
+                append("  # 第一次尝试\n")
+                append("  output=\$(git pull origin main 2>&1)\n")
+                append("\n")
+                append("  if echo \"\$output\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
+                append("    echo \"[update] Success\"\n")
+                append("  elif echo \"\$output\" | grep -q \"Your local changes\"; then\n")
+                append("    echo \"[update] Local changes conflict, stashing...\"\n")
+                append("    git stash 2>&1\n")
+                append("    output2=\$(git pull origin main 2>&1)\n")
+                append("    if echo \"\$output2\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
+                append("      echo \"[update] Success (stashed local changes)\"\n")
+                append("    else\n")
+                append("      echo \"[update] Failed after stash: \$output2\"\n")
+                append("      exit 1\n")
+                append("    fi\n")
+                append("  elif echo \"\$output\" | grep -qi \"SSL\\|ssl\\|unexpected eof\"; then\n")
+                append("    echo \"[update] SSL error, retrying...\"\n")
+                append("    output3=\$(git -c http.sslVerify=false pull origin main 2>&1)\n")
+                append("    if echo \"\$output3\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
+                append("      echo \"[update] Success (SSL verify disabled)\"\n")
+                append("    else\n")
+                append("      echo \"[update] Failed: \$output3\"\n")
+                append("      exit 1\n")
+                append("    fi\n")
+                append("  elif echo \"\$output\" | grep -qi \"Could not resolve host\\|Connection refused\\|timed out\"; then\n")
+                append("    echo \"[update] Network error, retrying in 3s...\"\n")
+                append("    sleep 3\n")
+                append("    output4=\$(git pull origin main 2>&1)\n")
+                append("    if echo \"\$output4\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
+                append("      echo \"[update] Success\"\n")
+                append("    else\n")
+                append("      echo \"[update] Failed: \$output4\"\n")
+                append("      exit 1\n")
+                append("    fi\n")
+                append("  else\n")
+                append("    echo \"[update] Failed: \$output\"\n")
+                append("    exit 1\n")
+                append("  fi\n")
+                append("\n")
+                append("  if git diff HEAD~1 --name-only 2>/dev/null | grep -q requirements.txt; then\n")
+                append("    echo \"[update] Installing new dependencies...\"\n")
+                append("    pip install -q -r requirements.txt 2>&1\n")
+                append("  fi\n")
+                append("} >~/update.log 2>&1\n")
+            }
 
             val intent = Intent("com.termux.RUN_COMMAND").apply {
                 setClassName("com.termux", "com.termux.app.RunCommandService")
