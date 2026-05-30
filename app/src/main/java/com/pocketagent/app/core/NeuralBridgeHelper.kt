@@ -120,9 +120,11 @@ object NeuralBridgeHelper {
         ) ?: return false
 
         // enabledServices 格式: "pkg1/svc1:pkg2/svc2:..."
-        // 先用 detectedPackageName 匹配，失败则尝试所有已知包名
-        val pkgToCheck = detectedPackageName.ifEmpty { packageNames.first() }
-        return enabledServices.split(":").any { it.startsWith("$pkgToCheck/") }
+        // 检查所有已知包名，避免 detectedPackageName 与服务注册包名不一致
+        val entries = enabledServices.split(":")
+        return entries.any { entry ->
+            packageNames.any { pkg -> entry.startsWith("$pkg/") }
+        }
     }
 
     /** 无障碍设置页 Intent */

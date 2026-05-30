@@ -281,6 +281,34 @@ fun ConfigScreen(navController: NavController) {
                     )
                 }
 
+                // ===== 嵌入模型 =====
+                SectionCard(title = "嵌入模型（语义检索）") {
+                    ConfigField(
+                        label = "模型文件路径",
+                        value = configMap["EMBEDDING_MODEL_PATH"] ?: "",
+                        placeholder = "/sdcard/手机agent开发/Pocket-Agent/bge-m3-Q4_K_M.gguf",
+                        onValueChange = { configMap = configMap + ("EMBEDDING_MODEL_PATH" to it) }
+                    )
+                    Text(
+                        "BGE-M3 GGUF 模型的绝对路径。留空则不启用语义检索，仅使用全文搜索。",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                saveConfig(configMap)
+                                saved = true
+                                kotlinx.coroutines.delay(2000)
+                                saved = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) { Text("保存配置") }
+                }
+
                 // ===== MCP =====
                 SectionCard(title = "MCP 连接") {
                     ConfigField(
@@ -330,7 +358,15 @@ fun ConfigScreen(navController: NavController) {
                     DisposableEffect(lifecycleOwner) {
                         val observer = LifecycleEventObserver { _, event ->
                             if (event == Lifecycle.Event.ON_RESUME) {
+                                // 立即检查一次
                                 neuralStatus = NeuralBridgeHelper.checkStatus(context)
+                                // 延迟再检查一次，系统可能需要时间更新无障碍状态
+                                if (neuralStatus !is NeuralBridgeHelper.Status.Ready) {
+                                    scope.launch {
+                                        kotlinx.coroutines.delay(1500)
+                                        neuralStatus = NeuralBridgeHelper.checkStatus(context)
+                                    }
+                                }
                             }
                         }
                         lifecycleOwner.lifecycle.addObserver(observer)
@@ -437,34 +473,6 @@ fun ConfigScreen(navController: NavController) {
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
                     }
-                }
-
-                // ===== 嵌入模型 =====
-                SectionCard(title = "嵌入模型（语义检索）") {
-                    ConfigField(
-                        label = "模型文件路径",
-                        value = configMap["EMBEDDING_MODEL_PATH"] ?: "",
-                        placeholder = "/sdcard/手机agent开发/Pocket-Agent/bge-m3-Q4_K_M.gguf",
-                        onValueChange = { configMap = configMap + ("EMBEDDING_MODEL_PATH" to it) }
-                    )
-                    Text(
-                        "BGE-M3 GGUF 模型的绝对路径。留空则不启用语义检索，仅使用全文搜索。",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                saveConfig(configMap)
-                                saved = true
-                                kotlinx.coroutines.delay(2000)
-                                saved = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
-                    ) { Text("保存配置") }
                 }
 
                 // ===== 主库代码更新 =====
