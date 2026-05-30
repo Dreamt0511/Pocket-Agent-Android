@@ -1,16 +1,14 @@
 package com.pocketagent.app.core
 
 import android.content.Intent
-import android.os.FileObserver
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -421,50 +419,31 @@ object TermuxServiceClient {
             val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
             if (logFile.exists()) logFile.writeText("")
 
-            // 用 FileObserver 监听日志文件变化，替代轮询
-            val result = suspendCancellableCoroutine<String> { cont ->
-                val observer = object : android.os.FileObserver(logFile.absolutePath, android.os.FileObserver.MODIFY or android.os.FileObserver.CLOSE_WRITE) {
-                    override fun onEvent(event: Int, path: String?) {
-                        val content = try { logFile.readText() } catch (_: Exception) { "" }
-                        if (content.contains("[update] Success") || content.contains("[update] Failed")) {
-                            stopWatching()
-                            if (cont.isActive) cont.resume(content, null)
-                        }
-                    }
-                }
-                observer.startWatching()
-
-                // 超时保护：60 秒后自动结束
-                val scope = kotlinx.coroutines.CoroutineScope(cont.context + Dispatchers.IO)
-                val timeout = scope.launch {
-                    delay(60_000L)
-                    observer.stopWatching()
-                    if (cont.isActive) cont.resume("[update] Timeout", null)
-                }
-
-                cont.invokeOnCancellation {
-                    observer.stopWatching()
-                    timeout.cancel()
-                }
-
-                // 发送 Intent
-                val intent = Intent("com.termux.RUN_COMMAND").apply {
-                    setClassName("com.termux", "com.termux.app.RunCommandService")
-                    action = "com.termux.RUN_COMMAND"
-                    putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-                    putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
-                    putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-                }
-                try {
-                    context.startService(intent)
-                } catch (e: Exception) {
-                    observer.stopWatching()
-                    timeout.cancel()
-                    if (cont.isActive) {
-                        cont.resume("[update] Failed: Intent 发送失败: ${e.message}", null)
-                    }
-                }
+            // 发送 Intent
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                action = "com.termux.RUN_COMMAND"
+                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
             }
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                return@withContext SyncResult.Error("Intent 发送失败: ${e.message}")
+            }
+
+            // 轮询等待日志结果（FileObserver 无法跨应用私有目录监听）
+            val result = withTimeoutOrNull(60_000L) {
+                while (true) {
+                    delay(1000)
+                    val content = try { logFile.readText() } catch (_: Exception) { "" }
+                    if (content.contains("[update] Success") || content.contains("[update] Failed")) {
+                        return@withTimeoutOrNull content
+                    }
+                }
+                ""
+            } ?: "[update] Timeout"
 
             when {
                 result.contains("[update] Success") -> SyncResult.Ok(result)
