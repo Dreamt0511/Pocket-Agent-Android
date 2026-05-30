@@ -361,95 +361,30 @@ object TermuxServiceClient {
 
     suspend fun triggerSync(mirrorUrl: String = ""): SyncResult = withContext(Dispatchers.IO) {
         try {
-            val context = AppBootstrapper.getContext()
-            val script = buildString {
-                append("{\n")
-                append("  cd ~/Pocket-Agent 2>/dev/null || { echo \"[update] Failed: 目录不存在，请先启动服务初始化\"; exit 1; }\n")
-                append("\n")
-                append("  echo \"[update] Pulling latest code...\"\n")
-                append("\n")
-                append("  output=\$(git pull origin main 2>&1)\n")
-                append("\n")
-                append("  if echo \"\$output\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
-                append("    echo \"[update] Success\"\n")
-                append("  elif echo \"\$output\" | grep -q \"Your local changes\"; then\n")
-                append("    echo \"[update] Local changes conflict, stashing...\"\n")
-                append("    git stash 2>&1\n")
-                append("    output2=\$(git pull origin main 2>&1)\n")
-                append("    if echo \"\$output2\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
-                append("      echo \"[update] Success (stashed local changes)\"\n")
-                append("    else\n")
-                append("      echo \"[update] Failed after stash: \$output2\"\n")
-                append("      exit 1\n")
-                append("    fi\n")
-                append("  elif echo \"\$output\" | grep -qi \"SSL\\|ssl\\|unexpected eof\"; then\n")
-                append("    echo \"[update] SSL error, retrying...\"\n")
-                append("    output3=\$(git -c http.sslVerify=false pull origin main 2>&1)\n")
-                append("    if echo \"\$output3\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
-                append("      echo \"[update] Success (SSL verify disabled)\"\n")
-                append("    else\n")
-                append("      echo \"[update] Failed: \$output3\"\n")
-                append("      exit 1\n")
-                append("    fi\n")
-                append("  elif echo \"\$output\" | grep -qi \"Could not resolve host\\|Connection refused\\|timed out\"; then\n")
-                append("    echo \"[update] Network error, retrying in 3s...\"\n")
-                append("    sleep 3\n")
-                append("    output4=\$(git pull origin main 2>&1)\n")
-                append("    if echo \"\$output4\" | grep -q \"Already up to date\\|Fast-forward\\|Updating\"; then\n")
-                append("      echo \"[update] Success\"\n")
-                append("    else\n")
-                append("      echo \"[update] Failed: \$output4\"\n")
-                append("      exit 1\n")
-                append("    fi\n")
-                append("  else\n")
-                append("    echo \"[update] Failed: \$output\"\n")
-                append("    exit 1\n")
-                append("  fi\n")
-                append("\n")
-                append("  if git diff HEAD~1 --name-only 2>/dev/null | grep -q requirements.txt; then\n")
-                append("    echo \"[update] Installing new dependencies...\"\n")
-                append("    pip install -q -r requirements.txt 2>&1\n")
-                append("  fi\n")
-                append("} >/sdcard/Pocket-Agent/update.log 2>&1\n")
+            val bodyJson = JSONObject()
+            if (mirrorUrl.isNotEmpty()) bodyJson.put("mirror", mirrorUrl)
+            val body = bodyJson.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder().url("$BASE_URL/sync").post(body).build()
+            val response = client.newCall(request).execute()
+            val respBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                return@withContext SyncResult.Error("HTTP ${response.code}: $respBody")
             }
+            val json = JSONObject(respBody)
+            val status = json.optString("status", "error")
+            val output = json.optString("output", "")
+            val error = json.optString("error", "")
+            val pipUpdated = json.optBoolean("pip_updated", false)
+            val pipOutput = json.optString("pip_output", "")
 
-            val logFile = java.io.File("/sdcard/Pocket-Agent/update.log")
-
-            // 发送 Intent
-            val intent = Intent("com.termux.RUN_COMMAND").apply {
-                setClassName("com.termux", "com.termux.app.RunCommandService")
-                action = "com.termux.RUN_COMMAND"
-                putExtra("com.termux.RUN_COMMAND_PATH", "/data/data/com.termux/files/usr/bin/bash")
-                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf("-c", script))
-                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            }
-            try {
-                context.startService(intent)
-            } catch (e: Exception) {
-                return@withContext SyncResult.Error("Intent 发送失败: ${e.message}")
-            }
-
-            // 轮询等待执行完成，最多等 60 秒
-            val maxWaitMs = 60_000L
-            val pollIntervalMs = 1_000L
-            var elapsed = 0L
-            var logContent = ""
-
-            while (elapsed < maxWaitMs) {
-                delay(pollIntervalMs)
-                elapsed += pollIntervalMs
-                logContent = try { logFile.readText() } catch (_: Exception) { "" }
-                if (logContent.contains("[update] Success") || logContent.contains("[update] Failed")) {
-                    break
+            if (status == "ok") {
+                val msg = buildString {
+                    append(output.trim())
+                    if (pipUpdated) append("\npip install 完成: ${pipOutput.trim()}")
                 }
-            }
-
-            if (logContent.contains("[update] Success")) {
-                SyncResult.Ok(logContent)
-            } else if (logContent.contains("[update] Failed")) {
-                SyncResult.Error("git pull 失败: $logContent")
+                SyncResult.Ok(msg)
             } else {
-                SyncResult.Error("更新超时（${maxWaitMs / 1000}秒），请检查 Termux 是否在运行")
+                SyncResult.Error("git pull 失败: ${error.ifEmpty { output }}")
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "执行失败")
