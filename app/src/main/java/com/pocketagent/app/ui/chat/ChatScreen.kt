@@ -335,6 +335,9 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                             )
                             messages.add(placeholderMsg)
 
+                            // 立即滚动到底部显示用户消息
+                            listState.scrollToItem(messages.lastIndex)
+
                             // 首条消息设为会话标题（本地显示）
                             if (isFirstMessage) {
                                 sessionTitle = inputText.take(30)

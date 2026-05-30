@@ -135,7 +135,17 @@ class AgentDaemon(
                                 }
                                 "executor_done" -> {
                                     val status = event.optString("status", "completed")
-                                    val msg = if (status == "cancelled") "\n\n⏹️ 子Agent已中断\n" else "\n\n✅ 子Agent完成\n"
+                                    val elapsed = event.optInt("elapsed", 0)
+                                    val tokens = event.optInt("tokens", 0)
+                                    val stats = buildList {
+                                        if (elapsed > 0) add("⏱️ ${elapsed}s")
+                                        if (tokens > 0) add("≈${tokens} tokens")
+                                    }.joinToString(" | ")
+                                    val statsLine = if (stats.isNotBlank()) "\n📊 $stats" else ""
+                                    val msg = when (status) {
+                                        "cancelled" -> "\n\n⏹️ 子Agent已中断$statsLine\n"
+                                        else -> "\n\n✅ 子Agent完成$statsLine\n"
+                                    }
                                     StreamBridge.stream(msg)
                                     output.append(msg)
                                     task.output.value = output.toString()
@@ -152,6 +162,15 @@ class AgentDaemon(
                                         task.output.value = output.toString()
                                     } else if (status == "done") {
                                         StreamBridge.status("就绪")
+                                    }
+                                }
+                                "done_stats" -> {
+                                    val elapsed = event.optInt("elapsed", 0)
+                                    if (elapsed > 0) {
+                                        val statsLine = "\n\n📊 完成 (⏱️ ${elapsed}s)"
+                                        StreamBridge.stream(statsLine)
+                                        output.append(statsLine)
+                                        task.output.value = output.toString()
                                     }
                                 }
                                 "skill_verify" -> {
