@@ -428,7 +428,7 @@ object TermuxServiceClient {
                         val content = try { logFile.readText() } catch (_: Exception) { "" }
                         if (content.contains("[update] Success") || content.contains("[update] Failed")) {
                             stopWatching()
-                            if (cont.isActive) cont.resume(content)
+                            if (cont.isActive) cont.resume(content, null)
                         }
                     }
                 }
@@ -439,7 +439,7 @@ object TermuxServiceClient {
                 val timeout = scope.launch {
                     delay(60_000L)
                     observer.stopWatching()
-                    if (cont.isActive) cont.resume("[update] Timeout")
+                    if (cont.isActive) cont.resume("[update] Timeout", null)
                 }
 
                 cont.invokeOnCancellation {
@@ -461,7 +461,7 @@ object TermuxServiceClient {
                     observer.stopWatching()
                     timeout.cancel()
                     if (cont.isActive) {
-                        cont.resume("[update] Failed: Intent 发送失败: ${e.message}")
+                        cont.resume("[update] Failed: Intent 发送失败: ${e.message}", null)
                     }
                 }
             }
