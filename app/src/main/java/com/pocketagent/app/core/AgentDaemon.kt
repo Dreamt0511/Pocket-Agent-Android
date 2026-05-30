@@ -141,6 +141,38 @@ class AgentDaemon(
                                     task.output.value = output.toString()
                                     StreamBridge.status("就绪")
                                 }
+                                "skill_condense" -> {
+                                    val status = event.optString("status", "")
+                                    val skill = event.optString("skill", "")
+                                    if (status == "start") {
+                                        StreamBridge.status("📝 沉淀技能: $skill")
+                                        val label = "\n\n📝 沉淀技能: $skill\n"
+                                        StreamBridge.stream(label)
+                                        output.append(label)
+                                        task.output.value = output.toString()
+                                    } else if (status == "done") {
+                                        StreamBridge.status("就绪")
+                                    }
+                                }
+                                "skill_verify" -> {
+                                    val status = event.optString("status", "")
+                                    val skill = event.optString("skill", "")
+                                    if (status == "start") {
+                                        StreamBridge.status("🔍 验证技能: $skill")
+                                        val label = "\n\n🔍 验证技能: $skill\n"
+                                        StreamBridge.stream(label)
+                                        output.append(label)
+                                        task.output.value = output.toString()
+                                    } else if (status == "done") {
+                                        StreamBridge.status("就绪")
+                                    } else if (status == "failed") {
+                                        val error = event.optString("error", "")
+                                        val label = "\n\n❌ 技能验证失败: $skill${if (error.isNotBlank()) " ($error)" else ""}\n"
+                                        StreamBridge.stream(label)
+                                        output.append(label)
+                                        task.output.value = output.toString()
+                                    }
+                                }
                             }
                         } catch (_: Exception) {}
                     }
