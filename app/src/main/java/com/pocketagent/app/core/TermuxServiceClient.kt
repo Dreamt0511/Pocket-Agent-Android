@@ -389,21 +389,33 @@ object TermuxServiceClient {
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
             }
 
+            // 清空旧日志，避免误读上次结果
+            val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
+            if (logFile.exists()) logFile.writeText("")
+
             context.startService(intent)
 
-            // 等待执行完成
-            kotlinx.coroutines.delay(5000)
+            // 轮询等待执行完成，最多等 30 秒
+            val maxWaitMs = 30_000L
+            val pollIntervalMs = 1_000L
+            var elapsed = 0L
+            var logContent = ""
 
-            // 读取日志判断结果
-            val logFile = java.io.File("/data/data/com.termux/files/home/update.log")
-            val logContent = if (logFile.exists()) logFile.readText() else ""
+            while (elapsed < maxWaitMs) {
+                kotlinx.coroutines.delay(pollIntervalMs)
+                elapsed += pollIntervalMs
+                logContent = if (logFile.exists()) logFile.readText() else ""
+                if (logContent.contains("[update] Success") || logContent.contains("[update] Failed")) {
+                    break
+                }
+            }
 
             if (logContent.contains("[update] Success")) {
                 SyncResult.Ok(logContent)
             } else if (logContent.contains("[update] Failed")) {
-                SyncResult.Error("git pull 失败")
+                SyncResult.Error("git pull 失败: $logContent")
             } else {
-                SyncResult.Ok("更新命令已发送，请等待完成")
+                SyncResult.Error("更新超时（${maxWaitMs / 1000}秒），请检查 Termux 是否在运行")
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "执行失败")
