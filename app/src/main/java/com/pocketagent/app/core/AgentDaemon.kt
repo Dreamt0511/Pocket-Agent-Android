@@ -124,6 +124,12 @@ class AgentDaemon(
                                 "tool_end" -> {
                                     StreamBridge.status("就绪")
                                 }
+                                "progress" -> {
+                                    val message = event.optString("message", "")
+                                    if (message.isNotBlank()) {
+                                        StreamBridge.status(message)
+                                    }
+                                }
                                 "thinking" -> StreamBridge.status("思考中")
                                 "executor_start" -> {
                                     val objective = event.optString("objective", "")
