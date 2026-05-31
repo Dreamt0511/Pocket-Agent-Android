@@ -61,6 +61,11 @@ fun ConfigScreen(navController: NavController) {
     var verifyResult by remember { mutableStateOf<String?>(null) }
     var verifyOk by remember { mutableStateOf(false) }
 
+    // 子模型测试状态
+    var executorVerifying by remember { mutableStateOf(false) }
+    var executorVerifyResult by remember { mutableStateOf<String?>(null) }
+    var executorVerifyOk by remember { mutableStateOf(false) }
+
     // MCP 测试状态
     var testingMcp by remember { mutableStateOf(false) }
     var mcpResult by remember { mutableStateOf<String?>(null) }
@@ -279,6 +284,46 @@ fun ConfigScreen(navController: NavController) {
                         placeholder = "留空同主模型",
                         onValueChange = { configMap = configMap + ("EXECUTOR_MODEL" to it) }
                     )
+                    Spacer(Modifier.height(4.dp))
+                    // 子模型验证按钮
+                    val executorUrl = configMap["EXECUTOR_LLM_BASE_URL"] ?: ""
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                executorVerifying = true
+                                executorVerifyResult = null
+                                // 构建子模型配置 map，键名与 testLlmConnection 期望的一致
+                                val executorConfig = mapOf(
+                                    "DEFAULT_LLM_BASE_URL" to executorUrl,
+                                    "LLM_API_KEY" to (configMap["EXECUTOR_API_KEY"] ?: ""),
+                                    "LLM_MODEL" to (configMap["EXECUTOR_MODEL"] ?: "")
+                                )
+                                val result = testLlmConnection(executorConfig)
+                                executorVerifyOk = result.first
+                                executorVerifyResult = result.second
+                                executorVerifying = false
+                            }
+                        },
+                        enabled = !executorVerifying && executorUrl.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (executorVerifyOk) Color(0xFF16A34A) else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        if (executorVerifying) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            if (executorVerifying) "验证中..." else if (executorVerifyOk) "✔ 连接正常" else "验证子模型",
+                            fontSize = 14.sp
+                        )
+                    }
+                    executorVerifyResult?.let {
+                        Text(it, fontSize = 12.sp, color = if (executorVerifyOk) Color(0xFF16A34A) else Color(0xFFDC2626),
+                            modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
 
                 // ===== 嵌入模型 =====
