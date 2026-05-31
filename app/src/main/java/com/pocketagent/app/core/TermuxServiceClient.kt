@@ -30,7 +30,7 @@ object TermuxServiceClient {
 
     private val shortTimeoutClient = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val longPollClient = OkHttpClient.Builder()

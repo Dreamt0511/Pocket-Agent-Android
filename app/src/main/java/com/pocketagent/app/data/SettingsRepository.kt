@@ -20,7 +20,10 @@ data class Settings(
     val autoUpdate: Boolean = true,
     val showStatus: Boolean = true,
     val pypiMirrorUrl: String = "",
-    val embeddingModelPath: String = ""
+    val embeddingModelPath: String = "",
+    val executorBaseUrl: String = "",
+    val executorApiKey: String = "",
+    val executorModel: String = ""
 )
 
 class SettingsRepository(
@@ -42,6 +45,9 @@ class SettingsRepository(
         private val DELETED_SKILLS = stringPreferencesKey("deleted_skills")
         private val MODIFIED_SKILLS = stringPreferencesKey("modified_skills")
         private val EMBEDDING_MODEL_PATH = stringPreferencesKey("embedding_model_path")
+        private val EXECUTOR_BASE_URL = stringPreferencesKey("executor_base_url")
+        private val EXECUTOR_API_KEY = stringPreferencesKey("executor_api_key")
+        private val EXECUTOR_MODEL = stringPreferencesKey("executor_model")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -56,7 +62,10 @@ class SettingsRepository(
                 autoUpdate = preferences[AUTO_UPDATE] ?: true,
                 showStatus = preferences[SHOW_STATUS] ?: true,
                 pypiMirrorUrl = preferences[PYPI_MIRROR_URL] ?: "",
-                embeddingModelPath = preferences[EMBEDDING_MODEL_PATH] ?: ""
+                embeddingModelPath = preferences[EMBEDDING_MODEL_PATH] ?: "",
+                executorBaseUrl = preferences[EXECUTOR_BASE_URL] ?: "",
+                executorApiKey = preferences[EXECUTOR_API_KEY] ?: "",
+                executorModel = preferences[EXECUTOR_MODEL] ?: ""
             )
         }
 
@@ -76,6 +85,9 @@ class SettingsRepository(
             preferences[SHOW_STATUS] = settings.showStatus
             preferences[PYPI_MIRROR_URL] = settings.pypiMirrorUrl
             preferences[EMBEDDING_MODEL_PATH] = settings.embeddingModelPath
+            preferences[EXECUTOR_BASE_URL] = settings.executorBaseUrl
+            preferences[EXECUTOR_API_KEY] = settings.executorApiKey
+            preferences[EXECUTOR_MODEL] = settings.executorModel
         }
     }
 

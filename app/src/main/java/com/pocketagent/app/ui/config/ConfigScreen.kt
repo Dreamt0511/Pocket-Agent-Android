@@ -107,6 +107,10 @@ fun ConfigScreen(navController: NavController) {
             if (ds.embeddingModelPath.isNotBlank()) {
                 fromDataStore["EMBEDDING_MODEL_PATH"] = ds.embeddingModelPath
             }
+            // 子模型配置
+            if (ds.executorBaseUrl.isNotBlank()) fromDataStore["EXECUTOR_LLM_BASE_URL"] = ds.executorBaseUrl
+            if (ds.executorApiKey.isNotBlank()) fromDataStore["EXECUTOR_API_KEY"] = ds.executorApiKey
+            if (ds.executorModel.isNotBlank()) fromDataStore["EXECUTOR_MODEL"] = ds.executorModel
             configMap = ConfigManager.loadAll() + fromDataStore
         } catch (_: Exception) {
             configMap = ConfigManager.loadAll()
@@ -126,7 +130,10 @@ fun ConfigScreen(navController: NavController) {
                     llmTemperature = map["LLM_TEMPERATURE"]?.toFloatOrNull() ?: 0.7f,
                     llmMaxTokens = map["LLM_MAX_TOKENS"]?.toIntOrNull() ?: 8000,
                     mcpServerUrl = map["MCP_SERVER_URL"] ?: "",
-                    embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: ""
+                    embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: "",
+                    executorBaseUrl = map["EXECUTOR_LLM_BASE_URL"] ?: "",
+                    executorApiKey = map["EXECUTOR_API_KEY"] ?: "",
+                    executorModel = map["EXECUTOR_MODEL"] ?: ""
                 )
             )
         } catch (_: Exception) {}
@@ -736,7 +743,7 @@ private suspend fun testLlmConnection(config: Map<String, String>): Pair<Boolean
 
     val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     try {
@@ -801,7 +808,7 @@ private suspend fun testMcpConnection(url: String): Pair<Boolean, String> = with
 
     val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
     try {
@@ -904,7 +911,7 @@ private fun ConfigField(
 private suspend fun fetchRemoteVersion(): Pair<String, String> = withContext(Dispatchers.IO) {
     val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .build()
     val url = "https://api.github.com/repos/Dreamt0511/Pocket-Agent/commits/main"
     val request = Request.Builder()

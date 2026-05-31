@@ -30,7 +30,7 @@ class MainRepositoryAPI(private val repoBaseUrl: String) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private val apiBaseUrl: String
