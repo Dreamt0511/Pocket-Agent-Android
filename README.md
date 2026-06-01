@@ -215,10 +215,17 @@ GitHub Actions 在 push to main 时自动构建 Release APK：
 
 首次启动时，App 会自动在 Termux 中安装以下环境：
 
-- **Python**：通过 `pkg install python` 安装
-- **Git**：通过 `pkg install git` 安装
-- **FastAPI + Uvicorn**：通过 `pip install` 安装
-- **所有依赖包**：从 `requirements.txt` 安装
+**系统依赖：**
+- Python（`pkg install python`）
+- Git（`pkg install git`）
+- SQLite（`pkg install sqlite`）
+- 图像处理库：libjpeg-turbo、libpng、zlib
+- 数学库：libopenblas（numpy 依赖）
+
+**Python 包：**
+- FastAPI + Uvicorn（HTTP 服务）
+- LangChain + LangGraph（AI Agent 框架）
+- 所有依赖包（从 `requirements.txt` 安装）
 
 整个过程约 3-5 分钟，完成后会创建 `~/.pocket-agent-ready` 标记文件，后续启动跳过初始化。
 

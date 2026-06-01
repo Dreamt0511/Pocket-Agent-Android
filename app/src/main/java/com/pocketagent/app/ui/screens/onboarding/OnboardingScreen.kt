@@ -347,7 +347,7 @@ fun TermuxConfigStep() {
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
-                    text = "首次启动时，App 会自动在 Termux 中安装：\n• Python 环境\n• Git 工具\n• FastAPI + Uvicorn\n• 所有依赖包\n\n整个过程约 3-5 分钟，请耐心等待",
+                    text = "首次启动时，App 会自动在 Termux 中安装：\n\n系统依赖：\n• Python、Git、SQLite\n• 图像处理库（libjpeg-turbo、libpng）\n• 数学库（libopenblas）\n\nPython 包：\n• FastAPI + Uvicorn\n• LangChain + LangGraph\n• 所有依赖包\n\n整个过程约 3-5 分钟，请耐心等待",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                 )
