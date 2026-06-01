@@ -102,7 +102,7 @@ object TermuxLauncher {
             append("    tail -10 ~/uvicorn.log 2>/dev/null || echo \"No log file found\";\n")
             append("    exit 1;\n")
             append("  fi\n")
-            append("} >~/startup.log 2>&1")
+            append("} 2>&1 | tee ~/startup.log")
         }
 
         return sendScript(context, script)
