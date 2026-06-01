@@ -209,7 +209,18 @@ GitHub Actions 在 push to main 时自动构建 Release APK：
 3. 授权「显示在其他应用上层」权限（悬浮窗）
 4. 授权「录音」权限（语音输入）
 5. 进入「配置」页面，填写 LLM API 地址和密钥
-6. 主页点击对话，Agent 自动在 Termux 中初始化环境（首次需等待 git clone + pip install）
+6. 主页点击对话，Agent 自动在 Termux 中初始化环境（首次需等待 3-5 分钟）
+
+### 首次启动自动配置
+
+首次启动时，App 会自动在 Termux 中安装以下环境：
+
+- **Python**：通过 `pkg install python` 安装
+- **Git**：通过 `pkg install git` 安装
+- **FastAPI + Uvicorn**：通过 `pip install` 安装
+- **所有依赖包**：从 `requirements.txt` 安装
+
+整个过程约 3-5 分钟，完成后会创建 `~/.pocket-agent-ready` 标记文件，后续启动跳过初始化。
 
 ## 权限说明
 

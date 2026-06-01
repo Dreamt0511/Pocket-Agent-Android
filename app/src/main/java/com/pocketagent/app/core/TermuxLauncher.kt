@@ -33,7 +33,7 @@ object TermuxLauncher {
 
         val pipEnv = if (mirrorUrl.isNotBlank()) "PIP_INDEX_URL=$mirrorUrl " else ""
 
-        // 环境初始化 + 启动 uvicorn。第一次会 git clone + pip install，
+        // 环境初始化 + 启动 uvicorn。第一次会安装 Python + git clone + pip install，
         // 完成后创建 ~/.pocket-agent-ready，后续启动跳过初始化。
         val script = buildString {
             append("{\n")
@@ -42,8 +42,19 @@ object TermuxLauncher {
             append("  cd ~/$POCKET_AGENT_DIR || exit 1\n")
             append("  if [ ! -f ~/.pocket-agent-ready ]; then\n")
             append("    echo \"[init] First run — setting up environment...\";\n")
+            append("    # 检查并安装 Python\n")
+            append("    if ! command -v python &> /dev/null; then\n")
+            append("      echo \"[init] Installing Python...\";\n")
+            append("      pkg update -y 2>&1 || exit 1\n")
+            append("      pkg install -y python git 2>&1 || exit 1\n")
+            append("    fi\n")
+            append("    # 检查并安装 pip\n")
+            append("    if ! command -v pip &> /dev/null; then\n")
+            append("      echo \"[init] Installing pip...\";\n")
+            append("      python -m ensurepip --upgrade 2>&1 || exit 1\n")
+            append("    fi\n")
             append("    if [ ! -d .git ]; then\n")
-            append("      git clone $GIT_REPO . || exit 1;\n")
+            append("      git clone $GIT_REPO . || exit 1\n")
             append("    fi\n")
             append("    echo \"[init] Installing fastapi+uvicorn...\";\n")
             append("    ${pipEnv}pip install -q fastapi uvicorn 2>&1 || exit 1;\n")

@@ -330,6 +330,32 @@ fun TermuxConfigStep() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // 自动配置说明
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "3. 自动配置",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "首次启动时，App 会自动在 Termux 中安装：\n• Python 环境\n• Git 工具\n• FastAPI + Uvicorn\n• 所有依赖包\n\n整个过程约 3-5 分钟，请耐心等待",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // 提示信息
         Card(
             modifier = Modifier.fillMaxWidth(),
