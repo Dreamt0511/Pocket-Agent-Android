@@ -83,6 +83,9 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
     val toolStatus by OverlayService.taskStatus.collectAsState()
 
+    // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
+    val streamText by OverlayService.streamText.collectAsState()
+
     // 新建会话的辅助函数
     val createNewSession: () -> Unit = {
         val newId = UUID.randomUUID().toString()
@@ -151,9 +154,6 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
             }
         }
     }
-
-    // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
-    val streamText by OverlayService.streamText.collectAsState()
 
     // 键盘弹起时自动滚动到底部（通过 ViewTreeObserver 检测窗口可视区域变化）
     val view = LocalView.current
