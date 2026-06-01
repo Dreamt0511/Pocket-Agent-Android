@@ -146,11 +146,12 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         // 检查是否有正在执行的任务，恢复 isProcessing 状态
         if (daemonStatus is AgentDaemon.DaemonStatus.Executing) {
             isProcessing = true
+            android.util.Log.d("ChatScreen", "恢复执行状态，streamText=${streamText.take(50)}")
             // 如果最后一条消息是用户消息，添加占位 AI 消息
             val lastMsg = messages.lastOrNull()
             if (lastMsg == null || lastMsg.isUser) {
                 messages.add(ChatMessage(
-                    text = streamText,  // 使用当前的 streamText
+                    text = streamText,
                     isUser = false,
                     timestamp = System.currentTimeMillis()
                 ))
@@ -203,6 +204,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                     // 恢复执行状态：如果 daemon 仍在执行，恢复 isProcessing
                     if (daemonStatus is AgentDaemon.DaemonStatus.Executing && !isProcessing) {
                         isProcessing = true
+                        android.util.Log.d("ChatScreen", "ON_RESUME 恢复执行状态，streamText=${streamText.take(50)}")
                         // 确保有占位 AI 消息，并同步当前 streamText
                         val lastMsg = messages.lastOrNull()
                         if (lastMsg == null || lastMsg.isUser) {
@@ -454,7 +456,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                         isProcessing = isProcessing,
                         onDelete = if (message.id != null) {
                             {
-                                appScope.launch {
+                                scope.launch {
                                     TermuxServiceClient.deleteMessage(message.id)
                                     messages.remove(message)
                                 }
