@@ -136,6 +136,20 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         if (!loadMessages(convId) && conversationId != null) {
             createNewSession()
         }
+
+        // 检查是否有正在执行的任务，恢复 isProcessing 状态
+        if (daemonStatus is AgentDaemon.DaemonStatus.Executing) {
+            isProcessing = true
+            // 如果最后一条消息是用户消息，添加占位 AI 消息
+            val lastMsg = messages.lastOrNull()
+            if (lastMsg == null || lastMsg.isUser) {
+                messages.add(ChatMessage(
+                    text = streamText,  // 使用当前的 streamText
+                    isUser = false,
+                    timestamp = System.currentTimeMillis()
+                ))
+            }
+        }
     }
 
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
@@ -183,6 +197,22 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     OverlayService.hideAll(context)
+                    // 恢复执行状态：如果 daemon 仍在执行，恢复 isProcessing
+                    if (daemonStatus is AgentDaemon.DaemonStatus.Executing && !isProcessing) {
+                        isProcessing = true
+                        // 确保有占位 AI 消息，并同步当前 streamText
+                        val lastMsg = messages.lastOrNull()
+                        if (lastMsg == null || lastMsg.isUser) {
+                            messages.add(ChatMessage(
+                                text = streamText,
+                                isUser = false,
+                                timestamp = System.currentTimeMillis()
+                            ))
+                        } else if (!lastMsg.isUser && streamText.isNotEmpty() && lastMsg.text != streamText) {
+                            // 更新最后一条 AI 消息的文本为当前 streamText
+                            messages[messages.lastIndex] = lastMsg.copy(text = streamText)
+                        }
+                    }
                 }
                 else -> {}
             }
@@ -193,14 +223,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
         }
     }
 
-    // 退出页面时终止后台执行（仅页面销毁，不包括切换后台应用）
-    DisposableEffect(Unit) {
-        onDispose {
-            if (isProcessing) {
-                AppBootstrapper.cancelCommand()
-            }
-        }
-    }
+    // 退出页面时不取消任务 — 任务在后台继续执行，悬浮窗显示进度
 
     // 处理返回键：执行中时先取消再退出
     BackHandler(enabled = isProcessing) {
