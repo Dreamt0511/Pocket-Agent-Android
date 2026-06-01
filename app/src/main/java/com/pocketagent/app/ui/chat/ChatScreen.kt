@@ -225,10 +225,8 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
 
     // 退出页面时不取消任务 — 任务在后台继续执行，悬浮窗显示进度
 
-    // 处理返回键：执行中时先取消再退出
+    // 处理返回键：执行中时不取消任务，让任务在后台继续
     BackHandler(enabled = isProcessing) {
-        AppBootstrapper.cancelCommand()
-        isProcessing = false
         navController.popBackStack()
     }
 
