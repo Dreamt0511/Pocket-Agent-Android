@@ -8,6 +8,8 @@ import com.pocketagent.app.service.AgentService
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.TaskResult
+import com.pocketagent.app.data.SettingsRepository
+import com.pocketagent.app.data.settingsDataStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
 
@@ -63,7 +65,14 @@ object AppBootstrapper {
                 SkillManager.rescan()
                 StreamBridge.status("就绪 — 随时可以开始")
             } else {
-                StreamBridge.error("启动失败，请检查 Termux 配置")
+                // bootstrap 失败：如果用户主动关过服务，不显示误导性的"启动失败"
+                if (com.pocketagent.app.data.SettingsRepository(
+                        getContext().settingsDataStore
+                    ).isServiceStopRequested()) {
+                    StreamBridge.status("服务已停止")
+                } else {
+                    StreamBridge.error("启动失败，请检查 Termux 配置")
+                }
             }
         }
     }

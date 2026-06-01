@@ -63,7 +63,7 @@ class AgentDaemon(
                     maxAttempts = 120,  // 增加到 10 分钟（首次安装需要更长时间）
                     intervalMs = 5000L,
                     onAttempt = { attempt, total, error, sec ->
-                        StreamBridge.status("连接 Termux 服务: 第${attempt}/${total}次（${sec}秒）")
+                        StreamBridge.status("正在启动服务... 已等待 ${sec}秒")
                         Log.d(TAG, "waitForService attempt $attempt/$total: $error")
                     }
                 )
