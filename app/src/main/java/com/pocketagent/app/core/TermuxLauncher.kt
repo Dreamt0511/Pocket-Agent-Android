@@ -28,6 +28,7 @@ object TermuxLauncher {
     fun launchFastAPI(context: Context, mirrorUrl: String = ""): Boolean {
         if (!isTermuxInstalled(context)) {
             Log.w(TAG, "Termux not installed")
+            StreamBridge.error("请先安装 Termux、Termux:API、Termux:Boot")
             return false
         }
 
@@ -138,6 +139,12 @@ object TermuxLauncher {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send Termux intent", e)
+            // 检查是否是 allow-external-apps 配置问题
+            if (e.message?.contains("allow-external-apps") == true) {
+                StreamBridge.error("请在 Termux 中执行：echo 'allow-external-apps = true' >> ~/.termux/termux.properties")
+            } else {
+                StreamBridge.error("无法发送命令到 Termux: ${e.message}")
+            }
             false
         }
     }
