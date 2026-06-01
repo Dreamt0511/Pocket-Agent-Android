@@ -219,7 +219,7 @@ GitHub Actions 在 push to main 时自动构建 Release APK：
 - Python（`pkg install python`）
 - Git（`pkg install git`）
 - SQLite（`pkg install sqlite`）
-- 图像处理库：libjpeg-turbo、libpng、zlib
+- 图像处理库：libjpeg-turbo、libpng
 - 数学库：libopenblas（numpy 依赖）
 
 **Python 包：**

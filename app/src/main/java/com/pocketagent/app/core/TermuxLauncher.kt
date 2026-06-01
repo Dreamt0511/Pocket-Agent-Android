@@ -46,7 +46,7 @@ object TermuxLauncher {
             append("    if ! command -v python &> /dev/null; then\n")
             append("      echo \"[init] Installing Python and system dependencies...\";\n")
             append("      pkg update -y 2>&1 || exit 1\n")
-            append("      pkg install -y python git sqlite libjpeg-turbo libpng zlib libopenblas 2>&1 || exit 1\n")
+            append("      pkg install -y python git sqlite libjpeg-turbo libpng libopenblas 2>&1 || exit 1\n")
             append("    fi\n")
             append("    # 检查并安装 pip\n")
             append("    if ! command -v pip &> /dev/null; then\n")
