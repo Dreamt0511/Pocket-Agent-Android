@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.pocketagent.app.data.SettingsRepository
 import com.pocketagent.app.data.settingsDataStore
+import com.pocketagent.app.overlay.OverlayService
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.service.TaskQueueManager
 import com.pocketagent.app.update.TaskResult
@@ -38,6 +39,8 @@ class AgentDaemon(
         Log.i(TAG, "=== Bootstrap start ===")
 
         _status.value = DaemonStatus.Initializing
+        // 清除上次的输出，避免旧的错误信息残留
+        OverlayService.streamText.value = ""
         StreamBridge.status("连接 Termux 服务...")
         StreamBridge.out("[info] 检查 Termux FastAPI 服务...\n")
 
@@ -70,8 +73,8 @@ class AgentDaemon(
                 if (r.success) {
                     StreamBridge.out("[done] Termux 服务已启动\n")
                 } else {
-                    StreamBridge.error("Termux 服务启动失败: ${r.message}")
-                    _status.value = DaemonStatus.Error("Termux 服务不可用")
+                    StreamBridge.out("[error] 服务启动超时，请在 Termux 中执行 cat ~/startup.log 查看详情\n")
+                    _status.value = DaemonStatus.Error("服务启动超时")
                     return false
                 }
             }
