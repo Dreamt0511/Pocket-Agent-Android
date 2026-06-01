@@ -24,6 +24,7 @@ object AppBootstrapper {
 
     private const val TAG = "AppBootstrapper"
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    val appScope: CoroutineScope get() = scope
 
     private lateinit var daemon: AgentDaemon
 

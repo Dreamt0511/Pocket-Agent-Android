@@ -83,6 +83,9 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
     val isDaemonReady = daemonStatus is AgentDaemon.DaemonStatus.Ready
     val toolStatus by OverlayService.taskStatus.collectAsState()
 
+    // 使用 AppBootstrapper 的协程作用域，避免退出页面时协程被取消
+    val appScope = remember { AppBootstrapper.appScope }
+
     // 收集悬浮窗流式输出并实时更新最后一条 AI 消息
     val streamText by OverlayService.streamText.collectAsState()
 
@@ -349,7 +352,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                 isProcessing = isProcessing,
                 onSend = {
                     if (inputText.isNotBlank() && !isProcessing && isDaemonReady && currentConvId != null) {
-                        scope.launch {
+                        appScope.launch {
                             isProcessing = true
                             val convId = currentConvId!!
 
@@ -451,7 +454,7 @@ fun ChatScreen(navController: NavController, conversationId: String? = null) {
                         isProcessing = isProcessing,
                         onDelete = if (message.id != null) {
                             {
-                                scope.launch {
+                                appScope.launch {
                                     TermuxServiceClient.deleteMessage(message.id)
                                     messages.remove(message)
                                 }
