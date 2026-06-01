@@ -70,10 +70,6 @@ object TermuxLauncher {
             append("  fi\n")
         }
 
-        // 判断是否需要初始化
-        // 用 shell 检测：~/.pocket-agent-ready 不存在 = 需要初始化
-        val needsInitScript = "[ ! -f ~/.pocket-agent-ready ]"
-
         // ── 首次初始化脚本（前台运行，用户可在 Termux 中看到进度） ──
         val initScript = buildString {
             // 已就绪则立即退出，不打扰用户
@@ -150,22 +146,30 @@ object TermuxLauncher {
         }
 
         // 策略：先发后台快速启动（如果已就绪直接跑 uvicorn），
-        // 再发前台初始化脚本（如果已就绪则立即退出不影响用户）
+        // 再发前台初始化脚本（确保 Termux 打开，用户可看到进度）
         return try {
             // 1) 后台快速启动（已就绪时直接启动 uvicorn）
             val quickIntent = createRunIntent(quickStartScript, background = true)
             context.startService(quickIntent)
             Log.i(TAG, "Quick start intent sent")
 
-            // 2) 前台初始化（未就绪时在 Termux 中显示安装进度）
-            //    如果已就绪，脚本会立即退出，用户只会闪一下 Termux
+            // 2) 前台初始化脚本（确保 Termux 打开显示进度）
             try {
                 val initIntent = createRunIntent(initScript, background = false)
                 context.startService(initIntent)
                 Log.i(TAG, "Init script sent (foreground)")
             } catch (e: Exception) {
-                // 前台失败（如 Termux 未配置 allow-external-apps），降级后台
-                Log.w(TAG, "Foreground init failed, trying background", e)
+                // 前台失败（如未配置 allow-external-apps）
+                // 先打开 Termux Activity 确保 Termux 可见，再用后台模式发脚本
+                Log.w(TAG, "Foreground startService failed, opening Termux Activity", e)
+                try {
+                    val launchIntent = context.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(launchIntent)
+                    }
+                } catch (_: Exception) {}
+                // 用后台模式发脚本（Termux 已打开，用户切换过去能看到）
                 val fallbackIntent = createRunIntent(initScript, background = true)
                 context.startService(fallbackIntent)
             }
@@ -174,7 +178,7 @@ object TermuxLauncher {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send Termux intent", e)
             if (e.message?.contains("allow-external-apps") == true) {
-                StreamBridge.error("请在 Termux 中执行：echo 'allow-external-apps = true' >> ~/.termux/termux.properties")
+                StreamBridge.error("请在 Termux 中执行：echo 'allow-external-apps = true' >> ~/.termux/termux.properties\n然后重启 Termux 再试")
             } else {
                 StreamBridge.error("无法发送命令到 Termux: ${e.message}")
             }
