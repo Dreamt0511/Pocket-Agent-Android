@@ -3,6 +3,7 @@ package com.pocketagent.app.core
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.pocketagent.app.overlay.StreamBridge
 
 object TermuxLauncher {
     private const val TAG = "TermuxLauncher"
