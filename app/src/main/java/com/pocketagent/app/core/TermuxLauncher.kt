@@ -1,9 +1,14 @@
 package com.pocketagent.app.core
 
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Process
 import android.util.Log
 import com.pocketagent.app.overlay.StreamBridge
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 object TermuxLauncher {
     private const val TAG = "TermuxLauncher"
@@ -13,12 +18,32 @@ object TermuxLauncher {
     private const val POCKET_AGENT_DIR = "Pocket-Agent"
     private const val GIT_REPO = "https://github.com/Dreamt0511/Pocket-Agent.git"
 
+    /** 当 Termux 缺少悬浮窗权限时发射事件，UI 层弹窗引导授权 */
+    private val _needOverlayPermission = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val needOverlayPermission = _needOverlayPermission.asSharedFlow()
+
     fun isTermuxInstalled(context: Context): Boolean {
         return try {
             context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0)
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /** 检查 Termux 是否有悬浮窗权限（Android 10+ 后台启动需要） */
+    fun hasTermuxOverlayPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true
+        return try {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+            val mode = appOps.unsafeCheckOpNoThrow(
+                "android:system_alert_window",
+                context.packageManager.getApplicationInfo(TERMUX_PACKAGE, 0).uid,
+                TERMUX_PACKAGE
+            )
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            true // 无法检查时假设已授权，不阻塞
         }
     }
 
@@ -31,6 +56,13 @@ object TermuxLauncher {
         if (!isTermuxInstalled(context)) {
             Log.w(TAG, "Termux not installed")
             StreamBridge.error("请先安装 Termux、Termux:API、Termux:Boot")
+            return false
+        }
+
+        // Android 10+ 后台启动 Termux 需要悬浮窗权限
+        if (!hasTermuxOverlayPermission(context)) {
+            Log.w(TAG, "Termux missing overlay permission")
+            _needOverlayPermission.tryEmit(Unit)
             return false
         }
 

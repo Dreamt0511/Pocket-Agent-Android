@@ -75,6 +75,14 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
     val settings by settingsRepo.settingsFlow.collectAsState(initial = null)
     val daemonStatus by AppBootstrapper.daemonStatus.collectAsState()
     var initialSetupDone by remember { mutableStateOf(false) }
+    var showTermuxOverlayDialog by remember { mutableStateOf(false) }
+
+    // 监听 Termux 悬浮窗权限缺失事件
+    LaunchedEffect(Unit) {
+        TermuxLauncher.needOverlayPermission.collect {
+            showTermuxOverlayDialog = true
+        }
+    }
 
     LaunchedEffect(Unit) {
         initialSetupDone = settingsRepo.isInitialSetupDone()
@@ -195,6 +203,45 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
             }
 
             Spacer(Modifier.height(32.dp))
+        }
+
+        // ─── Termux 悬浮窗权限引导弹窗 ───
+        if (showTermuxOverlayDialog) {
+            AlertDialog(
+                onDismissRequest = { showTermuxOverlayDialog = false },
+                title = { Text("需要授权悬浮窗权限") },
+                text = {
+                    Text("Termux 需要「显示在其他应用上层」权限才能从后台启动终端。\n\n请在设置中找到 Termux → 高级 → 打开「显示在其他应用上层」")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showTermuxOverlayDialog = false
+                        try {
+                            val intent = Intent(
+                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:com.termux")
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            // 如果无法直接跳转，打开应用详情页
+                            val intent = Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:com.termux")
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(intent)
+                        }
+                    }) {
+                        Text("去授权")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTermuxOverlayDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }
