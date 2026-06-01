@@ -199,10 +199,17 @@ GitHub Actions 在 push to main 时自动构建 Release APK：
 ## 安装后首次启动
 
 1. 安装 [Termux](https://f-droid.org/packages/com.termux/)、Termux:API、Termux:Boot
-2. 授权「显示在其他应用上层」权限（悬浮窗）
-3. 授权「录音」权限（语音输入）
-4. 进入「配置」页面，填写 LLM API 地址和密钥
-5. 主页点击对话，Agent 自动在 Termux 中初始化环境（首次需等待 git clone + pip install）
+2. **配置 Termux**（重要）：
+   - 打开 Termux，执行以下命令：
+   ```bash
+   mkdir -p ~/.termux
+   echo "allow-external-apps = true" >> ~/.termux/termux.properties
+   ```
+   - 重启 Termux 使配置生效
+3. 授权「显示在其他应用上层」权限（悬浮窗）
+4. 授权「录音」权限（语音输入）
+5. 进入「配置」页面，填写 LLM API 地址和密钥
+6. 主页点击对话，Agent 自动在 Termux 中初始化环境（首次需等待 git clone + pip install）
 
 ## 权限说明
 

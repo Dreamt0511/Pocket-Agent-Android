@@ -28,7 +28,7 @@ fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     var currentStep by remember { mutableStateOf(0) }
-    val totalSteps = 3
+    val totalSteps = 4
 
     PocketAgentTheme {
         Scaffold(
@@ -66,8 +66,9 @@ fun OnboardingScreen(
                 // 内容区域
                 when (currentStep) {
                     0 -> WelcomeStep()
-                    1 -> ApiConfigStep()
-                    2 -> PermissionStep()
+                    1 -> TermuxConfigStep()
+                    2 -> ApiConfigStep()
+                    3 -> PermissionStep()
                 }
 
                 // 底部按钮
@@ -217,6 +218,141 @@ fun WelcomeStep() {
                     icon = Icons.Default.Chat,
                     title = "社交平台互动",
                     description = "自动点赞、评论、关注、发消息等社交操作"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TermuxConfigStep() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        Text(
+            text = "配置 Termux",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Text(
+            text = "Pocket Agent 需要通过 Termux 执行 Python 后端",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 24.dp)
+        )
+
+        // Termux 安装说明
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "1. 安装 Termux",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "从 F-Droid 下载并安装 Termux、Termux:API、Termux:Boot",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Termux 配置说明
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "2. 配置 Termux",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                Text(
+                    text = "打开 Termux，执行以下命令：",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                // 命令代码块
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "mkdir -p ~/.termux",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = "echo \"allow-external-apps = true\" >> ~/.termux/termux.properties",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "执行后重启 Termux 使配置生效",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 提示信息
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "警告",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "如果不配置此项，App 将无法向 Termux 发送命令",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
         }
