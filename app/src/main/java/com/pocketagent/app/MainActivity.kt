@@ -16,6 +16,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.rememberNavController
+import com.pocketagent.app.core.AgentDaemon
+import com.pocketagent.app.core.AppBootstrapper
 import com.pocketagent.app.core.NeuralBridgeHelper
 import com.pocketagent.app.core.TermuxLauncher
 import com.pocketagent.app.ui.theme.PocketAgentTheme
@@ -48,8 +50,12 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         // 应用被销毁（清后台/退出）时自动关闭 uvicorn
+        // 但 Agent 正在执行任务时不杀后端，让任务继续完成
         if (isFinishing && !isChangingConfigurations) {
-            TermuxLauncher.stopFastAPI(this)
+            val status = AppBootstrapper.daemonStatus.value
+            if (status !is AgentDaemon.DaemonStatus.Executing) {
+                TermuxLauncher.stopFastAPI(this)
+            }
         }
     }
 }
