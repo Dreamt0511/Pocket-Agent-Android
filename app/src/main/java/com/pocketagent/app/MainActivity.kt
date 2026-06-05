@@ -50,7 +50,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         // 应用被销毁（清后台/退出）时自动关闭 uvicorn
-        // 但 Agent 正在执行任务时不杀后端，让任务继续完成
+        // 但 Agent 正在执行任务时不杀后端，让任务继续完成。
+        // 注意：清后台后 uvicorn 会一直运行直到任务完成，没有自动清理机制，
+        // 这是 intentional tradeoff —— 宁可多跑一会也不打断正在执行的 Agent 任务。
         if (isFinishing && !isChangingConfigurations) {
             val status = AppBootstrapper.daemonStatus.value
             if (status !is AgentDaemon.DaemonStatus.Executing) {

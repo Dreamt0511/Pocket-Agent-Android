@@ -191,9 +191,9 @@ object TermuxLauncher {
                 context.startService(initIntent)
                 Log.i(TAG, "Init script sent (foreground)")
             } catch (e: Exception) {
-                // 前台失败（如未配置 allow-external-apps）
-                // 先打开 Termux Activity 确保 Termux 可见，再用后台模式发脚本
+                // 前台失败（通常因未配置 allow-external-apps）
                 Log.w(TAG, "Foreground startService failed, opening Termux Activity", e)
+                // 打开 Termux Activity 确保用户能看到终端界面
                 try {
                     val launchIntent = context.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE)
                     if (launchIntent != null) {
@@ -201,9 +201,15 @@ object TermuxLauncher {
                         context.startActivity(launchIntent)
                     }
                 } catch (_: Exception) {}
-                // 用后台模式发脚本（Termux 已打开，用户切换过去能看到）
-                val fallbackIntent = createRunIntent(initScript, background = true)
-                context.startService(fallbackIntent)
+                // 用后台模式发初始化脚本（quickStartScript 已在后台启动 uvicorn，
+                // 此脚本负责首次初始化；若 allow-external-apps 未配置则后台也发不出，但不影响快速启动）
+                try {
+                    val fallbackIntent = createRunIntent(initScript, background = true)
+                    context.startService(fallbackIntent)
+                } catch (_: Exception) {
+                    // 后台也失败，quickStartScript 已处理 uvicorn 启动，不阻塞
+                    Log.w(TAG, "Background init script also failed")
+                }
             }
 
             true
@@ -246,6 +252,7 @@ object TermuxLauncher {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop services", e)
+            StreamBridge.error("无法停止服务: ${e.message}")
             false
         }
     }
