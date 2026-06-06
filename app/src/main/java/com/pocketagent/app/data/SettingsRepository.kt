@@ -24,7 +24,6 @@ data class Settings(
     val executorBaseUrl: String = "",
     val executorApiKey: String = "",
     val executorModel: String = "",
-    val backScreenEnabled: Boolean = false
 )
 
 class SettingsRepository(
@@ -49,7 +48,6 @@ class SettingsRepository(
         private val EXECUTOR_BASE_URL = stringPreferencesKey("executor_base_url")
         private val EXECUTOR_API_KEY = stringPreferencesKey("executor_api_key")
         private val EXECUTOR_MODEL = stringPreferencesKey("executor_model")
-        private val BACK_SCREEN_ENABLED = booleanPreferencesKey("back_screen_enabled")
     }
 
     val settingsFlow: Flow<Settings> = dataStore.data
@@ -67,8 +65,7 @@ class SettingsRepository(
                 embeddingModelPath = preferences[EMBEDDING_MODEL_PATH] ?: "",
                 executorBaseUrl = preferences[EXECUTOR_BASE_URL] ?: "",
                 executorApiKey = preferences[EXECUTOR_API_KEY] ?: "",
-                executorModel = preferences[EXECUTOR_MODEL] ?: "",
-                backScreenEnabled = preferences[BACK_SCREEN_ENABLED] ?: false
+                executorModel = preferences[EXECUTOR_MODEL] ?: ""
             )
         }
 
@@ -91,7 +88,6 @@ class SettingsRepository(
             preferences[EXECUTOR_BASE_URL] = settings.executorBaseUrl
             preferences[EXECUTOR_API_KEY] = settings.executorApiKey
             preferences[EXECUTOR_MODEL] = settings.executorModel
-            preferences[BACK_SCREEN_ENABLED] = settings.backScreenEnabled
         }
     }
 

@@ -49,8 +49,6 @@ import com.pocketagent.app.core.ScriptProgress
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import com.pocketagent.app.backscreen.BackScreenManager
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class NavEntry(
@@ -87,18 +85,6 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
 
     LaunchedEffect(Unit) {
         initialSetupDone = settingsRepo.isInitialSetupDone()
-    }
-
-    // App 重启后自动恢复背屏（如果之前是开启状态，失败则重置避免闪退循环）
-    LaunchedEffect(Unit) {
-        val saved = settingsRepo.getSettings()
-        if (saved.backScreenEnabled) {
-            kotlinx.coroutines.delay(500)
-            val ok = BackScreenManager.enable(context)
-            if (!ok) {
-                settingsRepo.saveSettings(saved.copy(backScreenEnabled = false))
-            }
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

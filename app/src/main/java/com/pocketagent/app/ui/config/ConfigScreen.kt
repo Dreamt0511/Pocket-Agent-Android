@@ -103,7 +103,6 @@ fun ConfigScreen(navController: NavController) {
             if (ds.llmApiKey.isNotBlank()) fromDataStore["LLM_API_KEY"] = ds.llmApiKey
             if (ds.llmModel.isNotBlank()) fromDataStore["LLM_MODEL"] = ds.llmModel
             if (ds.mcpServerUrl.isNotBlank()) fromDataStore["MCP_SERVER_URL"] = ds.mcpServerUrl
-            fromDataStore["BACK_SCREEN_ENABLED"] = ds.backScreenEnabled.toString()
             // 嵌入模型路径：优先使用 DataStore 中的值
             if (ds.embeddingModelPath.isNotBlank()) {
                 fromDataStore["EMBEDDING_MODEL_PATH"] = ds.embeddingModelPath
@@ -134,8 +133,7 @@ fun ConfigScreen(navController: NavController) {
                     embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: "",
                     executorBaseUrl = map["EXECUTOR_LLM_BASE_URL"] ?: "",
                     executorApiKey = map["EXECUTOR_API_KEY"] ?: "",
-                    executorModel = map["EXECUTOR_MODEL"] ?: "",
-                    backScreenEnabled = map["BACK_SCREEN_ENABLED"] == "true"
+                    executorModel = map["EXECUTOR_MODEL"] ?: ""
                 )
             )
         } catch (_: Exception) {}
@@ -490,47 +488,6 @@ fun ConfigScreen(navController: NavController) {
                         else -> {}
                     }
 
-                }
-
-                // ===== 背屏显示 =====
-                SectionCard(title = "背屏显示") {
-                    val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"] == "true"
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                if (backScreenEnabled) "Agent 执行输出已投射到背屏"
-                                else "将 Agent 实时终端输出显示在手机背屏",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                        Switch(
-                            checked = backScreenEnabled,
-                            onCheckedChange = { enable ->
-                                val ok = if (enable) {
-                                    com.pocketagent.app.backscreen.BackScreenManager.enable(context)
-                                } else {
-                                    com.pocketagent.app.backscreen.BackScreenManager.disable()
-                                    true
-                                }
-                                if (ok) {
-                                    configMap = configMap + ("BACK_SCREEN_ENABLED" to enable.toString())
-                                    scope.launch { saveConfig(configMap) }
-                                } else {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "启用失败，请确认设备是否支持背屏显示",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        )
-                    }
                 }
 
                 // ===== 高级设置（折叠）=====
