@@ -89,12 +89,15 @@ fun HomeScreen(navController: NavController, modelConfigured: Boolean, settingsR
         initialSetupDone = settingsRepo.isInitialSetupDone()
     }
 
-    // App 重启后自动恢复背屏（如果之前是开启状态）
+    // App 重启后自动恢复背屏（如果之前是开启状态，失败则重置避免闪退循环）
     LaunchedEffect(Unit) {
         val saved = settingsRepo.getSettings()
         if (saved.backScreenEnabled) {
-            kotlinx.coroutines.delay(500) // 等 UI 稳定
-            BackScreenManager.enable(context)
+            kotlinx.coroutines.delay(500)
+            val ok = BackScreenManager.enable(context)
+            if (!ok) {
+                settingsRepo.saveSettings(saved.copy(backScreenEnabled = false))
+            }
         }
     }
 

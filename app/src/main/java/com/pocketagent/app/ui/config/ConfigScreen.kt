@@ -522,14 +522,15 @@ fun ConfigScreen(navController: NavController) {
                             Switch(
                                 checked = backScreenEnabled,
                                 onCheckedChange = { enable ->
-                                    configMap = configMap + ("BACK_SCREEN_ENABLED" to enable.toString())
-                                    scope.launch {
-                                        saveConfig(configMap)
-                                    }
-                                    if (enable) {
+                                    val ok = if (enable) {
                                         com.pocketagent.app.backscreen.BackScreenManager.enable(context)
                                     } else {
                                         com.pocketagent.app.backscreen.BackScreenManager.disable()
+                                        true
+                                    }
+                                    if (ok) {
+                                        configMap = configMap + ("BACK_SCREEN_ENABLED" to enable.toString())
+                                        scope.launch { saveConfig(configMap) }
                                     }
                                 }
                             )
