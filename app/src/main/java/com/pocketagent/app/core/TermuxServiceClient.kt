@@ -57,6 +57,19 @@ object TermuxServiceClient {
 
     // ─── 健康检查 ───────────────────────
 
+    /** 同步检查（非协程，用于 TermuxLauncher 启动前判断） */
+    fun healthCheckSync(): Boolean {
+        return try {
+            val request = Request.Builder().url("$BASE_URL/health").build()
+            val response = OkHttpClient.Builder()
+                .connectTimeout(2, TimeUnit.SECONDS)
+                .readTimeout(2, TimeUnit.SECONDS)
+                .build()
+                .newCall(request).execute()
+            response.isSuccessful
+        } catch (_: Exception) { false }
+    }
+
     suspend fun healthCheck(): HealthResult = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url("$BASE_URL/health").build()
