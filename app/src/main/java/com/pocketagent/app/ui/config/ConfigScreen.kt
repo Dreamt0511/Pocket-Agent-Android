@@ -135,7 +135,7 @@ fun ConfigScreen(navController: NavController) {
                     executorBaseUrl = map["EXECUTOR_LLM_BASE_URL"] ?: "",
                     executorApiKey = map["EXECUTOR_API_KEY"] ?: "",
                     executorModel = map["EXECUTOR_MODEL"] ?: "",
-                    backScreenEnabled = map["BACK_SCREEN_ENABLED"]?.toBooleanOrNull() ?: false
+                    backScreenEnabled = map["BACK_SCREEN_ENABLED"] == "true"
                 )
             )
         } catch (_: Exception) {}
@@ -494,8 +494,8 @@ fun ConfigScreen(navController: NavController) {
 
                 // ===== 背屏终端 =====
                 SectionCard(title = "背屏终端") {
-                    val context = LocalContext.current
-                    val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"]?.toBooleanOrNull() ?: false
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"] == "true"
                     val backAvailable = remember { com.pocketagent.app.backscreen.BackScreenManager.isAvailable() }
 
                     if (!backAvailable) {
