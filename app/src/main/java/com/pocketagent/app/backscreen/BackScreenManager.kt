@@ -2,6 +2,7 @@ package com.pocketagent.app.backscreen
 
 import android.content.Context
 import android.hardware.display.DisplayManager
+import android.media.MediaRouter
 import android.util.Log
 import android.view.Display
 import com.pocketagent.app.overlay.StreamBridge
@@ -19,35 +20,74 @@ object BackScreenManager {
 
     private var presentation: BackScreenPresentation? = null
     private var displayManager: DisplayManager? = null
+    private var contextRef: Context? = null
     private var _enabled = false
     val isEnabled: Boolean get() = _enabled
 
     fun init(context: Context) {
+        contextRef = context
         displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     }
 
-    /** 扫描系统中所有可用的 Presentation Display，找到背屏 */
+    /** 穷举所有可用 Display，找背屏 */
     private fun findBackDisplay(): Display? {
         val dm = displayManager ?: return null
-        // 方法1：枚举所有 display，找 FLAG_PRESENTATION
-        for (display in dm.getDisplays()) {
-            if ((display.flags and Display.FLAG_PRESENTATION) != 0) {
-                Log.i(TAG, "发现背屏: displayId=${display.displayId} flags=${display.flags}")
-                return display
+
+        // 输出所有可用 Display 方便排查
+        val all = dm.getDisplays()
+        Log.d(TAG, "getDisplays() 总数: ${all.size}")
+        for (d in all) {
+            Log.d(TAG, "  displayId=${d.displayId} flags=0x${d.flags.toString(16)} name=${d.name}")
+        }
+
+        // 方法1: 遍历全部，只要不是主屏就返回
+        for (d in all) {
+            if (d.displayId != Display.DEFAULT_DISPLAY) {
+                Log.i(TAG, "方法1 找到副屏: displayId=${d.displayId}")
+                return d
             }
         }
-        // 方法2：直接尝试 displayId=1（小米背屏通常是 1）
-        val display = dm.getDisplay(1)
-        if (display != null) {
-            Log.i(TAG, "通过 ID 1 找到背屏")
-            return display
+
+        // 方法2: getDisplay(1)（小米背屏通常是 1）
+        dm.getDisplay(1)?.let {
+            Log.i(TAG, "方法2 找到: displayId=1 flags=0x${it.flags.toString(16)}")
+            return it
         }
-        Log.w(TAG, "未检测到背屏")
+
+        // 方法3: MediaRouter 探查 presentation display
+        try {
+            val ctx = contextRef ?: return null
+            val mr = ctx.getSystemService(Context.MEDIA_ROUTER_SERVICE) as MediaRouter
+            for (i in 0 until mr.routeCount) {
+                val route = mr.getRouteAt(i)
+                val pd = route.presentationDisplay
+                if (pd != null && pd.displayId != Display.DEFAULT_DISPLAY) {
+                    Log.i(TAG, "方法3 MediaRouter 找到: displayId=${pd.displayId}")
+                    return pd
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "方法3 失败", e)
+        }
+
+        // 方法4: 反射 DisplayManagerGlobal.getRealDisplay(1)
+        try {
+            val clazz = Class.forName("android.hardware.display.DisplayManagerGlobal")
+            val getInstance = clazz.getDeclaredMethod("getInstance")
+            val dmg = getInstance.invoke(null)
+            val getRealDisplay = clazz.getDeclaredMethod("getRealDisplay", Int::class.javaPrimitiveType ?: Int::class.java)
+            val display = getRealDisplay.invoke(dmg, 1) as? Display
+            if (display != null) {
+                Log.i(TAG, "方法4 反射找到: displayId=${display.displayId}")
+                return display
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "方法4 反射失败", e)
+        }
+
+        Log.w(TAG, "所有方法均未检测到背屏")
         return null
     }
-
-    /** 背屏是否可用（硬件存在） */
-    fun isAvailable(): Boolean = findBackDisplay() != null
 
     /** 启用背屏：显示 Presentation + 注册到 StreamBridge
      *  @return true=成功, false=失败
@@ -57,7 +97,6 @@ object BackScreenManager {
         val display = findBackDisplay() ?: return false
 
         try {
-            // 必须用 Activity 上下文（带窗口 Token），不能用 applicationContext
             presentation = BackScreenPresentation(context, display).apply {
                 show()
             }
