@@ -103,6 +103,7 @@ fun ConfigScreen(navController: NavController) {
             if (ds.llmApiKey.isNotBlank()) fromDataStore["LLM_API_KEY"] = ds.llmApiKey
             if (ds.llmModel.isNotBlank()) fromDataStore["LLM_MODEL"] = ds.llmModel
             if (ds.mcpServerUrl.isNotBlank()) fromDataStore["MCP_SERVER_URL"] = ds.mcpServerUrl
+            fromDataStore["BACK_SCREEN_ENABLED"] = ds.backScreenEnabled.toString()
             // 嵌入模型路径：优先使用 DataStore 中的值
             if (ds.embeddingModelPath.isNotBlank()) {
                 fromDataStore["EMBEDDING_MODEL_PATH"] = ds.embeddingModelPath
@@ -133,7 +134,8 @@ fun ConfigScreen(navController: NavController) {
                     embeddingModelPath = map["EMBEDDING_MODEL_PATH"] ?: "",
                     executorBaseUrl = map["EXECUTOR_LLM_BASE_URL"] ?: "",
                     executorApiKey = map["EXECUTOR_API_KEY"] ?: "",
-                    executorModel = map["EXECUTOR_MODEL"] ?: ""
+                    executorModel = map["EXECUTOR_MODEL"] ?: "",
+                    backScreenEnabled = map["BACK_SCREEN_ENABLED"]?.toBooleanOrNull() ?: false
                 )
             )
         } catch (_: Exception) {}
@@ -488,6 +490,58 @@ fun ConfigScreen(navController: NavController) {
                         else -> {}
                     }
 
+                }
+
+                // ===== 背屏终端 =====
+                SectionCard(title = "背屏终端") {
+                    val context = LocalContext.current
+                    val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"]?.toBooleanOrNull() ?: false
+                    val backAvailable = remember { com.pocketagent.app.backscreen.BackScreenManager.isAvailable() }
+
+                    if (!backAvailable) {
+                        Text(
+                            "当前设备未检测到背屏（Display ID 1）",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("背屏实时输出", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text(
+                                    if (backScreenEnabled) "Agent 执行输出已投射到背屏"
+                                    else "将 Agent 实时终端输出显示在手机背屏",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                            Switch(
+                                checked = backScreenEnabled,
+                                onCheckedChange = { enable ->
+                                    configMap = configMap + ("BACK_SCREEN_ENABLED" to enable.toString())
+                                    scope.launch {
+                                        saveConfig(configMap)
+                                    }
+                                    if (enable) {
+                                        com.pocketagent.app.backscreen.BackScreenManager.enable(context)
+                                    } else {
+                                        com.pocketagent.app.backscreen.BackScreenManager.disable()
+                                    }
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        val colorHint = "\$步骤 / \$任务 / \$错误 / \$完成"
+                        Text(
+                            "背屏分辨率 904×572，实时渲染终端输出（颜色标记：$colorHint）",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        )
+                    }
                 }
 
                 // ===== 高级设置（折叠）=====
