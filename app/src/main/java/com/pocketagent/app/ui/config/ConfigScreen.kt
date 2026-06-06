@@ -496,7 +496,7 @@ fun ConfigScreen(navController: NavController) {
                 SectionCard(title = "背屏显示") {
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"] == "true"
-                    val backAvailable = remember { com.pocketagent.app.backscreen.BackScreenManager.isAvailable() }
+                    val backAvailable = com.pocketagent.app.backscreen.BackScreenManager.isAvailable()
 
                     if (!backAvailable) {
                         Text(
