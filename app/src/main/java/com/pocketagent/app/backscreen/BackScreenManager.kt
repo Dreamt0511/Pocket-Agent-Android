@@ -2,48 +2,64 @@ package com.pocketagent.app.backscreen
 
 import android.content.Context
 import android.hardware.display.DisplayManager
-import android.os.Build
-import android.provider.Settings
 import android.util.Log
 import android.view.Display
-import android.view.WindowManager
 import com.pocketagent.app.overlay.StreamBridge
 import com.pocketagent.app.overlay.StreamTarget
 
 /**
  * 背屏管理器（单例）
  *
- * 管理背屏（Display ID 1）上 Presentation 的生命周期，
+ * 管理背屏上 Presentation 的生命周期，
  * 并接入 StreamBridge 接收 Agent 实时输出。
  */
 object BackScreenManager {
 
     private const val TAG = "BackScreenManager"
-    private const val BACK_DISPLAY_ID = 1
 
     private var presentation: BackScreenPresentation? = null
     private var displayManager: DisplayManager? = null
     private var _enabled = false
     val isEnabled: Boolean get() = _enabled
 
+    /** 缓存检测到的背屏 Display */
+    private var _backDisplay: Display? = null
+
     fun init(context: Context) {
         displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        // 初始化时扫描背屏
+        scanBackDisplay(context)
+    }
+
+    /** 扫描系统中所有可用的 Presentation Display */
+    private fun scanBackDisplay(context: Context) {
+        val dm = displayManager ?: return
+        // 优先用 getDisplays 枚举所有 display
+        for (display in dm.getDisplays()) {
+            if ((display.flags and Display.FLAG_PRESENTATION) != 0) {
+                _backDisplay = display
+                Log.i(TAG, "发现背屏: displayId=${display.displayId} flags=${display.flags}")
+                return
+            }
+        }
+        // 降级：尝试直接拿 displayId=1（小米背屏通常是 1）
+        _backDisplay = dm.getDisplay(1)
+        if (_backDisplay != null) {
+            Log.i(TAG, "通过 ID 1 找到背屏")
+        } else {
+            Log.w(TAG, "未检测到背屏")
+        }
     }
 
     /** 背屏是否可用（硬件存在） */
-    fun isAvailable(): Boolean {
-        return displayManager?.getDisplay(BACK_DISPLAY_ID) != null
-    }
-
-    /** 获取背屏 Display 对象 */
-    fun getBackDisplay(): Display? = displayManager?.getDisplay(BACK_DISPLAY_ID)
+    fun isAvailable(): Boolean = _backDisplay != null
 
     /** 启用背屏：显示 Presentation + 注册到 StreamBridge
      *  @return true=成功, false=失败
      */
     fun enable(context: Context): Boolean {
         if (_enabled) return true
-        val display = displayManager?.getDisplay(BACK_DISPLAY_ID) ?: return false
+        val display = _backDisplay ?: return false
 
         try {
             // 必须用 Activity 上下文（带窗口 Token），不能用 applicationContext
@@ -52,7 +68,7 @@ object BackScreenManager {
             }
             _enabled = true
             StreamBridge.register(streamTarget)
-            StreamBridge.out("[info] 背屏终端已启动")
+            StreamBridge.out("[info] 背屏显示已启动")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "背屏启动失败", e)

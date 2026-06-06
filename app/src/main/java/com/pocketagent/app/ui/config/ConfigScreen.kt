@@ -492,15 +492,15 @@ fun ConfigScreen(navController: NavController) {
 
                 }
 
-                // ===== 背屏终端 =====
-                SectionCard(title = "背屏终端") {
+                // ===== 背屏显示 =====
+                SectionCard(title = "背屏显示") {
                     val context = androidx.compose.ui.platform.LocalContext.current
                     val backScreenEnabled = configMap["BACK_SCREEN_ENABLED"] == "true"
                     val backAvailable = remember { com.pocketagent.app.backscreen.BackScreenManager.isAvailable() }
 
                     if (!backAvailable) {
                         Text(
-                            "当前设备未检测到背屏（Display ID 1）",
+                            "当前设备未检测到背屏",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                         )
@@ -511,7 +511,7 @@ fun ConfigScreen(navController: NavController) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("背屏实时输出", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                Text("背屏显示", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                                 Text(
                                     if (backScreenEnabled) "Agent 执行输出已投射到背屏"
                                     else "将 Agent 实时终端输出显示在手机背屏",
@@ -531,17 +531,16 @@ fun ConfigScreen(navController: NavController) {
                                     if (ok) {
                                         configMap = configMap + ("BACK_SCREEN_ENABLED" to enable.toString())
                                         scope.launch { saveConfig(configMap) }
+                                    } else {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "背屏启用失败，请确认手机是否有背屏硬件",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             )
                         }
-                        Spacer(Modifier.height(4.dp))
-                        val colorHint = "\$步骤 / \$任务 / \$错误 / \$完成"
-                        Text(
-                            "背屏分辨率 904×572，实时渲染终端输出（颜色标记：$colorHint）",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                        )
                     }
                 }
 
