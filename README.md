@@ -1,6 +1,12 @@
 # Pocket Agent Android App
 
+<div align="center">
+
 > 将 Pocket-Agent Python AI Agent 能力搬到 Android 手机上的原生客户端。
+
+<img src="screenshot.jpg" alt="Pocket Agent 主界面" width="360">
+
+</div>
 
 ## 核心功能
 
